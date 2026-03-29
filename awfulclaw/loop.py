@@ -25,6 +25,8 @@ _LOCATION_RE = re.compile(r"^\[Location:\s*(-?\d+\.?\d*),\s*(-?\d+\.?\d*)\]$")
 
 _SKILL_IMAP_RE = re.compile(r"<skill:imap\s*/>|<skill:imap\s*></skill:imap>")
 
+_SKILL_WEB_RE = re.compile(r'<skill:web\s+query="([^"]*?)"\s*/?>')
+
 _SKILL_SCHEDULE_RE = re.compile(
     r"<skill:schedule\s+([^>]*?)(?:/>|>(.*?)</skill:schedule>)",
     re.DOTALL,
@@ -46,6 +48,50 @@ _DEFAULT_HEARTBEAT = (
 )
 
 _IDLE_SUPPRESS = {"nothing", "nothing.", "nothing needs attention", "nothing right now"}
+
+_SLASH_COMMANDS = "/tasks, /skills, /schedules"
+
+
+def handle_slash_command(body: str) -> str | None:
+    """Return a response string for slash commands, or None if not a slash command."""
+    cmd = body.strip().lower().split()[0] if body.strip().startswith("/") else None
+    if cmd is None:
+        return None
+
+    if cmd == "/tasks":
+        files = sorted((Path("memory") / "tasks").glob("*.md"))
+        lines: list[str] = []
+        for f in files:
+            open_items = [
+                line for line in f.read_text(encoding="utf-8").splitlines()
+                if line.strip().startswith("- [ ]")
+            ]
+            if open_items:
+                lines.append(f"**{f.stem}**")
+                lines.extend(open_items)
+        return "\n".join(lines) if lines else "No open tasks."
+
+    if cmd == "/skills":
+        files = sorted((Path("memory") / "skills").glob("*.md"))
+        if not files:
+            return "No skills saved."
+        parts: list[str] = []
+        for f in files:
+            parts.append(f"**{f.stem}**\n{f.read_text(encoding='utf-8').strip()}")
+        return "\n\n".join(parts)
+
+    if cmd == "/schedules":
+        schedules = scheduler.load_schedules()
+        if not schedules:
+            return "No schedules."
+        parts2: list[str] = []
+        for s in schedules:
+            when = s.fire_at.isoformat() if s.fire_at else s.cron
+            preview = s.prompt[:60] + ("…" if len(s.prompt) > 60 else "")
+            parts2.append(f"**{s.name}** ({when}): {preview}")
+        return "\n".join(parts2)
+
+    return f"Unknown command: {cmd}\nAvailable: {_SLASH_COMMANDS}"
 
 
 def _is_idle_suppressed(text: str) -> bool:
@@ -83,21 +129,32 @@ def _parse_and_apply_schedule_tags(
         cron = attrs.get("cron", "").strip()
 
         if action == "create":
-            if not croniter.is_valid(cron):
-                errors.append(f"Invalid cron expression '{cron}' for schedule '{name}'.")
-                return ""
+            at_str = attrs.get("at", "").strip()
+            if at_str:
+                try:
+                    fire_at = datetime.fromisoformat(at_str)
+                    if fire_at.tzinfo is None:
+                        fire_at = fire_at.replace(tzinfo=timezone.utc)
+                except ValueError:
+                    errors.append(f"Invalid datetime '{at_str}' for schedule '{name}'.")
+                    return ""
+                new_sched = scheduler.Schedule.create(name=name, prompt=body, fire_at=fire_at)
+            else:
+                if not croniter.is_valid(cron):
+                    errors.append(f"Invalid cron expression '{cron}' for schedule '{name}'.")
+                    return ""
+                new_sched = scheduler.Schedule.create(name=name, cron=cron, prompt=body)
             # Overwrite existing schedule with same name (case-insensitive)
             idx = next(
                 (i for i, s in enumerate(schedules) if s.name.lower() == name.lower()),
                 None,
             )
-            new_sched = scheduler.Schedule.create(name=name, cron=cron, prompt=body)
             if idx is not None:
                 schedules[idx] = new_sched
-                logger.info("Schedule updated: '%s' (%s)", name, cron)
+                logger.info("Schedule updated: '%s'", name)
             else:
                 schedules.append(new_sched)
-                logger.info("Schedule created: '%s' (%s)", name, cron)
+                logger.info("Schedule created: '%s'", name)
             scheduler.save_schedules(schedules)
         elif action == "delete":
             before = len(schedules)
@@ -135,6 +192,23 @@ def _fetch_imap_results(last_imap_check: datetime | None) -> tuple[str, datetime
         result = f"[IMAP unavailable: {exc}]"
         logger.warning("IMAP skill error: %s", exc)
     return result, now
+
+
+def _fetch_web_results(query: str) -> str:
+    """Run the web search skill, return formatted result text."""
+    try:
+        from awfulclaw.web import search
+
+        results = search(query)
+        if not results:
+            return "[Web search returned no results]"
+        lines = [f"[Web search results for: {query}]"]
+        for r in results:
+            lines.append(f"- {r.title}\n  {r.url}\n  {r.snippet}")
+        return "\n\n".join(lines)
+    except Exception as exc:
+        logger.warning("Web search error: %s", exc)
+        return f"[Web search unavailable: {exc}]"
 
 
 def _session_path() -> str:
@@ -238,6 +312,12 @@ def run(connector: Connector) -> None:
                     logger.info("Location saved: %s, %s", lat, lon)
                     continue
 
+                slash_reply = handle_slash_command(msg.body)
+                if slash_reply is not None:
+                    connector.send_message(phone, slash_reply)
+                    logger.info("Slash command '%s' handled", msg.body.split()[0])
+                    continue
+
                 system = context.build_system_prompt(msg.body, sender=msg.sender)
                 conversation_history.append({"role": "user", "content": msg.body})
                 reply = claude.chat(conversation_history, system=system)
@@ -260,6 +340,16 @@ def run(connector: Connector) -> None:
                     reply = claude.chat(conversation_history, system=system)
                     reply = _parse_and_apply_memory_writes(reply)
 
+                web_match = _SKILL_WEB_RE.search(reply)
+                if web_match:
+                    query = web_match.group(1)
+                    reply = _SKILL_WEB_RE.sub("", reply).strip()
+                    web_text = _fetch_web_results(query)
+                    conversation_history.append({"role": "assistant", "content": reply})
+                    conversation_history.append({"role": "user", "content": web_text})
+                    reply = claude.chat(conversation_history, system=system)
+                    reply = _parse_and_apply_memory_writes(reply)
+
                 conversation_history.append({"role": "assistant", "content": reply})
                 _append_turn(session_file, "User", msg.body)
                 _append_turn(session_file, "Assistant", reply)
@@ -272,6 +362,7 @@ def run(connector: Connector) -> None:
                 now = datetime.now(timezone.utc)
 
                 due = scheduler.get_due(schedules, now)
+                one_off_ids: set[str] = set()
                 for sched in due:
                     try:
                         sched_system = context.build_system_prompt(sched.prompt)
@@ -283,9 +374,14 @@ def run(connector: Connector) -> None:
                         if sched_reply:
                             connector.send_message(phone, sched_reply)
                             logger.info("Schedule '%s' sent: %s", sched.name, sched_reply[:80])
-                        sched.last_run = now
+                        if sched.fire_at is not None:
+                            one_off_ids.add(sched.id)
+                        else:
+                            sched.last_run = now
                     except Exception as exc:
                         logger.error("Schedule '%s' failed: %s", sched.name, exc)
+                if one_off_ids:
+                    schedules[:] = [s for s in schedules if s.id not in one_off_ids]
                 if due:
                     scheduler.save_schedules(schedules)
 

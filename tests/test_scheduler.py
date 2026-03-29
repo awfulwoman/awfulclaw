@@ -62,3 +62,29 @@ def test_get_due_past_next_run() -> None:
     now = datetime(2026, 3, 29, 10, 0, tzinfo=timezone.utc)
     due = get_due([s], now)
     assert s in due
+
+
+def test_one_off_fires_when_due() -> None:
+    fire_at = datetime(2026, 4, 1, 15, 0, tzinfo=timezone.utc)
+    s = Schedule.create(name="Dentist", prompt="Dentist reminder", fire_at=fire_at)
+    now = datetime(2026, 4, 1, 15, 0, tzinfo=timezone.utc)
+    due = get_due([s], now)
+    assert s in due
+
+
+def test_one_off_does_not_fire_before_time() -> None:
+    fire_at = datetime(2026, 4, 1, 15, 0, tzinfo=timezone.utc)
+    s = Schedule.create(name="Dentist", prompt="Dentist reminder", fire_at=fire_at)
+    now = datetime(2026, 4, 1, 14, 59, tzinfo=timezone.utc)
+    due = get_due([s], now)
+    assert due == []
+
+
+def test_one_off_round_trip() -> None:
+    fire_at = datetime(2026, 4, 1, 15, 0, tzinfo=timezone.utc)
+    s = Schedule.create(name="Dentist", prompt="Dentist reminder", fire_at=fire_at)
+    save_schedules([s])
+    loaded = load_schedules()
+    assert len(loaded) == 1
+    assert loaded[0].fire_at == fire_at
+    assert loaded[0].cron == ""
