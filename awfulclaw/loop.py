@@ -25,6 +25,8 @@ _LOCATION_RE = re.compile(r"^\[Location:\s*(-?\d+\.?\d*),\s*(-?\d+\.?\d*)\]$")
 
 _SKILL_IMAP_RE = re.compile(r"<skill:imap\s*/>|<skill:imap\s*></skill:imap>")
 
+_SKILL_WEB_RE = re.compile(r'<skill:web\s+query="([^"]*?)"\s*/?>')
+
 _SKILL_SCHEDULE_RE = re.compile(
     r"<skill:schedule\s+([^>]*?)(?:/>|>(.*?)</skill:schedule>)",
     re.DOTALL,
@@ -192,6 +194,23 @@ def _fetch_imap_results(last_imap_check: datetime | None) -> tuple[str, datetime
     return result, now
 
 
+def _fetch_web_results(query: str) -> str:
+    """Run the web search skill, return formatted result text."""
+    try:
+        from awfulclaw.web import search
+
+        results = search(query)
+        if not results:
+            return "[Web search returned no results]"
+        lines = [f"[Web search results for: {query}]"]
+        for r in results:
+            lines.append(f"- {r.title}\n  {r.url}\n  {r.snippet}")
+        return "\n\n".join(lines)
+    except Exception as exc:
+        logger.warning("Web search error: %s", exc)
+        return f"[Web search unavailable: {exc}]"
+
+
 def _session_path() -> str:
     """Return conversations/<iso-timestamp>.md with colons replaced by dashes."""
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S")
@@ -318,6 +337,16 @@ def run(connector: Connector) -> None:
                     imap_text, last_imap_check = _fetch_imap_results(last_imap_check)
                     conversation_history.append({"role": "assistant", "content": reply})
                     conversation_history.append({"role": "user", "content": imap_text})
+                    reply = claude.chat(conversation_history, system=system)
+                    reply = _parse_and_apply_memory_writes(reply)
+
+                web_match = _SKILL_WEB_RE.search(reply)
+                if web_match:
+                    query = web_match.group(1)
+                    reply = _SKILL_WEB_RE.sub("", reply).strip()
+                    web_text = _fetch_web_results(query)
+                    conversation_history.append({"role": "assistant", "content": reply})
+                    conversation_history.append({"role": "user", "content": web_text})
                     reply = claude.chat(conversation_history, system=system)
                     reply = _parse_and_apply_memory_writes(reply)
 

@@ -17,6 +17,12 @@ You can write to memory using `<memory:write path="...">...</memory:write>` tags
 You have skills in `memory/skills/`, a user profile at `memory/USER.md`, tasks in `memory/tasks/`,
 facts in `memory/facts/`, and conversation history in `memory/conversations/`.
 
+To search the web use:
+  `<skill:web query="your search query"/>`
+The system will inject the top results as a follow-up user message, then you reply with a summary.
+Use this when the user asks about current events, facts you're unsure of, or anything that benefits
+from an up-to-date web source.
+
 To create a recurring schedule use:
   `<skill:schedule action="create" name="..." cron="0 9 * * *">prompt</skill:schedule>`
 To create a one-off reminder at a specific datetime use:
