@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from awfulclaw import memory, scheduler
+from awfulclaw import skills as skills_module
 
 _MAX_CHARS = 8000
 
@@ -103,6 +104,17 @@ def build_system_prompt(incoming_message: str, sender: str = "") -> str:
         content = memory.read(f"tasks/{filename}")
         if "- [ ]" in content:
             sections.append(f"## Task: {filename}\n{content}")
+
+    # Matched skills
+    all_skills = skills_module.load_skills()
+    matched = skills_module.match_skills(incoming_message, all_skills)
+    if matched:
+        skill_lines = ["## Active Skills"]
+        for skill in matched:
+            skill_lines.append(f"### {skill.name}\n{skill.instruction}")
+            if skill.body:
+                skill_lines.append(skill.body)
+        sections.append("\n\n".join(skill_lines))
 
     # Active schedules
     schedules = scheduler.load_schedules()
