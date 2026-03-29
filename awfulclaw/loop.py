@@ -83,21 +83,32 @@ def _parse_and_apply_schedule_tags(
         cron = attrs.get("cron", "").strip()
 
         if action == "create":
-            if not croniter.is_valid(cron):
-                errors.append(f"Invalid cron expression '{cron}' for schedule '{name}'.")
-                return ""
+            at_str = attrs.get("at", "").strip()
+            if at_str:
+                try:
+                    fire_at = datetime.fromisoformat(at_str)
+                    if fire_at.tzinfo is None:
+                        fire_at = fire_at.replace(tzinfo=timezone.utc)
+                except ValueError:
+                    errors.append(f"Invalid datetime '{at_str}' for schedule '{name}'.")
+                    return ""
+                new_sched = scheduler.Schedule.create(name=name, prompt=body, fire_at=fire_at)
+            else:
+                if not croniter.is_valid(cron):
+                    errors.append(f"Invalid cron expression '{cron}' for schedule '{name}'.")
+                    return ""
+                new_sched = scheduler.Schedule.create(name=name, cron=cron, prompt=body)
             # Overwrite existing schedule with same name (case-insensitive)
             idx = next(
                 (i for i, s in enumerate(schedules) if s.name.lower() == name.lower()),
                 None,
             )
-            new_sched = scheduler.Schedule.create(name=name, cron=cron, prompt=body)
             if idx is not None:
                 schedules[idx] = new_sched
-                logger.info("Schedule updated: '%s' (%s)", name, cron)
+                logger.info("Schedule updated: '%s'", name)
             else:
                 schedules.append(new_sched)
-                logger.info("Schedule created: '%s' (%s)", name, cron)
+                logger.info("Schedule created: '%s'", name)
             scheduler.save_schedules(schedules)
         elif action == "delete":
             before = len(schedules)
@@ -272,6 +283,7 @@ def run(connector: Connector) -> None:
                 now = datetime.now(timezone.utc)
 
                 due = scheduler.get_due(schedules, now)
+                one_off_ids: set[str] = set()
                 for sched in due:
                     try:
                         sched_system = context.build_system_prompt(sched.prompt)
@@ -283,9 +295,14 @@ def run(connector: Connector) -> None:
                         if sched_reply:
                             connector.send_message(phone, sched_reply)
                             logger.info("Schedule '%s' sent: %s", sched.name, sched_reply[:80])
-                        sched.last_run = now
+                        if sched.fire_at is not None:
+                            one_off_ids.add(sched.id)
+                        else:
+                            sched.last_run = now
                     except Exception as exc:
                         logger.error("Schedule '%s' failed: %s", sched.name, exc)
+                if one_off_ids:
+                    schedules[:] = [s for s in schedules if s.id not in one_off_ids]
                 if due:
                     scheduler.save_schedules(schedules)
 

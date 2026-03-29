@@ -17,6 +17,13 @@ You can write to memory using `<memory:write path="...">...</memory:write>` tags
 You have skills in `memory/skills/`, a user profile at `memory/USER.md`, tasks in `memory/tasks/`,
 facts in `memory/facts/`, and conversation history in `memory/conversations/`.
 
+To create a recurring schedule use:
+  `<skill:schedule action="create" name="..." cron="0 9 * * *">prompt</skill:schedule>`
+To create a one-off reminder at a specific datetime use:
+  `<skill:schedule action="create" name="..." at="2026-04-01T15:00:00Z">prompt</skill:schedule>`
+To delete a schedule use:
+  `<skill:schedule action="delete" name="..."/>`
+
 When you notice that fields in the user profile (## About You section) are `unknown`, ask about them
 naturally over time — one question per conversation, not all at once. As you learn more about the
 user, update their profile using `<memory:write path="USER.md">...</memory:write>`.
@@ -159,10 +166,12 @@ Use the context already loaded in this prompt to assemble the answer — no tool
     if schedules:
         lines = ["## Active Schedules"]
         for s in schedules:
-            last = s.last_run.isoformat() if s.last_run else "never"
-            lines.append(
-                f"- **{s.name}** | cron: `{s.cron}` | last run: {last}\n  Prompt: {s.prompt}"
-            )
+            if s.fire_at is not None:
+                timing = f"fire_at: `{s.fire_at.isoformat()}`"
+            else:
+                last = s.last_run.isoformat() if s.last_run else "never"
+                timing = f"cron: `{s.cron}` | last run: {last}"
+            lines.append(f"- **{s.name}** | {timing}\n  Prompt: {s.prompt}")
         sections.append("\n".join(lines))
 
     prompt = "\n\n".join(sections)
