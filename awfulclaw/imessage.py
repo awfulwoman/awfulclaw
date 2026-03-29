@@ -4,18 +4,10 @@ from __future__ import annotations
 
 import sqlite3
 import subprocess
-from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-
-@dataclass
-class Message:
-    sender: str
-    body: str
-    timestamp: datetime
-    is_from_me: bool
-
+from awfulclaw.connector import Connector, Message
 
 # macOS stores iMessage timestamps as seconds since 2001-01-01 (Cocoa epoch)
 _COCOA_EPOCH = datetime(2001, 1, 1, tzinfo=timezone.utc)
@@ -76,11 +68,13 @@ def _query_chat_db(since: datetime) -> list[Message]:
 
 def send_message(to: str, body: str) -> None:
     """Send an iMessage to a phone number or Apple ID via osascript."""
+    # Escape backslashes first, then quotes, to avoid breaking the AppleScript string literal.
+    safe_body = body.replace("\\", "\\\\").replace('"', '\\"')
     script = f"""
 tell application "Messages"
     set targetService to 1st service whose service type = iMessage
     set targetBuddy to buddy "{to}" of targetService
-    send "{body}" to targetBuddy
+    send "{safe_body}" to targetBuddy
 end tell
 """
     result = subprocess.run(
@@ -92,3 +86,11 @@ end tell
         raise RuntimeError(
             f"osascript failed (exit {result.returncode}): {result.stderr.strip()}"
         )
+
+
+class IMessageConnector(Connector):
+    def poll_new_messages(self, since: datetime) -> list[Message]:
+        return poll_new_messages(since)
+
+    def send_message(self, to: str, body: str) -> None:
+        send_message(to, body)

@@ -1,0 +1,23 @@
+"""Abstract Connector interface and shared Message dataclass."""
+
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from datetime import datetime
+
+
+@dataclass
+class Message:
+    sender: str
+    body: str
+    timestamp: datetime
+    is_from_me: bool
+
+
+class Connector(ABC):
+    @abstractmethod
+    def poll_new_messages(self, since: datetime) -> list[Message]: ...
+
+    @abstractmethod
+    def send_message(self, to: str, body: str) -> None: ...
