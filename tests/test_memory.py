@@ -73,6 +73,6 @@ def test_search_no_match() -> None:
 def test_subdirs_created_on_first_run() -> None:
     import awfulclaw.memory as mem
 
-    mem._ensure_root()
+    mem._ensure_root()  # pyright: ignore[reportPrivateUsage]
     for sub in ("people", "tasks", "facts", "conversations"):
         assert Path(f"memory/{sub}").is_dir()
