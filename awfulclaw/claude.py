@@ -3,9 +3,100 @@
 from __future__ import annotations
 
 import base64
+import logging
+import os
 import subprocess
+import time as _time
 
 from awfulclaw import config
+
+logger = logging.getLogger(__name__)
+
+
+class ClaudeSession:
+    """Persistent claude subprocess that reuses a live process between calls."""
+
+    SENTINEL_START = "---AWFULCLAW_OUTPUT_START---"
+    SENTINEL_END = "---AWFULCLAW_OUTPUT_END---"
+    IDLE_TIMEOUT = 120  # seconds; overridden by AWFULCLAW_SESSION_TIMEOUT env var
+
+    def __init__(self, system: str) -> None:
+        self._system = system
+        self._idle_timeout = int(os.getenv("AWFULCLAW_SESSION_TIMEOUT", str(self.IDLE_TIMEOUT)))
+        self._process: subprocess.Popen[str] | None = None
+        self._last_used: float = 0.0
+        self._spawn()
+
+    def _spawn(self) -> None:
+        sentinel_instruction = (
+            f"IMPORTANT: Always begin your response with the exact line "
+            f"'{self.SENTINEL_START}' and end it with the exact line "
+            f"'{self.SENTINEL_END}'."
+        )
+        augmented_system = f"{sentinel_instruction}\n\n{self._system}"
+        cmd = [
+            "claude",
+            "--print",
+            "--system-prompt", augmented_system,
+            "--model", config.get_model(),
+        ]
+        self._process = subprocess.Popen(
+            cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+        )
+        self._last_used = _time.monotonic()
+
+    def is_alive(self) -> bool:
+        """Return True if the subprocess is running and not idle-timed-out."""
+        if self._process is None:
+            return False
+        if self._process.poll() is not None:
+            return False
+        if _time.monotonic() - self._last_used > self._idle_timeout:
+            return False
+        return True
+
+    def send(self, messages: list[dict[str, str]]) -> str:
+        """Send messages to the persistent subprocess and return the reply."""
+        if not self.is_alive():
+            self._spawn()
+
+        proc = self._process
+        assert proc is not None
+        assert proc.stdin is not None
+        assert proc.stdout is not None
+
+        prompt = _format_messages(messages)
+        proc.stdin.write(prompt + "\n")
+        proc.stdin.flush()
+        self._last_used = _time.monotonic()
+
+        lines: list[str] = []
+        in_response = False
+        while True:
+            line = proc.stdout.readline()
+            if not line:
+                break
+            stripped = line.rstrip("\n")
+            if stripped == self.SENTINEL_START:
+                in_response = True
+                continue
+            if stripped == self.SENTINEL_END:
+                break
+            if in_response:
+                lines.append(stripped)
+
+        return "\n".join(lines).strip()
+
+    def close(self) -> None:
+        """Terminate the subprocess cleanly."""
+        if self._process is not None:
+            self._process.terminate()
+            self._process = None
 
 
 def chat(

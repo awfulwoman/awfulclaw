@@ -314,6 +314,10 @@ def run(connector: Connector) -> None:
     briefing_time = config.get_briefing_time()
     schedules = scheduler.load_schedules()
 
+    _initial_system = context.build_system_prompt("")
+    session = claude.ClaudeSession(_initial_system)
+    _current_sender: str | None = None
+
     session_file = _session_path()
     try:
         full = _MEMORY_ROOT / session_file
@@ -355,13 +359,30 @@ def run(connector: Connector) -> None:
                     continue
 
                 system = context.build_system_prompt(msg.body, sender=msg.sender)
+                if msg.sender != _current_sender:
+                    session.close()
+                    session = claude.ClaudeSession(system)
+                    _current_sender = msg.sender
+
+                def _session_call(msgs: list[dict[str, str]]) -> str:
+                    try:
+                        return session.send(msgs)
+                    except Exception as exc:
+                        logger.warning(
+                            "ClaudeSession.send() failed, falling back to claude.chat(): %s", exc
+                        )
+                        return claude.chat(msgs, system=system)
+
                 conversation_history.append({"role": "user", "content": msg.body})
-                reply = claude.chat(
-                    conversation_history,
-                    system=system,
-                    image_data=msg.image_data,
-                    image_mime=msg.image_mime,
-                )
+                if msg.image_data is not None:
+                    reply = claude.chat(
+                        conversation_history,
+                        system=system,
+                        image_data=msg.image_data,
+                        image_mime=msg.image_mime,
+                    )
+                else:
+                    reply = _session_call(conversation_history)
                 reply = _parse_and_apply_memory_writes(reply)
 
                 reply, sched_errors = _parse_and_apply_schedule_tags(reply, schedules)
@@ -369,7 +390,7 @@ def run(connector: Connector) -> None:
                     error_note = "[Schedule error: " + "; ".join(sched_errors) + "]"
                     conversation_history.append({"role": "assistant", "content": reply})
                     conversation_history.append({"role": "user", "content": error_note})
-                    reply = claude.chat(conversation_history, system=system)
+                    reply = _session_call(conversation_history)
                     reply = _parse_and_apply_memory_writes(reply)
                     reply, _ = _parse_and_apply_schedule_tags(reply, schedules)
 
@@ -378,7 +399,7 @@ def run(connector: Connector) -> None:
                     imap_text, last_imap_check = _fetch_imap_results(last_imap_check)
                     conversation_history.append({"role": "assistant", "content": reply})
                     conversation_history.append({"role": "user", "content": imap_text})
-                    reply = claude.chat(conversation_history, system=system)
+                    reply = _session_call(conversation_history)
                     reply = _parse_and_apply_memory_writes(reply)
 
                 web_match = _SKILL_WEB_RE.search(reply)
@@ -388,7 +409,7 @@ def run(connector: Connector) -> None:
                     web_text = _fetch_web_results(query)
                     conversation_history.append({"role": "assistant", "content": reply})
                     conversation_history.append({"role": "user", "content": web_text})
-                    reply = claude.chat(conversation_history, system=system)
+                    reply = _session_call(conversation_history)
                     reply = _parse_and_apply_memory_writes(reply)
 
                 search_match = _SKILL_SEARCH_RE.search(reply)
@@ -398,7 +419,7 @@ def run(connector: Connector) -> None:
                     search_text = _fetch_search_results(query)
                     conversation_history.append({"role": "assistant", "content": reply})
                     conversation_history.append({"role": "user", "content": search_text})
-                    reply = claude.chat(conversation_history, system=system)
+                    reply = _session_call(conversation_history)
                     reply = _parse_and_apply_memory_writes(reply)
 
                 conversation_history.append({"role": "assistant", "content": reply})
@@ -481,6 +502,7 @@ def run(connector: Connector) -> None:
             time.sleep(poll_interval)
 
     except KeyboardInterrupt:
+        session.close()
         try:
             connector.send_message(phone, "awfulclaw is going offline.")
         except Exception as exc:
