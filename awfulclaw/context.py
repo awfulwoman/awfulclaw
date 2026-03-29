@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from awfulclaw import memory
+from awfulclaw import memory, scheduler
 
 _MAX_CHARS = 8000
 
@@ -27,6 +27,26 @@ You can check the user's email by including this tag anywhere in your reply:
 Use <skill:imap/> when the user asks you to check their email, see if they have any new messages,
 or retrieve email content. The tag will be intercepted, stripped from your reply, and the results
 injected back as a follow-up so you can summarise them for the user.
+
+You can manage scheduled tasks using <skill:schedule> tags:
+
+  Create a schedule:
+    <skill:schedule action="create" name="Schedule name" cron="CRON_EXPR">
+    Prompt to run
+    </skill:schedule>
+
+  Delete a schedule:
+    <skill:schedule action="delete" name="Schedule name"/>
+
+Cron format is 5-field: min hour dom mon dow (standard cron). Examples:
+  Daily at 9am:       0 9 * * *
+  Weekdays at 9am:    0 9 * * 1-5
+  Hourly:             0 * * * *
+  Every Monday 8am:   0 8 * * 1
+
+The tag is stripped before sending; Claude is informed of errors if the cron is invalid.
+To see active schedules, they are listed in your context below.
+To delete a schedule, use the delete action with the exact name.
 
 Always be concise and helpful. Reply in a conversational tone suitable for iMessage.
 """
@@ -83,6 +103,17 @@ def build_system_prompt(incoming_message: str, sender: str = "") -> str:
         content = memory.read(f"tasks/{filename}")
         if "- [ ]" in content:
             sections.append(f"## Task: {filename}\n{content}")
+
+    # Active schedules
+    schedules = scheduler.load_schedules()
+    if schedules:
+        lines = ["## Active Schedules"]
+        for s in schedules:
+            last = s.last_run.isoformat() if s.last_run else "never"
+            lines.append(
+                f"- **{s.name}** | cron: `{s.cron}` | last run: {last}\n  Prompt: {s.prompt}"
+            )
+        sections.append("\n".join(lines))
 
     prompt = "\n\n".join(sections)
 
