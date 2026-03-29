@@ -7,7 +7,8 @@ import re
 import time
 from datetime import datetime, timezone
 
-from awfulclaw import claude, config, context, imessage, memory
+from awfulclaw import claude, config, context, memory
+from awfulclaw.connector import Connector
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +32,7 @@ def _parse_and_apply_memory_writes(text: str) -> str:
     return _MEMORY_WRITE_RE.sub("", text).strip()
 
 
-def run() -> None:
+def run(connector: Connector) -> None:
     """Run the agent loop indefinitely until Ctrl-C."""
     logger.info("awfulclaw starting up")
 
@@ -46,7 +47,7 @@ def run() -> None:
     try:
         while True:
             now = datetime.now(timezone.utc)
-            messages = imessage.poll_new_messages(since=last_poll)
+            messages = connector.poll_new_messages(since=last_poll)
             last_poll = now
 
             for msg in messages:
@@ -57,7 +58,7 @@ def run() -> None:
                 reply = _parse_and_apply_memory_writes(reply)
                 conversation_history.append({"role": "assistant", "content": reply})
                 if reply:
-                    imessage.send_message(phone, reply)
+                    connector.send_message(phone, reply)
                     logger.info("Sent reply: %s", reply[:80])
 
             if time.monotonic() - last_idle >= idle_interval:
@@ -69,7 +70,7 @@ def run() -> None:
                 )
                 idle_reply = _parse_and_apply_memory_writes(idle_reply)
                 if idle_reply:
-                    imessage.send_message(phone, idle_reply)
+                    connector.send_message(phone, idle_reply)
                     logger.info("Idle message sent: %s", idle_reply[:80])
 
             time.sleep(poll_interval)
