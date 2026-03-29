@@ -47,6 +47,50 @@ _DEFAULT_HEARTBEAT = (
 
 _IDLE_SUPPRESS = {"nothing", "nothing.", "nothing needs attention", "nothing right now"}
 
+_SLASH_COMMANDS = "/tasks, /skills, /schedules"
+
+
+def handle_slash_command(body: str) -> str | None:
+    """Return a response string for slash commands, or None if not a slash command."""
+    cmd = body.strip().lower().split()[0] if body.strip().startswith("/") else None
+    if cmd is None:
+        return None
+
+    if cmd == "/tasks":
+        files = sorted((Path("memory") / "tasks").glob("*.md"))
+        lines: list[str] = []
+        for f in files:
+            open_items = [
+                line for line in f.read_text(encoding="utf-8").splitlines()
+                if line.strip().startswith("- [ ]")
+            ]
+            if open_items:
+                lines.append(f"**{f.stem}**")
+                lines.extend(open_items)
+        return "\n".join(lines) if lines else "No open tasks."
+
+    if cmd == "/skills":
+        files = sorted((Path("memory") / "skills").glob("*.md"))
+        if not files:
+            return "No skills saved."
+        parts: list[str] = []
+        for f in files:
+            parts.append(f"**{f.stem}**\n{f.read_text(encoding='utf-8').strip()}")
+        return "\n\n".join(parts)
+
+    if cmd == "/schedules":
+        schedules = scheduler.load_schedules()
+        if not schedules:
+            return "No schedules."
+        parts2: list[str] = []
+        for s in schedules:
+            when = s.fire_at.isoformat() if s.fire_at else s.cron
+            preview = s.prompt[:60] + ("…" if len(s.prompt) > 60 else "")
+            parts2.append(f"**{s.name}** ({when}): {preview}")
+        return "\n".join(parts2)
+
+    return f"Unknown command: {cmd}\nAvailable: {_SLASH_COMMANDS}"
+
 
 def _is_idle_suppressed(text: str) -> bool:
     return text.lower().strip().rstrip(".").strip() in _IDLE_SUPPRESS or text.upper() == "NOTHING"
@@ -247,6 +291,12 @@ def run(connector: Connector) -> None:
                         f"Last known location: {lat}, {lon}\nUpdated: {ts}",
                     )
                     logger.info("Location saved: %s, %s", lat, lon)
+                    continue
+
+                slash_reply = handle_slash_command(msg.body)
+                if slash_reply is not None:
+                    connector.send_message(phone, slash_reply)
+                    logger.info("Slash command '%s' handled", msg.body.split()[0])
                     continue
 
                 system = context.build_system_prompt(msg.body, sender=msg.sender)
