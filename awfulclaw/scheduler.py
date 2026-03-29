@@ -33,7 +33,14 @@ class Schedule:
         fire_at: datetime | None = None,
         condition: str | None = None,
     ) -> "Schedule":
-        return cls(id=uuid.uuid4().hex, name=name, cron=cron, prompt=prompt, fire_at=fire_at, condition=condition)
+        return cls(
+            id=uuid.uuid4().hex,
+            name=name,
+            cron=cron,
+            prompt=prompt,
+            fire_at=fire_at,
+            condition=condition,
+        )
 
 
 def _to_dict(s: Schedule) -> dict[str, object]:

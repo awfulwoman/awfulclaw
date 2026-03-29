@@ -34,7 +34,8 @@ To create a recurring schedule use:
 To create a one-off reminder at a specific datetime use:
   `<skill:schedule action="create" name="..." at="2026-04-01T15:00:00Z">prompt</skill:schedule>`
 To create a conditional schedule (only wakes the agent when a condition is met) use:
-  `<skill:schedule action="create" name="..." cron="0 * * * *" condition="python scripts/check.py">prompt</skill:schedule>`
+  `<skill:schedule action="create" name="..." cron="0 * * * *"
+    condition="python scripts/check.py">prompt</skill:schedule>`
   The condition is a shell command that must print JSON with a `wakeAgent` boolean to stdout.
   If `wakeAgent` is `false`, the Claude invocation is skipped until the next cron interval.
   If the condition command fails or produces invalid JSON, the agent proceeds (fail-open).
