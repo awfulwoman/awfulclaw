@@ -51,7 +51,11 @@ def get_auth_token() -> str:
 def get_phone() -> str:
     value = os.getenv("AWFULCLAW_PHONE")
     if not value:
-        raise RuntimeError("Missing required env var: AWFULCLAW_PHONE")
+        raise RuntimeError(
+            "AWFULCLAW_PHONE is not set. Add it to your .env file:\n\n"
+            "  AWFULCLAW_PHONE=+15555550100\n\n"
+            "Use the phone number or Apple ID of the iMessage contact you want the agent to talk to."
+        )
     return value
 
 

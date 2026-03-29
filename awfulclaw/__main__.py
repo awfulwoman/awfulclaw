@@ -10,7 +10,11 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 def main() -> None:
     print("awfulclaw v0.1.0 — iMessage AI agent")
     print("Use Ctrl-C to exit.")
-    loop.run()
+    try:
+        loop.run()
+    except RuntimeError as exc:
+        logging.error("%s", exc)
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
