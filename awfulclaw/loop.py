@@ -8,7 +8,7 @@ import re
 import time
 from datetime import datetime, timezone
 
-from awfulclaw import claude, config, context, memory
+from awfulclaw import claude, config, context, memory, scheduler
 from awfulclaw.connector import Connector
 
 logger = logging.getLogger(__name__)
@@ -77,6 +77,7 @@ def run(connector: Connector) -> None:
     last_poll = datetime.now(timezone.utc)
     last_idle = time.monotonic()
     last_imap_check: datetime | None = None
+    schedules = scheduler.load_schedules()
 
     try:
         while True:
@@ -106,6 +107,26 @@ def run(connector: Connector) -> None:
 
             if time.monotonic() - last_idle >= idle_interval:
                 last_idle = time.monotonic()
+                now = datetime.now(timezone.utc)
+
+                due = scheduler.get_due(schedules, now)
+                for sched in due:
+                    try:
+                        sched_system = context.build_system_prompt(sched.prompt)
+                        sched_reply = claude.chat(
+                            [{"role": "user", "content": sched.prompt}],
+                            system=sched_system,
+                        )
+                        sched_reply = _parse_and_apply_memory_writes(sched_reply)
+                        if sched_reply:
+                            connector.send_message(phone, sched_reply)
+                            logger.info("Schedule '%s' sent: %s", sched.name, sched_reply[:80])
+                        sched.last_run = now
+                    except Exception as exc:
+                        logger.error("Schedule '%s' failed: %s", sched.name, exc)
+                if due:
+                    scheduler.save_schedules(schedules)
+
                 system = context.build_system_prompt("")
                 idle_reply = claude.chat(
                     [{"role": "user", "content": _IDLE_PROMPT}],
