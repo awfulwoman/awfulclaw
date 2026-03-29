@@ -202,7 +202,7 @@ def _fetch_imap_results(last_imap_check: datetime | None) -> tuple[str, datetime
     """Run the IMAP skill, return (formatted result text, new last_check timestamp)."""
     now = datetime.now(timezone.utc)
     try:
-        from awfulclaw.imap import fetch_unread
+        from awfulclaw.modules.imap import fetch_unread
 
         emails = fetch_unread(since=last_imap_check)
         if not emails:

@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from awfulclaw.imap import EmailSummary, fetch_unread
+from awfulclaw.modules.imap import EmailSummary, fetch_unread
 
 
 def _make_raw_email(
