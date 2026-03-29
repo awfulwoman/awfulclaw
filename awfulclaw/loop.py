@@ -27,6 +27,8 @@ _SKILL_IMAP_RE = re.compile(r"<skill:imap\s*/>|<skill:imap\s*></skill:imap>")
 
 _SKILL_WEB_RE = re.compile(r'<skill:web\s+query="([^"]*?)"\s*/?>')
 
+_SKILL_SEARCH_RE = re.compile(r'<skill:search\s+query="([^"]*?)"\s*/?>')
+
 _SKILL_SCHEDULE_RE = re.compile(
     r"<skill:schedule\s+([^>]*?)(?:/>|>(.*?)</skill:schedule>)",
     re.DOTALL,
@@ -197,6 +199,26 @@ def _fetch_imap_results(last_imap_check: datetime | None) -> tuple[str, datetime
     return result, now
 
 
+def _fetch_search_results(query: str) -> str:
+    """Search memory files for query, return formatted result text."""
+    results = memory.search_all(query)
+    if not results:
+        return f"[No matches found for: {query}]"
+    _MAX_RESULTS = 20
+    lines = [f"[Memory search results for: {query}]"]
+    current_file: str | None = None
+    count = 0
+    for path, line in results:
+        if count >= _MAX_RESULTS:
+            break
+        if path != current_file:
+            lines.append(f"\n{path}:")
+            current_file = path
+        lines.append(f"  {line}")
+        count += 1
+    return "\n".join(lines)
+
+
 def _fetch_web_results(query: str) -> str:
     """Run the web search skill, return formatted result text."""
     try:
@@ -350,6 +372,16 @@ def run(connector: Connector) -> None:
                     web_text = _fetch_web_results(query)
                     conversation_history.append({"role": "assistant", "content": reply})
                     conversation_history.append({"role": "user", "content": web_text})
+                    reply = claude.chat(conversation_history, system=system)
+                    reply = _parse_and_apply_memory_writes(reply)
+
+                search_match = _SKILL_SEARCH_RE.search(reply)
+                if search_match:
+                    query = search_match.group(1)
+                    reply = _SKILL_SEARCH_RE.sub("", reply).strip()
+                    search_text = _fetch_search_results(query)
+                    conversation_history.append({"role": "assistant", "content": reply})
+                    conversation_history.append({"role": "user", "content": search_text})
                     reply = claude.chat(conversation_history, system=system)
                     reply = _parse_and_apply_memory_writes(reply)
 

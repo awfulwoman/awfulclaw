@@ -23,6 +23,12 @@ The system will inject the top results as a follow-up user message, then you rep
 Use this when the user asks about current events, facts you're unsure of, or anything that benefits
 from an up-to-date web source.
 
+To search past conversations and memory use:
+  `<skill:search query="your search terms"/>`
+The system will search all memory files (people, tasks, facts, conversations, skills) for matching
+content and inject the results as a follow-up user message. Use this when the user asks what you
+discussed before, references a past conversation, or asks about stored facts or history.
+
 To create a recurring schedule use:
   `<skill:schedule action="create" name="..." cron="0 9 * * *">prompt</skill:schedule>`
 To create a one-off reminder at a specific datetime use:

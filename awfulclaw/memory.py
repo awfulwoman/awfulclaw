@@ -61,3 +61,26 @@ def search(subdir: str, query: str) -> list[tuple[str, str]]:
                 results.append((f.name, line))
                 break  # one match per file
     return results
+
+
+def search_all(
+    query: str, subdirs: list[str] | None = None
+) -> list[tuple[str, str]]:
+    """Search across all subdirs. Returns (relative_path, matching_line) tuples."""
+    _ensure_root()
+    if subdirs is None:
+        subdirs = list(_SUBDIRS)
+    results: list[tuple[str, str]] = []
+    query_lower = query.lower()
+    for subdir in subdirs:
+        d = _ROOT / subdir
+        if not d.exists():
+            continue
+        for f in sorted(d.iterdir()):
+            if not f.is_file():
+                continue
+            for line in f.read_text(encoding="utf-8").splitlines():
+                if query_lower in line.lower():
+                    results.append((f"{subdir}/{f.name}", line))
+                    break  # one match per file
+    return results
