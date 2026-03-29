@@ -1,0 +1,47 @@
+# Ralph Progress Log
+Milestone: schedule-condition
+Started: Sun 29 Mar 2026 23:41:25 CEST
+---
+
+## [2026-03-29] - #62 Add optional condition field to Schedule model
+- Added `condition: str | None = None` to `Schedule` dataclass and `Schedule.create()`
+- `_to_dict()` omits key when None; `_from_dict()` defaults to None if absent
+- Files: `awfulclaw/scheduler.py`, `tests/test_scheduler.py`
+- **Learnings for future iterations:**
+  - Omit optional fields from JSON rather than storing nulls — cleaner and backward-compatible
+---
+
+## [2026-03-29] - #63 Evaluate schedule condition before invoking Claude
+- Added `_evaluate_condition()` helper in `loop.py` using `subprocess.run` + JSON parse
+- Fail-open on timeout, bad exit code, or invalid JSON; updates `last_run` even when suppressed
+- Files: `awfulclaw/loop.py`, `tests/test_loop_condition.py`
+- **Learnings for future iterations:**
+  - Loop imports: use `import json as _json` to avoid shadowing built-in in local scopes
+---
+
+## [2026-03-29] - #64 Support condition attribute in <skill:schedule> tag parsing
+- Extracted `condition` attr in `handle_match` in `_parse_and_apply_schedule_tags`
+- Updated `_DEFAULT_SOUL` and `memory/SOUL.md` with condition documentation
+- Files: `awfulclaw/loop.py`, `awfulclaw/context.py`
+- **Learnings for future iterations:**
+  - `memory/` is gitignored — SOUL.md changes won't appear in commits, update `_DEFAULT_SOUL` in context.py as the source of truth
+---
+
+## [2026-03-29] - #65 Add created_at anchor to Schedule model for drift-free next-run computation
+- Added `created_at: datetime` to `Schedule` dataclass; set in `Schedule.create()` to `datetime.now(timezone.utc)`
+- `_to_dict()`/`_from_dict()` round-trips `created_at`; defaults to now for legacy JSON without it
+- Updated `get_due()` to iterate croniter from `created_at` anchor: finds first interval > last_run, fires only if <= now
+- No catch-up after downtime: only the current interval fires, missed intervals are skipped
+- Updated 3 existing tests to use explicit `created_at` (required since `Schedule.create()` now uses real clock)
+- Added 3 new tests: no-catch-up after downtime, same-interval skip, next-interval fire
+- Files: `awfulclaw/scheduler.py`, `tests/test_scheduler.py`
+- **Learnings for future iterations:**
+  - Tests that use `Schedule.create()` and check `get_due()` against a fixed `now` must set `created_at` explicitly, otherwise `created_at` is in the future relative to the test's `now` and no cron has elapsed
+  - Safety bound (10000 iterations) on croniter loop prevents infinite loop for pathological cron expressions
+---
+
+## [2026-03-29] - #66 Update get_due() to skip catch-up firing after downtime
+- Implemented as part of #65 — the full algorithm was included there since both issues target the same function
+- All AC verified by existing tests (first fire, same-interval skip, post-downtime single fire, normal next-interval)
+- No additional code changes needed
+---
