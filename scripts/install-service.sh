@@ -17,6 +17,7 @@ PLIST_DEST="$HOME/Library/LaunchAgents/ai.awfulclaw.agent.plist"
 sed \
     -e "s|__PROJECT_DIR__|$PROJECT_DIR|g" \
     -e "s|__UV_PATH__|$UV_PATH|g" \
+    -e "s|__PATH__|$PATH|g" \
     "$PROJECT_DIR/launchd/ai.awfulclaw.agent.plist" > "$PLIST_DEST"
 
 launchctl load "$PLIST_DEST"
