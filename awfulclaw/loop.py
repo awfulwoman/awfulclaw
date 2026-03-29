@@ -8,7 +8,9 @@ import re
 import time
 from datetime import datetime, timezone
 
-from awfulclaw import claude, config, context, memory
+from croniter import croniter  # type: ignore[import-untyped]
+
+from awfulclaw import claude, config, context, memory, scheduler
 from awfulclaw.connector import Connector
 
 logger = logging.getLogger(__name__)
@@ -19,6 +21,12 @@ _MEMORY_WRITE_RE = re.compile(
 )
 
 _SKILL_IMAP_RE = re.compile(r"<skill:imap\s*/>|<skill:imap\s*></skill:imap>")
+
+_SKILL_SCHEDULE_RE = re.compile(
+    r"<skill:schedule\s+([^>]*?)(?:/>|>(.*?)</skill:schedule>)",
+    re.DOTALL,
+)
+_ATTR_RE = re.compile(r'(\w+)="([^"]*)"')
 
 _imap_configured = bool(
     os.getenv("IMAP_HOST") and os.getenv("IMAP_USER") and os.getenv("IMAP_PASSWORD")
@@ -39,6 +47,51 @@ def _parse_and_apply_memory_writes(text: str) -> str:
         memory.write(path.strip(), content.strip())
         logger.info("Memory write: %s", path.strip())
     return _MEMORY_WRITE_RE.sub("", text).strip()
+
+
+def _parse_and_apply_schedule_tags(
+    text: str, schedules: list[scheduler.Schedule]
+) -> tuple[str, list[str]]:
+    """Extract <skill:schedule> tags, apply create/delete, return (cleaned text, error notes)."""
+    errors: list[str] = []
+
+    def handle_match(m: re.Match[str]) -> str:
+        attrs_str = m.group(1) or ""
+        body = (m.group(2) or "").strip()
+        attrs = dict(_ATTR_RE.findall(attrs_str))
+        action = attrs.get("action", "")
+        name = attrs.get("name", "").strip()
+        cron = attrs.get("cron", "").strip()
+
+        if action == "create":
+            if not croniter.is_valid(cron):
+                errors.append(f"Invalid cron expression '{cron}' for schedule '{name}'.")
+                return ""
+            # Overwrite existing schedule with same name (case-insensitive)
+            idx = next(
+                (i for i, s in enumerate(schedules) if s.name.lower() == name.lower()),
+                None,
+            )
+            new_sched = scheduler.Schedule.create(name=name, cron=cron, prompt=body)
+            if idx is not None:
+                schedules[idx] = new_sched
+                logger.info("Schedule updated: '%s' (%s)", name, cron)
+            else:
+                schedules.append(new_sched)
+                logger.info("Schedule created: '%s' (%s)", name, cron)
+            scheduler.save_schedules(schedules)
+        elif action == "delete":
+            before = len(schedules)
+            schedules[:] = [s for s in schedules if s.name.lower() != name.lower()]
+            if len(schedules) < before:
+                scheduler.save_schedules(schedules)
+                logger.info("Schedule deleted: '%s'", name)
+            else:
+                logger.warning("Schedule delete: '%s' not found", name)
+        return ""
+
+    cleaned = _SKILL_SCHEDULE_RE.sub(handle_match, text).strip()
+    return cleaned, errors
 
 
 def _fetch_imap_results(last_imap_check: datetime | None) -> tuple[str, datetime]:
@@ -77,6 +130,7 @@ def run(connector: Connector) -> None:
     last_poll = datetime.now(timezone.utc)
     last_idle = time.monotonic()
     last_imap_check: datetime | None = None
+    schedules = scheduler.load_schedules()
 
     try:
         while True:
@@ -90,6 +144,15 @@ def run(connector: Connector) -> None:
                 conversation_history.append({"role": "user", "content": msg.body})
                 reply = claude.chat(conversation_history, system=system)
                 reply = _parse_and_apply_memory_writes(reply)
+
+                reply, sched_errors = _parse_and_apply_schedule_tags(reply, schedules)
+                if sched_errors:
+                    error_note = "[Schedule error: " + "; ".join(sched_errors) + "]"
+                    conversation_history.append({"role": "assistant", "content": reply})
+                    conversation_history.append({"role": "user", "content": error_note})
+                    reply = claude.chat(conversation_history, system=system)
+                    reply = _parse_and_apply_memory_writes(reply)
+                    reply, _ = _parse_and_apply_schedule_tags(reply, schedules)
 
                 if _SKILL_IMAP_RE.search(reply):
                     reply = _SKILL_IMAP_RE.sub("", reply).strip()
@@ -106,6 +169,26 @@ def run(connector: Connector) -> None:
 
             if time.monotonic() - last_idle >= idle_interval:
                 last_idle = time.monotonic()
+                now = datetime.now(timezone.utc)
+
+                due = scheduler.get_due(schedules, now)
+                for sched in due:
+                    try:
+                        sched_system = context.build_system_prompt(sched.prompt)
+                        sched_reply = claude.chat(
+                            [{"role": "user", "content": sched.prompt}],
+                            system=sched_system,
+                        )
+                        sched_reply = _parse_and_apply_memory_writes(sched_reply)
+                        if sched_reply:
+                            connector.send_message(phone, sched_reply)
+                            logger.info("Schedule '%s' sent: %s", sched.name, sched_reply[:80])
+                        sched.last_run = now
+                    except Exception as exc:
+                        logger.error("Schedule '%s' failed: %s", sched.name, exc)
+                if due:
+                    scheduler.save_schedules(schedules)
+
                 system = context.build_system_prompt("")
                 idle_reply = claude.chat(
                     [{"role": "user", "content": _IDLE_PROMPT}],
