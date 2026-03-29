@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
 import signal
+import subprocess
 import time
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -150,6 +152,7 @@ def _parse_and_apply_schedule_tags(
         cron = attrs.get("cron", "").strip()
 
         if action == "create":
+            condition = attrs.get("condition", "").strip() or None
             at_str = attrs.get("at", "").strip()
             if at_str:
                 try:
@@ -159,12 +162,16 @@ def _parse_and_apply_schedule_tags(
                 except ValueError:
                     errors.append(f"Invalid datetime '{at_str}' for schedule '{name}'.")
                     return ""
-                new_sched = scheduler.Schedule.create(name=name, prompt=body, fire_at=fire_at)
+                new_sched = scheduler.Schedule.create(
+                    name=name, prompt=body, fire_at=fire_at, condition=condition
+                )
             else:
                 if not croniter.is_valid(cron):
                     errors.append(f"Invalid cron expression '{cron}' for schedule '{name}'.")
                     return ""
-                new_sched = scheduler.Schedule.create(name=name, cron=cron, prompt=body)
+                new_sched = scheduler.Schedule.create(
+                    name=name, cron=cron, prompt=body, condition=condition
+                )
             # Overwrite existing schedule with same name (case-insensitive)
             idx = next(
                 (i for i, s in enumerate(schedules) if s.name.lower() == name.lower()),
@@ -360,6 +367,36 @@ def _append_turn(session_file: str, role: str, content: str) -> None:
         logger.error("Failed to append conversation turn: %s", exc)
 
 
+def _should_wake(condition: str) -> bool:
+    """Run condition command; return True if Claude should be invoked.
+
+    Returns True (fail open) on command error, timeout, or invalid JSON.
+    Returns False only when the command succeeds and wakeAgent is False.
+    """
+    try:
+        result = subprocess.run(
+            condition,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            logger.warning(
+                "Schedule condition exited %d — proceeding with Claude call", result.returncode
+            )
+            return True
+        data = json.loads(result.stdout)
+        wake = data.get("wakeAgent", True)
+        return bool(wake)
+    except subprocess.TimeoutExpired:
+        logger.warning("Schedule condition timed out — proceeding with Claude call")
+        return True
+    except (json.JSONDecodeError, Exception) as exc:
+        logger.warning("Schedule condition error: %s — proceeding with Claude call", exc)
+        return True
+
+
 def run(connector: Connector) -> None:
     """Run the agent loop indefinitely until Ctrl-C."""
     signal.signal(signal.SIGTERM, _sigterm_handler)
@@ -483,6 +520,13 @@ def run(connector: Connector) -> None:
                 one_off_ids: set[str] = set()
                 for sched in due:
                     try:
+                        if sched.condition is not None and not _should_wake(sched.condition):
+                            logger.debug(
+                                "Schedule '%s' suppressed by condition", sched.name
+                            )
+                            if sched.fire_at is None:
+                                sched.last_run = now
+                            continue
                         sched_system = context.build_system_prompt(sched.prompt)
                         sched_reply = claude.chat(
                             [{"role": "user", "content": sched.prompt}],

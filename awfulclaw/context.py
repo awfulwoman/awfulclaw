@@ -33,6 +33,11 @@ To create a recurring schedule use:
   `<skill:schedule action="create" name="..." cron="0 9 * * *">prompt</skill:schedule>`
 To create a one-off reminder at a specific datetime use:
   `<skill:schedule action="create" name="..." at="2026-04-01T15:00:00Z">prompt</skill:schedule>`
+Optionally add a `condition` attribute with a shell command. The command must print JSON with a
+`wakeAgent` boolean key. If `wakeAgent` is false, the Claude invocation is skipped for that tick
+(but the schedule still advances). Use this to avoid unnecessary LLM calls:
+  `<skill:schedule action="create" name="..." cron="0 * * * *"
+    condition="python check.py">prompt</skill:schedule>`
 To delete a schedule use:
   `<skill:schedule action="delete" name="..."/>`
 
