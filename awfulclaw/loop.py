@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import json as _json
 import logging
 import os
 import re
+import signal
+import subprocess
 import time
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -296,8 +299,90 @@ def _append_turn(session_file: str, role: str, content: str) -> None:
         logger.error("Failed to append conversation turn: %s", exc)
 
 
+_RESTART_REASON_PATH = _MEMORY_ROOT / ".restart_reason"
+
+
+def _sigterm_handler(signum: int, frame: object) -> None:
+    try:
+        _RESTART_REASON_PATH.write_text("code_change", encoding="utf-8")
+    except Exception:
+        pass
+    exc = SystemExit(0)
+    exc._code_change = True  # type: ignore[attr-defined]
+    raise exc
+
+
+def _pop_restart_reason() -> str | None:
+    """Read and delete the restart reason flag file, if present."""
+    try:
+        if _RESTART_REASON_PATH.exists():
+            reason = _RESTART_REASON_PATH.read_text(encoding="utf-8").strip()
+            _RESTART_REASON_PATH.unlink()
+            return reason
+    except Exception:
+        pass
+    return None
+
+
+def _generate_startup_message(restart_reason: str | None) -> str:
+    """Ask Claude to produce a natural-sounding startup greeting."""
+    if restart_reason == "code_change":
+        prompt = (
+            "You've just restarted because some code changes were made to your codebase. "
+            "Send a short, natural message to the user letting them know you're back online "
+            "and that you restarted to pick up the changes. Keep it to one or two sentences. "
+            "Don't use the word 'awfulclaw'."
+        )
+    else:
+        prompt = (
+            "You're coming online for the first time or after a manual restart. "
+            "Send a short, natural greeting to let the user know you're here and ready. "
+            "Keep it to one sentence. Don't use the word 'awfulclaw'."
+        )
+    try:
+        system = context.build_system_prompt("")
+        return claude.chat([{"role": "user", "content": prompt}], system=system)
+    except Exception as exc:
+        logger.warning("Failed to generate startup message: %s", exc)
+        return "I'm online and ready." if not restart_reason else "I've restarted and I'm back online."
+
+
+def _evaluate_condition(condition: str, sched_name: str) -> bool:
+    """Run a condition command and return True if the agent should wake.
+
+    Returns True (proceed) on any error so the schedule fires fail-open.
+    Returns False only when the command exits 0 and stdout JSON contains wakeAgent=false.
+    """
+    try:
+        result = subprocess.run(
+            condition,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            logger.warning(
+                "Schedule '%s' condition exited %d — proceeding", sched_name, result.returncode
+            )
+            return True
+        data = _json.loads(result.stdout)
+        wake = data.get("wakeAgent", True)
+        if not wake:
+            logger.debug("Schedule '%s' condition suppressed (wakeAgent=false)", sched_name)
+            return False
+        return True
+    except subprocess.TimeoutExpired:
+        logger.warning("Schedule '%s' condition timed out — proceeding", sched_name)
+        return True
+    except (_json.JSONDecodeError, Exception) as exc:
+        logger.warning("Schedule '%s' condition error: %s — proceeding", sched_name, exc)
+        return True
+
+
 def run(connector: Connector) -> None:
     """Run the agent loop indefinitely until Ctrl-C."""
+    signal.signal(signal.SIGTERM, _sigterm_handler)
     logger.info("awfulclaw starting up")
 
     poll_interval = config.get_poll_interval()
@@ -324,7 +409,9 @@ def run(connector: Connector) -> None:
         logger.error("Failed to create session file: %s", exc)
 
     try:
-        connector.send_message(phone, "awfulclaw is online.")
+        restart_reason = _pop_restart_reason()
+        startup_msg = _generate_startup_message(restart_reason)
+        connector.send_message(phone, startup_msg)
     except Exception as exc:
         logger.warning("Failed to send startup notification: %s", exc)
 
@@ -416,6 +503,12 @@ def run(connector: Connector) -> None:
                 one_off_ids: set[str] = set()
                 for sched in due:
                     try:
+                        if sched.condition:
+                            wake = _evaluate_condition(sched.condition, sched.name)
+                            if not wake:
+                                if sched.fire_at is None:
+                                    sched.last_run = now
+                                continue
                         sched_system = context.build_system_prompt(sched.prompt)
                         sched_reply = claude.chat(
                             [{"role": "user", "content": sched.prompt}],
@@ -480,9 +573,13 @@ def run(connector: Connector) -> None:
 
             time.sleep(poll_interval)
 
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, SystemExit) as exc:
+        if isinstance(exc, SystemExit) and getattr(exc, "_code_change", False):
+            msg = "I've noticed some code changes have been made — I'm just restarting to pick them up. Back in a moment!"
+        else:
+            msg = "Going offline now — catch you later!"
         try:
-            connector.send_message(phone, "awfulclaw is going offline.")
-        except Exception as exc:
-            logger.warning("Failed to send shutdown notification: %s", exc)
+            connector.send_message(phone, msg)
+        except Exception as send_exc:
+            logger.warning("Failed to send shutdown notification: %s", send_exc)
         logger.info("awfulclaw exiting — goodbye")
