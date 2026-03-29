@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 from datetime import datetime, timezone
+from pathlib import Path
 
 import httpx
 
@@ -36,12 +37,30 @@ def _get_chat_id() -> str:
     return value
 
 
+_OFFSET_PATH = Path("memory/.telegram_offset")
+
+
 class TelegramConnector(Connector):
     def __init__(self) -> None:
         self._token = _get_token()
         self._chat_id = _get_chat_id()
-        self._offset: int = 0
+        self._offset: int = self._load_offset()
         self._base = f"https://api.telegram.org/bot{self._token}"
+
+    def _load_offset(self) -> int:
+        try:
+            if _OFFSET_PATH.exists():
+                return int(_OFFSET_PATH.read_text().strip())
+        except Exception:
+            pass
+        return 0
+
+    def _save_offset(self) -> None:
+        try:
+            _OFFSET_PATH.parent.mkdir(parents=True, exist_ok=True)
+            _OFFSET_PATH.write_text(str(self._offset))
+        except Exception:
+            pass
 
     @property
     def primary_recipient(self) -> str:
@@ -101,6 +120,8 @@ class TelegramConnector(Connector):
                     Message(sender=sender, body=text, timestamp=ts, is_from_me=False)
                 )
 
+        if updates:
+            self._save_offset()
         return messages
 
     def _download_photo(self, photo: list[dict[str, object]]) -> tuple[bytes, str]:
