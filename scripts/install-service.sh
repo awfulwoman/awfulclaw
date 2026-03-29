@@ -11,6 +11,7 @@ if [[ -z "$UV_PATH" ]]; then
 fi
 
 mkdir -p "$PROJECT_DIR/logs"
+touch /tmp/awfulclaw_reload_debounce
 
 _install_plist() {
     local src="$1"

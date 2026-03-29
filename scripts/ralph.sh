@@ -7,7 +7,7 @@
 #
 # Usage: ./scripts/ralph.sh [--milestone <name>] [--iterations <n>]
 
-RALPH_VERSION="2026.03.29.2353"
+RALPH_VERSION="2026.03.30.0011"
 
 set -e
 
@@ -351,6 +351,15 @@ ISSUE_EOF
   $VERBOSE && echo "  Spawning: $TOOL_COMMAND $TOOL_ARGS < $PROMPT_FILE"
   OUTPUT=$($TOOL_COMMAND $TOOL_ARGS < "$PROMPT_FILE" 2>&1 | tee /dev/stderr) || true
   rm -f "$PROMPT_FILE"
+
+  # Announce which issue the agent picked up
+  WORKING_ON=$(echo "$OUTPUT" | grep -m1 "^RALPH_WORKING_ON:" | sed 's/^RALPH_WORKING_ON:[[:space:]]*//' || true)
+  if [[ -n "$WORKING_ON" ]]; then
+    echo ""
+    echo "---------------------------------------------------------------"
+    echo "  Agent worked on: $WORKING_ON"
+    echo "---------------------------------------------------------------"
+  fi
 
   # Status summary
   REMAINING=$(gh issue list --milestone "$MILESTONE" --label "ralph:todo" \

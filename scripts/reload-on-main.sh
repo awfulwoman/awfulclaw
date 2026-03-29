@@ -14,13 +14,24 @@ fi
 DEBOUNCE_FILE="/tmp/awfulclaw_reload_debounce"
 DEBOUNCE_SECONDS=10
 
+now=$(date +%s)
+
+# Check debounce window
 if [[ -f "$DEBOUNCE_FILE" ]]; then
     last=$(stat -f %m "$DEBOUNCE_FILE" 2>/dev/null || echo 0)
-    now=$(date +%s)
     if (( now - last < DEBOUNCE_SECONDS )); then
         echo "Debouncing (last restart $((now - last))s ago) — skipping." >&2
         exit 0
     fi
+fi
+
+# Only restart if a .py file changed (ignore __pycache__ and other generated files)
+CHANGED_PY=$(find "$PROJECT_DIR/awfulclaw" -name "*.py" -not -path "*/__pycache__/*" \
+    -newer "$DEBOUNCE_FILE" 2>/dev/null | head -1)
+
+if [[ -z "$CHANGED_PY" ]] && [[ -f "$DEBOUNCE_FILE" ]]; then
+    echo "No .py files changed (likely __pycache__ update) — skipping." >&2
+    exit 0
 fi
 
 touch "$DEBOUNCE_FILE"

@@ -9,13 +9,14 @@ You have been given a list of available GitHub issues under "Available Issues" a
 1. Review all available todo issues and the list of completed issues
 2. Read `scripts/progress.txt` if it exists (check Codebase Patterns section first)
 3. **Choose the best issue to work on next** — consider dependencies between issues (e.g., if issue B builds on issue A, do A first), logical ordering, and what's already been completed
-4. Claim the issue by labeling it `ralph:in-progress` (see below)
-5. Ensure you're on the correct branch (specified in the issue context)
-6. Implement the story described in the issue
-7. Run quality checks (e.g., typecheck, lint, test — use whatever your project requires)
-8. If checks pass, commit ALL changes with message: `feat: #<issue-number> - <issue title>\n\nCloses #<issue-number>`
-9. Mark the issue as done and post a progress comment (see below)
-10. Append your progress to `scripts/progress.txt`
+4. Announce your choice by printing this exact line (replace with actual values): `RALPH_WORKING_ON: #<number> <title>`
+5. Claim the issue by labeling it `ralph:in-progress` (see below)
+6. Ensure you're on the correct branch (specified in the issue context)
+7. Implement the story described in the issue
+8. Run quality checks (e.g., typecheck, lint, test — use whatever your project requires)
+9. If checks pass, commit ALL changes with message: `feat: #<issue-number> - <issue title>\n\nCloses #<issue-number>`
+10. Mark the issue as done and post a progress comment (see below)
+11. Append your progress to `scripts/progress.txt`
 
 ## Claiming an Issue
 
