@@ -29,6 +29,30 @@ def test_save_and_load_round_trip() -> None:
     assert loaded[0].cron == s.cron
     assert loaded[0].prompt == s.prompt
     assert loaded[0].last_run is None
+    assert loaded[0].created_at == s.created_at
+
+
+def test_load_existing_schedule_without_created_at_defaults_to_now() -> None:
+    """Schedules serialised before created_at was added load without error."""
+    import json
+    from pathlib import Path
+
+    data = [
+        {
+            "id": "abc123",
+            "name": "Old",
+            "cron": "0 9 * * *",
+            "prompt": "Hi",
+            "last_run": None,
+            "fire_at": None,
+        }
+    ]
+    Path("memory").mkdir(exist_ok=True)
+    Path("memory/schedules.json").write_text(json.dumps(data))
+    loaded = load_schedules()
+    assert len(loaded) == 1
+    assert loaded[0].created_at is not None
+    assert loaded[0].created_at.tzinfo is not None
 
 
 def test_save_round_trip_with_last_run() -> None:
@@ -40,15 +64,27 @@ def test_save_round_trip_with_last_run() -> None:
 
 
 def test_get_due_no_last_run_returns_schedule() -> None:
-    s = Schedule.create(name="Test", cron="0 9 * * *", prompt="Hello")
+    s = Schedule(
+        id="t1",
+        name="Test",
+        cron="0 9 * * *",
+        prompt="Hello",
+        created_at=datetime(2026, 3, 29, 0, 0, tzinfo=timezone.utc),
+    )
     now = datetime(2026, 3, 29, 10, 0, tzinfo=timezone.utc)
     due = get_due([s], now)
     assert s in due
 
 
 def test_get_due_already_ran_not_due() -> None:
-    s = Schedule.create(name="Test", cron="0 9 * * *", prompt="Hello")
-    s.last_run = datetime(2026, 3, 29, 9, 0, tzinfo=timezone.utc)
+    s = Schedule(
+        id="t3",
+        name="Test",
+        cron="0 9 * * *",
+        prompt="Hello",
+        created_at=datetime(2026, 3, 29, 0, 0, tzinfo=timezone.utc),
+        last_run=datetime(2026, 3, 29, 9, 0, tzinfo=timezone.utc),
+    )
     # now is just 30 minutes after last_run — next run is tomorrow at 9am
     now = datetime(2026, 3, 29, 9, 30, tzinfo=timezone.utc)
     due = get_due([s], now)
@@ -56,8 +92,14 @@ def test_get_due_already_ran_not_due() -> None:
 
 
 def test_get_due_past_next_run() -> None:
-    s = Schedule.create(name="Test", cron="0 9 * * *", prompt="Hello")
-    s.last_run = datetime(2026, 3, 28, 9, 0, tzinfo=timezone.utc)
+    s = Schedule(
+        id="t2",
+        name="Test",
+        cron="0 9 * * *",
+        prompt="Hello",
+        created_at=datetime(2026, 3, 28, 0, 0, tzinfo=timezone.utc),
+        last_run=datetime(2026, 3, 28, 9, 0, tzinfo=timezone.utc),
+    )
     # now is the next day at 10am — the 9am run was due
     now = datetime(2026, 3, 29, 10, 0, tzinfo=timezone.utc)
     due = get_due([s], now)
@@ -88,3 +130,57 @@ def test_one_off_round_trip() -> None:
     assert len(loaded) == 1
     assert loaded[0].fire_at == fire_at
     assert loaded[0].cron == ""
+
+
+def test_get_due_no_catch_up_after_downtime() -> None:
+    """3 missed hourly intervals: only 1 firing occurs, not 3."""
+    # created 5 hours ago, runs hourly
+    created = datetime(2026, 3, 29, 5, 0, tzinfo=timezone.utc)
+    s = Schedule(
+        id="x",
+        name="Hourly",
+        cron="0 * * * *",
+        prompt="ping",
+        created_at=created,
+        last_run=datetime(2026, 3, 29, 6, 0, tzinfo=timezone.utc),  # fired at 6am
+    )
+    # restarted at 9:30am — 3 missed intervals (7, 8, 9am)
+    now = datetime(2026, 3, 29, 9, 30, tzinfo=timezone.utc)
+    due = get_due([s], now)
+    assert s in due
+    # simulate loop updating last_run and checking again — should not re-fire
+    s.last_run = now
+    due2 = get_due([s], now)
+    assert due2 == []
+
+
+def test_get_due_does_not_fire_within_same_interval() -> None:
+    """After firing, schedule is not due again until next interval."""
+    created = datetime(2026, 3, 29, 8, 0, tzinfo=timezone.utc)
+    s = Schedule(
+        id="y",
+        name="Daily",
+        cron="0 9 * * *",
+        prompt="hi",
+        created_at=created,
+        last_run=datetime(2026, 3, 29, 9, 1, tzinfo=timezone.utc),
+    )
+    now = datetime(2026, 3, 29, 9, 30, tzinfo=timezone.utc)
+    due = get_due([s], now)
+    assert due == []
+
+
+def test_get_due_fires_on_next_interval() -> None:
+    """After last_run, fires again on the next cron interval."""
+    created = datetime(2026, 3, 28, 8, 0, tzinfo=timezone.utc)
+    s = Schedule(
+        id="z",
+        name="Daily",
+        cron="0 9 * * *",
+        prompt="hi",
+        created_at=created,
+        last_run=datetime(2026, 3, 29, 9, 1, tzinfo=timezone.utc),
+    )
+    now = datetime(2026, 3, 30, 9, 5, tzinfo=timezone.utc)
+    due = get_due([s], now)
+    assert s in due
