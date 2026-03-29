@@ -86,8 +86,26 @@ Use the context already loaded in this prompt to assemble the answer — no tool
         f"## About You\n{user}",
     ]
 
-    # All facts
+    # Location (dedicated section with formatted label)
+    location_content = memory.read("facts/location.md")
+    if location_content:
+        lines = {
+            line.split(":", 1)[0].strip(): line.split(":", 1)[1].strip()
+            for line in location_content.splitlines()
+            if ":" in line
+        }
+        lat_lon = lines.get("Last known location", "")
+        updated = lines.get("Updated", "")
+        if lat_lon:
+            loc_label = f"User's last known location: {lat_lon}"
+            if updated:
+                loc_label += f" (as of {updated})"
+            sections.append(loc_label)
+
+    # All facts (excluding location.md, handled above)
     for filename in memory.list_files("facts"):
+        if filename == "location.md":
+            continue
         content = memory.read(f"facts/{filename}")
         if content:
             sections.append(f"## Fact: {filename}\n{content}")
