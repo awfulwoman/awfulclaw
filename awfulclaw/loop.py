@@ -109,8 +109,11 @@ def _load_heartbeat() -> str:
 def _parse_and_apply_memory_writes(text: str) -> str:
     """Extract <memory:write> blocks, apply them, return cleaned text."""
     for path, content in _MEMORY_WRITE_RE.findall(text):
-        memory.write(path.strip(), content.strip())
-        logger.info("Memory write: %s", path.strip())
+        path = path.strip()
+        if path.startswith("memory/"):
+            path = path[len("memory/"):]
+        memory.write(path, content.strip())
+        logger.info("Memory write: %s", path)
     return _MEMORY_WRITE_RE.sub("", text).strip()
 
 
