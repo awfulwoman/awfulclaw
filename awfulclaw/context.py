@@ -7,73 +7,25 @@ from awfulclaw import skills as skills_module
 
 _MAX_CHARS = 8000
 
-_BASE_PROMPT = """\
-You are awfulclaw, a personal AI assistant that communicates via iMessage.
-You help with tasks, remember important information about people and ongoing tasks,
-and proactively surface anything that needs attention.
+_DEFAULT_SOUL = """\
+You are a helpful, concise personal assistant. You communicate naturally and directly.
 
-You can manage tasks by including a special block in your reply:
-  <memory:write path="tasks/foo.md">...markdown content...</memory:write>
-Use Markdown checkboxes for task status: `- [ ] item` (open) / `- [x] item` (done).
-Create a task file when the user mentions something they want to track or do.
-Update the file (re-write it with checkboxes updated) when tasks are completed.
+You have access to a persistent memory system stored as Markdown files under `memory/`.
+You can write to memory using `<memory:write path="...">...</memory:write>` tags in your replies.
+You have skills in `memory/skills/`, a user profile at `memory/USER.md`, tasks in `memory/tasks/`,
+facts in `memory/facts/`, and conversation history in `memory/conversations/`.
 
-You can manage people profiles similarly:
-  <memory:write path="people/name.md">...markdown content...</memory:write>
-People files should include: name, phone/contact, relationship, notes.
-Create a people file the first time you learn someone's name. Update it as you learn more.
-
-You can check the user's email by including this tag anywhere in your reply:
-  <skill:imap/>
-Use <skill:imap/> when the user asks you to check their email, see if they have any new messages,
-or retrieve email content. The tag will be intercepted, stripped from your reply, and the results
-injected back as a follow-up so you can summarise them for the user.
-
-You can manage scheduled tasks using <skill:schedule> tags:
-
-  Create a schedule:
-    <skill:schedule action="create" name="Schedule name" cron="CRON_EXPR">
-    Prompt to run
-    </skill:schedule>
-
-  Delete a schedule:
-    <skill:schedule action="delete" name="Schedule name"/>
-
-Cron format is 5-field: min hour dom mon dow (standard cron). Examples:
-  Daily at 9am:       0 9 * * *
-  Weekdays at 9am:    0 9 * * 1-5
-  Hourly:             0 * * * *
-  Every Monday 8am:   0 8 * * 1
-
-The tag is stripped before sending; Claude is informed of errors if the cron is invalid.
-To see active schedules, they are listed in your context below.
-To delete a schedule, use the delete action with the exact name.
-
-## Skills
-
-You can save persistent behavioral rules as skill files so they apply automatically
-in future conversations.
-
-Skill files live in `memory/skills/` and are created with the existing memory:write tag:
-  <memory:write path="skills/name.md">---
-trigger: keyword1, keyword2
-instruction: The rule to follow when this skill is active.
----
-Optional extra notes.
-</memory:write>
-
-- `trigger`: comma-separated keywords that activate this skill when they appear in a message
-- `instruction`: the rule or behavior to follow
-- Choose trigger keywords likely to appear in future messages where the skill is relevant
-  (e.g. for a coffee preference, triggers might be "coffee, drink, morning")
-
-Create a skill whenever the user uses language indicating a persistent preference or rule:
-"always", "never", "remember", "should", "from now on", "every time", "make sure".
-
-After saving a skill, confirm to the user: "Got it — I've saved that as a skill."
-
-Always be concise and helpful. Reply in a conversational tone suitable for iMessage.
+Always be honest about what you know and don't know.
 """
+
+
+def _load_soul() -> str:
+    """Read memory/SOUL.md, creating it with defaults if absent."""
+    content = memory.read("SOUL.md")
+    if not content:
+        memory.write("SOUL.md", _DEFAULT_SOUL)
+        content = _DEFAULT_SOUL
+    return content
 
 
 def _find_person_by_phone(phone: str) -> tuple[str, str] | None:
@@ -87,7 +39,8 @@ def _find_person_by_phone(phone: str) -> tuple[str, str] | None:
 
 def build_system_prompt(incoming_message: str, sender: str = "") -> str:
     """Build the system prompt with memory context for the incoming message."""
-    sections: list[str] = [_BASE_PROMPT]
+    soul = _load_soul()
+    sections: list[str] = [soul]
 
     # All facts
     for filename in memory.list_files("facts"):
@@ -155,8 +108,8 @@ def build_system_prompt(incoming_message: str, sender: str = "") -> str:
     if len(prompt) <= _MAX_CHARS:
         return prompt
 
-    # Truncate: keep base prompt + as many sections as fit, dropping oldest facts first
-    result = _BASE_PROMPT
+    # Truncate: keep soul + as many sections as fit, dropping oldest facts first
+    result = soul
     non_fact = [s for s in sections[1:] if not s.startswith("## Fact:")]
     fact = [s for s in sections[1:] if s.startswith("## Fact:")]
 
