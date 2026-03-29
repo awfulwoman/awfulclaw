@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from awfulclaw import memory, scheduler
 from awfulclaw import skills as skills_module
 
@@ -61,9 +63,28 @@ def _find_person_by_phone(phone: str) -> tuple[str, str] | None:
 
 def build_system_prompt(incoming_message: str, sender: str = "") -> str:
     """Build the system prompt with memory context for the incoming message."""
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     soul = _load_soul()
     user = _load_user()
-    sections: list[str] = [soul, f"## About You\n{user}"]
+    memory_summary_instruction = """\
+## Memory Summary Instruction
+When the user asks a variant of 'what do you know about me?', 'show me my tasks', \
+'what\'s on my plate', 'what do you remember?', or 'summarise my memory', respond with a \
+structured summary covering:
+1. **Profile** — key fields from the About You / USER.md section
+2. **Open Tasks** — all unchecked items (- [ ]) from memory/tasks/ files
+3. **Active Skills** — names of all files in memory/skills/
+4. **Upcoming Schedules** — all active schedules with their cron and next prompt
+5. **Key Facts** — titles/summaries of all files in memory/facts/
+Use the context already loaded in this prompt to assemble the answer — no tool calls needed.\
+"""
+
+    sections: list[str] = [
+        f"Current date and time: {now}",
+        soul,
+        memory_summary_instruction,
+        f"## About You\n{user}",
+    ]
 
     # All facts
     for filename in memory.list_files("facts"):

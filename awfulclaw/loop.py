@@ -142,6 +142,36 @@ def _session_path() -> str:
 
 
 _MEMORY_ROOT = Path("memory")
+_TURN_RE = re.compile(r"^## \S+ — (User|Assistant)\s*$", re.MULTILINE)
+
+
+def _load_recent_history(max_turns: int = 20) -> list[dict[str, str]]:
+    """Load the last *max_turns* turns from the most recent conversation file."""
+    conv_dir = _MEMORY_ROOT / "conversations"
+    try:
+        files = sorted(conv_dir.glob("*.md"), key=lambda p: p.stat().st_mtime)
+        if not files:
+            return []
+        recent = files[-1]
+        text = recent.read_text(encoding="utf-8")
+    except Exception as exc:
+        logger.warning("Could not read recent conversation file: %s", exc)
+        return []
+
+    try:
+        parts = _TURN_RE.split(text)
+        # parts: [pre-header-text, role1, content1, role2, content2, ...]
+        turns: list[dict[str, str]] = []
+        i = 1
+        while i + 1 < len(parts):
+            role = parts[i].strip()
+            content = parts[i + 1].strip()
+            turns.append({"role": role.lower(), "content": content})
+            i += 2
+        return turns[-max_turns:]
+    except Exception as exc:
+        logger.warning("Failed to parse recent conversation history: %s", exc)
+        return []
 
 
 def _append_turn(session_file: str, role: str, content: str) -> None:
@@ -164,7 +194,9 @@ def run(connector: Connector) -> None:
     idle_interval = config.get_idle_interval()
     phone = connector.primary_recipient
 
-    conversation_history: list[dict[str, str]] = []
+    conversation_history: list[dict[str, str]] = _load_recent_history()
+    if conversation_history:
+        logger.info("Restored %d turns from previous session", len(conversation_history))
     last_poll = datetime.now(timezone.utc)
     last_idle = time.monotonic()
     last_imap_check: datetime | None = None
