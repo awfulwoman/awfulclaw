@@ -1,0 +1,42 @@
+## Codebase Patterns
+- Use `.venv/bin/pytest` / `.venv/bin/ruff` / `.venv/bin/pyright` directly (uv run fails to find tools)
+- Atomic file writes: write to `.json.tmp` then `os.replace()` to final path
+- Tag interception pattern: regex sub returning "" + side effects (see memory:write, skill:imap, skill:schedule)
+- croniter: pass `last_run` or epoch datetime as start, call `.get_next(datetime)` to find next fire time
+
+# Ralph Progress Log
+Milestone: channels-and-imap
+Started: Sun 29 Mar 2026 21:18:30 CEST
+---
+
+## [2026-03-29] - #20 Schedule data model and persistence
+- Defined `Schedule` dataclass (id, name, cron, prompt, last_run) in `awfulclaw/scheduler.py`
+- `load_schedules()` / `save_schedules()` backed by `memory/schedules.json` with atomic write
+- `get_due()` uses croniter to find schedules past their next run time
+- 6 unit tests in `tests/test_scheduler.py`; added `croniter` to pyproject.toml
+- Files: `awfulclaw/scheduler.py`, `tests/test_scheduler.py`, `pyproject.toml`, `uv.lock`
+- **Learnings:**
+  - `uv run pytest` fails — use `.venv/bin/pytest` directly
+  - pyright pre-existing errors (pytest/httpx imports) are noise; check only new files
+---
+
+## [2026-03-29] - #21 Execute due schedules in agent loop
+- `loop.run()` loads schedules at startup; idle tick calls `scheduler.get_due()` for due schedules
+- Each due schedule runs `claude.chat()` fire-and-forget, sends reply, updates `last_run`, saves
+- Per-schedule errors caught and logged; loop continues
+- Files: `awfulclaw/loop.py`
+- **Learnings:**
+  - Schedule executions must NOT add to `conversation_history` (fire-and-forget)
+  - Always save after processing due schedules even if some failed
+---
+
+## [2026-03-29] - #22 Schedule management via conversation
+- `_parse_and_apply_schedule_tags()` in loop.py intercepts `<skill:schedule>` tags
+- create: validates cron, overwrites on name collision, saves; delete: case-insensitive, saves
+- Invalid cron injects error note back as user message for Claude to self-correct
+- `context.py` base prompt documents tag syntax + cron examples; active schedules listed in prompt
+- Files: `awfulclaw/loop.py`, `awfulclaw/context.py`
+- **Learnings:**
+  - Strip tags and inject error notes consistently (never let raw tags reach the user)
+  - Line length 100 limit applies to string literals inside the prompt too
+---
