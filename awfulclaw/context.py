@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from awfulclaw import memory, scheduler
 from awfulclaw import skills as skills_module
 
@@ -61,9 +63,10 @@ def _find_person_by_phone(phone: str) -> tuple[str, str] | None:
 
 def build_system_prompt(incoming_message: str, sender: str = "") -> str:
     """Build the system prompt with memory context for the incoming message."""
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     soul = _load_soul()
     user = _load_user()
-    sections: list[str] = [soul, f"## About You\n{user}"]
+    sections: list[str] = [f"Current date and time: {now}", soul, f"## About You\n{user}"]
 
     # All facts
     for filename in memory.list_files("facts"):
