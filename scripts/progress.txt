@@ -1,0 +1,19 @@
+# Ralph Progress Log
+Milestone: skills
+Started: Sun 29 Mar 2026 21:55:51 CEST
+---
+
+## Codebase Patterns
+- Test fixtures use `monkeypatch.chdir(tmp_path)` to redirect file I/O; module-level `Path` constants also need patching via `monkeypatch.setattr`
+- Memory subdirs are registered in `memory._SUBDIRS` — add new dirs there, not manually
+
+## 2026-03-29 - #24 Add skills module with SKILL.md load and match
+- Created `awfulclaw/skills.py` with `Skill` dataclass, `load_skills()`, `match_skills()`
+- Added `skills` to `memory._SUBDIRS` so directory is auto-created
+- Manual YAML frontmatter parsing with regex (no PyYAML per spec)
+- Whole-word case-insensitive trigger matching via `\b` word boundaries
+- Files changed: `awfulclaw/skills.py`, `awfulclaw/memory.py`, `tests/test_skills.py`
+- **Learnings for future iterations:**
+  - Module-level `Path` constants (e.g. `_SKILLS_DIR`) must be patched in tests with `monkeypatch.setattr(module, "_SKILLS_DIR", tmp_path / ...)`
+  - Frontmatter parser: find second `---` by searching from index 3 to avoid matching the opening delimiter
+---
