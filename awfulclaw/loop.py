@@ -469,11 +469,32 @@ def run(connector: Connector) -> None:
                                 sched.last_run = now
                             continue
                         sched_system = context.build_system_prompt(sched.prompt)
-                        sched_reply = claude.chat(
-                            [{"role": "user", "content": sched.prompt}],
-                            system=sched_system,
-                        )
+                        sched_history: list[dict[str, str]] = [
+                            {"role": "user", "content": sched.prompt}
+                        ]
+                        sched_reply = claude.chat(sched_history, system=sched_system)
                         sched_reply = _parse_and_apply_memory_writes(sched_reply)
+
+                        web_match = _SKILL_WEB_RE.search(sched_reply)
+                        if web_match:
+                            query = web_match.group(1)
+                            sched_reply = _SKILL_WEB_RE.sub("", sched_reply).strip()
+                            web_text = _fetch_web_results(query)
+                            sched_history.append({"role": "assistant", "content": sched_reply})
+                            sched_history.append({"role": "user", "content": web_text})
+                            sched_reply = claude.chat(sched_history, system=sched_system)
+                            sched_reply = _parse_and_apply_memory_writes(sched_reply)
+
+                        search_match = _SKILL_SEARCH_RE.search(sched_reply)
+                        if search_match:
+                            query = search_match.group(1)
+                            sched_reply = _SKILL_SEARCH_RE.sub("", sched_reply).strip()
+                            search_text = _fetch_search_results(query)
+                            sched_history.append({"role": "assistant", "content": sched_reply})
+                            sched_history.append({"role": "user", "content": search_text})
+                            sched_reply = claude.chat(sched_history, system=sched_system)
+                            sched_reply = _parse_and_apply_memory_writes(sched_reply)
+
                         if sched_reply:
                             connector.send_message(phone, sched_reply)
                             logger.info("Schedule '%s' sent: %s", sched.name, sched_reply[:80])
