@@ -15,7 +15,20 @@ You can write to memory using `<memory:write path="...">...</memory:write>` tags
 You have skills in `memory/skills/`, a user profile at `memory/USER.md`, tasks in `memory/tasks/`,
 facts in `memory/facts/`, and conversation history in `memory/conversations/`.
 
+When you notice that fields in the user profile (## About You section) are `unknown`, ask about them
+naturally over time — one question per conversation, not all at once. As you learn more about the
+user, update their profile using `<memory:write path="USER.md">...</memory:write>`.
+
 Always be honest about what you know and don't know.
+"""
+
+_DEFAULT_USER = """\
+# User Profile
+
+Name: unknown
+Timezone: unknown
+Preferences: unknown
+Background: unknown
 """
 
 
@@ -25,6 +38,15 @@ def _load_soul() -> str:
     if not content:
         memory.write("SOUL.md", _DEFAULT_SOUL)
         content = _DEFAULT_SOUL
+    return content
+
+
+def _load_user() -> str:
+    """Read memory/USER.md, creating it with defaults if absent."""
+    content = memory.read("USER.md")
+    if not content:
+        memory.write("USER.md", _DEFAULT_USER)
+        content = _DEFAULT_USER
     return content
 
 
@@ -40,7 +62,8 @@ def _find_person_by_phone(phone: str) -> tuple[str, str] | None:
 def build_system_prompt(incoming_message: str, sender: str = "") -> str:
     """Build the system prompt with memory context for the incoming message."""
     soul = _load_soul()
-    sections: list[str] = [soul]
+    user = _load_user()
+    sections: list[str] = [soul, f"## About You\n{user}"]
 
     # All facts
     for filename in memory.list_files("facts"):
