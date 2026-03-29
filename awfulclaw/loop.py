@@ -60,7 +60,7 @@ _BRIEFING_PROMPT = (
     "Keep it brief and actionable."
 )
 
-_SLASH_COMMANDS = "/tasks, /skills, /schedules"
+_SLASH_COMMANDS = "/tasks, /skills, /schedules, /restart"
 
 
 def handle_slash_command(body: str) -> str | None:
@@ -101,6 +101,11 @@ def handle_slash_command(body: str) -> str | None:
             preview = s.prompt[:60] + ("…" if len(s.prompt) > 60 else "")
             parts2.append(f"**{s.name}** ({when}): {preview}")
         return "\n".join(parts2)
+
+    if cmd == "/restart":
+        import subprocess as _sp
+        _sp.Popen(["bash", str(Path("scripts/restart-service.sh").resolve())])
+        return "Restarting…"
 
     return f"Unknown command: {cmd}\nAvailable: {_SLASH_COMMANDS}"
 

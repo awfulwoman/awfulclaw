@@ -12,7 +12,7 @@ if [[ "$BRANCH" != "main" ]]; then
 fi
 
 DEBOUNCE_FILE="/tmp/awfulclaw_reload_debounce"
-DEBOUNCE_SECONDS=10
+DEBOUNCE_SECONDS=60
 
 now=$(date +%s)
 
