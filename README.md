@@ -58,6 +58,32 @@ uv run python -m awfulclaw
 
 Stop with **Ctrl-C**.
 
+## Running as a Service (macOS)
+
+Requires a `.env` file in the project root before installing.
+
+```bash
+bash scripts/install-service.sh
+```
+
+This copies the launchd plist to `~/Library/LaunchAgents/`, starts the agent, and configures it to start automatically on login and restart on crash. Logs are written to:
+
+- `logs/awfulclaw.out.log`
+- `logs/awfulclaw.err.log`
+
+Manual stop/start:
+
+```bash
+launchctl unload ~/Library/LaunchAgents/ai.awfulclaw.agent.plist
+launchctl load  ~/Library/LaunchAgents/ai.awfulclaw.agent.plist
+```
+
+Uninstall:
+
+```bash
+bash scripts/uninstall-service.sh
+```
+
 ## Memory
 
 The `memory/` folder stores the agent's persistent context as Markdown files, organized into subdirectories: `people/`, `tasks/`, `facts/`, and `conversations/`. Claude writes new memories by including `<memory:write path="...">...</memory:write>` blocks in its replies — the loop intercepts these, writes the files, and strips the tags before sending.
