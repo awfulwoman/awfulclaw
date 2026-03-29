@@ -1,0 +1,10 @@
+## [2026-03-30] - #66 Update get_due() to skip catch-up firing after downtime
+- Implementation was already present on branch ralph/drift-free-scheduler-2
+- get_due() uses croniter anchored at created_at, advances past last_run (epoch if None), fires only if next_due <= now
+- 13 tests pass covering all acceptance criteria
+- Files: awfulclaw/scheduler.py, tests/test_scheduler.py
+- **Learnings for future iterations:**
+  - Check if implementation already exists on branch before writing new code — previous session may have done the work
+  - The no-catch-up pattern: anchor croniter at created_at, find first candidate > last_run, fire if <= now
+  - Pre-existing lint errors in loop.py/test_skills.py/test_telegram.py are unrelated to scheduler work — don't fix out of scope
+---
