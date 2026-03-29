@@ -12,14 +12,18 @@ fi
 
 mkdir -p "$PROJECT_DIR/logs"
 
-PLIST_DEST="$HOME/Library/LaunchAgents/ai.awfulclaw.agent.plist"
+_install_plist() {
+    local src="$1"
+    local dest="$HOME/Library/LaunchAgents/$(basename "$src")"
+    sed \
+        -e "s|__PROJECT_DIR__|$PROJECT_DIR|g" \
+        -e "s|__UV_PATH__|$UV_PATH|g" \
+        -e "s|__PATH__|$PATH|g" \
+        "$src" > "$dest"
+    launchctl load "$dest"
+}
 
-sed \
-    -e "s|__PROJECT_DIR__|$PROJECT_DIR|g" \
-    -e "s|__UV_PATH__|$UV_PATH|g" \
-    -e "s|__PATH__|$PATH|g" \
-    "$PROJECT_DIR/launchd/ai.awfulclaw.agent.plist" > "$PLIST_DEST"
+_install_plist "$SCRIPT_DIR/ai.awfulclaw.agent.plist"
+_install_plist "$SCRIPT_DIR/ai.awfulclaw.watcher.plist"
 
-launchctl load "$PLIST_DEST"
-
-echo "awfulclaw service installed and started."
+echo "awfulclaw service installed and started (with file watcher)."
