@@ -170,6 +170,42 @@ def test_get_due_does_not_fire_within_same_interval() -> None:
     assert due == []
 
 
+def test_condition_round_trip() -> None:
+    s = Schedule.create(name="Cond", cron="0 * * * *", prompt="Check", condition="python check.py")
+    assert s.condition == "python check.py"
+    save_schedules([s])
+    loaded = load_schedules()
+    assert loaded[0].condition == "python check.py"
+
+
+def test_condition_none_round_trip() -> None:
+    s = Schedule.create(name="NoCond", cron="0 * * * *", prompt="Check")
+    assert s.condition is None
+    save_schedules([s])
+    loaded = load_schedules()
+    assert loaded[0].condition is None
+
+
+def test_condition_absent_in_json_defaults_none() -> None:
+    import json
+    from pathlib import Path
+
+    data = [
+        {
+            "id": "abc",
+            "name": "Old",
+            "cron": "0 9 * * *",
+            "prompt": "Hi",
+            "last_run": None,
+            "fire_at": None,
+        }
+    ]
+    Path("memory").mkdir(exist_ok=True)
+    Path("memory/schedules.json").write_text(json.dumps(data))
+    loaded = load_schedules()
+    assert loaded[0].condition is None
+
+
 def test_get_due_fires_on_next_interval() -> None:
     """After last_run, fires again on the next cron interval."""
     created = datetime(2026, 3, 28, 8, 0, tzinfo=timezone.utc)

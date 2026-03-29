@@ -23,6 +23,7 @@ class Schedule:
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     last_run: datetime | None = field(default=None)
     fire_at: datetime | None = field(default=None)
+    condition: str | None = field(default=None)
 
     @classmethod
     def create(
@@ -31,6 +32,7 @@ class Schedule:
         prompt: str,
         cron: str = "",
         fire_at: datetime | None = None,
+        condition: str | None = None,
     ) -> "Schedule":
         return cls(
             id=uuid.uuid4().hex,
@@ -39,11 +41,12 @@ class Schedule:
             prompt=prompt,
             created_at=datetime.now(timezone.utc),
             fire_at=fire_at,
+            condition=condition,
         )
 
 
 def _to_dict(s: Schedule) -> dict[str, object]:
-    return {
+    d: dict[str, object] = {
         "id": s.id,
         "name": s.name,
         "cron": s.cron,
@@ -52,6 +55,9 @@ def _to_dict(s: Schedule) -> dict[str, object]:
         "last_run": s.last_run.isoformat() if s.last_run else None,
         "fire_at": s.fire_at.isoformat() if s.fire_at else None,
     }
+    if s.condition is not None:
+        d["condition"] = s.condition
+    return d
 
 
 def _from_dict(d: dict[str, object]) -> Schedule:
@@ -74,6 +80,8 @@ def _from_dict(d: dict[str, object]) -> Schedule:
         fire_at = datetime.fromisoformat(fire_at_raw)
         if fire_at.tzinfo is None:
             fire_at = fire_at.replace(tzinfo=timezone.utc)
+    condition_raw = d.get("condition")
+    condition = str(condition_raw) if isinstance(condition_raw, str) else None
     return Schedule(
         id=str(d["id"]),
         name=str(d["name"]),
@@ -82,6 +90,7 @@ def _from_dict(d: dict[str, object]) -> Schedule:
         created_at=created_at,
         last_run=last_run,
         fire_at=fire_at,
+        condition=condition,
     )
 
 
