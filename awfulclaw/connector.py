@@ -16,6 +16,12 @@ class Message:
 
 
 class Connector(ABC):
+    @property
+    @abstractmethod
+    def primary_recipient(self) -> str:
+        """The default recipient for outbound messages (idle ticks, scheduled tasks)."""
+        ...
+
     @abstractmethod
     def poll_new_messages(self, since: datetime) -> list[Message]: ...
 

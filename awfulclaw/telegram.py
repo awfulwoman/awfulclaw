@@ -43,6 +43,10 @@ class TelegramConnector(Connector):
         self._offset: int = 0
         self._base = f"https://api.telegram.org/bot{self._token}"
 
+    @property
+    def primary_recipient(self) -> str:
+        return self._chat_id
+
     def poll_new_messages(self, since: datetime) -> list[Message]:
         params: dict[str, int | str] = {"timeout": 30, "offset": self._offset}
         try:

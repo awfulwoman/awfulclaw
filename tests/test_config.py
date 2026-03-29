@@ -20,11 +20,13 @@ def test_get_phone_missing_raises(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_get_connector_default_imessage(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("AWFULCLAW_CHANNEL", raising=False)
+    monkeypatch.setenv("AWFULCLAW_PHONE", "+15550001234")
     assert isinstance(cfg.get_connector(), IMessageConnector)
 
 
 def test_get_connector_imessage(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AWFULCLAW_CHANNEL", "imessage")
+    monkeypatch.setenv("AWFULCLAW_PHONE", "+15550001234")
     assert isinstance(cfg.get_connector(), IMessageConnector)
 
 

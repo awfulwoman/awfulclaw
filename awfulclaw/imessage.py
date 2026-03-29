@@ -89,6 +89,14 @@ end tell
 
 
 class IMessageConnector(Connector):
+    def __init__(self) -> None:
+        from awfulclaw import config
+        self._phone = config.get_phone()
+
+    @property
+    def primary_recipient(self) -> str:
+        return self._phone
+
     def poll_new_messages(self, since: datetime) -> list[Message]:
         return poll_new_messages(since)
 

@@ -124,7 +124,7 @@ def run(connector: Connector) -> None:
 
     poll_interval = config.get_poll_interval()
     idle_interval = config.get_idle_interval()
-    phone = config.get_phone()
+    phone = connector.primary_recipient
 
     conversation_history: list[dict[str, str]] = []
     last_poll = datetime.now(timezone.utc)
