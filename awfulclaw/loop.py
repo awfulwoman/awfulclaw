@@ -253,9 +253,10 @@ def _fetch_web_results(query: str) -> str:
 
 
 def _session_path() -> str:
-    """Return conversations/<iso-timestamp>.md with colons replaced by dashes."""
-    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S")
-    return f"conversations/{ts}.md"
+    """Return conversations/YYYY/MM/<iso-timestamp>.md with colons replaced by dashes."""
+    now = datetime.now(timezone.utc)
+    ts = now.strftime("%Y-%m-%dT%H-%M-%S")
+    return f"conversations/{now.year}/{now.month:02d}/{ts}.md"
 
 
 _MEMORY_ROOT = Path("memory")
@@ -322,7 +323,7 @@ def _load_recent_history(max_turns: int = 20) -> list[dict[str, str]]:
     """Load the last *max_turns* turns from the most recent conversation file."""
     conv_dir = _MEMORY_ROOT / "conversations"
     try:
-        files = sorted(conv_dir.glob("*.md"), key=lambda p: p.stat().st_mtime)
+        files = sorted(conv_dir.rglob("*.md"), key=lambda p: p.stat().st_mtime)
         if not files:
             return []
         recent = files[-1]

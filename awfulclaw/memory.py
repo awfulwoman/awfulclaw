@@ -76,11 +76,12 @@ def search_all(
         d = _ROOT / subdir
         if not d.exists():
             continue
-        for f in sorted(d.iterdir()):
+        for f in sorted(d.rglob("*")):
             if not f.is_file():
                 continue
+            rel = f.relative_to(_ROOT)
             for line in f.read_text(encoding="utf-8").splitlines():
                 if query_lower in line.lower():
-                    results.append((f"{subdir}/{f.name}", line))
+                    results.append((str(rel), line))
                     break  # one match per file
     return results
