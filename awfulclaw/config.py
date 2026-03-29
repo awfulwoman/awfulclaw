@@ -4,7 +4,25 @@ import os
 
 from dotenv import load_dotenv
 
+from awfulclaw.connector import Connector
+
 load_dotenv()
+
+
+def get_connector() -> Connector:
+    channel = os.getenv("AWFULCLAW_CHANNEL", "imessage").lower()
+    if channel == "imessage":
+        from awfulclaw.imessage import IMessageConnector
+
+        return IMessageConnector()
+    if channel == "telegram":
+        from awfulclaw.telegram import TelegramConnector
+
+        return TelegramConnector()
+    raise RuntimeError(
+        f"Unrecognised AWFULCLAW_CHANNEL value: {channel!r}. "
+        "Valid options: imessage, telegram"
+    )
 
 
 def get_phone() -> str:

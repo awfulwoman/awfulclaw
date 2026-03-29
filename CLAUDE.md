@@ -15,15 +15,21 @@ cp .env.example .env     # then fill in values (if example exists, else create .
 
 Required env vars (in `.env`):
 ```
-ANTHROPIC_API_KEY=...
 AWFULCLAW_PHONE=+15555550100   # iMessage contact to converse with
 ```
 
+No API key needed — auth comes from the locally installed `claude` CLI. Run `claude` at least once to authenticate before starting the agent.
+
 Optional:
 ```
+AWFULCLAW_CHANNEL=imessage          # connector: imessage (default) or telegram
 AWFULCLAW_MODEL=claude-sonnet-4-6   # default
 AWFULCLAW_POLL_INTERVAL=5           # seconds between iMessage polls
 AWFULCLAW_IDLE_INTERVAL=60          # seconds between proactive idle checks
+
+# Telegram connector (required if AWFULCLAW_CHANNEL=telegram)
+TELEGRAM_BOT_TOKEN=<your-bot-token>
+TELEGRAM_CHAT_ID=<your-chat-id>
 ```
 
 ## Running

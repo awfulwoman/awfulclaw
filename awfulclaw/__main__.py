@@ -2,8 +2,7 @@
 
 import logging
 
-from awfulclaw import loop
-from awfulclaw.imessage import IMessageConnector
+from awfulclaw import config, loop
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
@@ -12,7 +11,7 @@ def main() -> None:
     print("awfulclaw v0.1.0 — iMessage AI agent")
     print("Use Ctrl-C to exit.")
     try:
-        connector = IMessageConnector()
+        connector = config.get_connector()
         loop.run(connector)
     except RuntimeError as exc:
         logging.error("%s", exc)
