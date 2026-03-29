@@ -88,3 +88,30 @@ def test_one_off_round_trip() -> None:
     assert len(loaded) == 1
     assert loaded[0].fire_at == fire_at
     assert loaded[0].cron == ""
+
+
+def test_condition_field_defaults_to_none() -> None:
+    s = Schedule.create(name="Test", cron="0 9 * * *", prompt="Hello")
+    assert s.condition is None
+
+
+def test_condition_round_trip() -> None:
+    s = Schedule.create(name="Test", cron="0 9 * * *", prompt="Hello", condition="python check.py")
+    save_schedules([s])
+    loaded = load_schedules()
+    assert loaded[0].condition == "python check.py"
+
+
+def test_condition_omitted_from_json_when_none() -> None:
+    import json
+    s = Schedule.create(name="Test", cron="0 9 * * *", prompt="Hello")
+    save_schedules([s])
+    raw = json.loads(Path("memory/schedules.json").read_text())
+    assert "condition" not in raw[0]
+
+
+def test_condition_none_when_absent_in_json() -> None:
+    s = Schedule.create(name="Test", cron="0 9 * * *", prompt="Hello")
+    save_schedules([s])
+    loaded = load_schedules()
+    assert loaded[0].condition is None
