@@ -10,7 +10,7 @@ load_dotenv()
 
 
 def get_connector() -> Connector:
-    channel = os.getenv("AWFULCLAW_CHANNEL", "imessage").lower()
+    channel = os.getenv("AWFULCLAW_CHANNEL", "telegram").lower()
     if channel == "imessage":
         from awfulclaw.imessage import IMessageConnector
 

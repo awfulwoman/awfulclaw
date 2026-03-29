@@ -35,10 +35,18 @@ if not _imap_configured:
     logger.warning("IMAP not configured — <skill:imap/> will be unavailable")
 
 _IDLE_PROMPT = (
-    "You are running an idle check. Review the tasks and facts in your context. "
-    "If something needs proactive attention or a follow-up, send a brief message. "
-    "If nothing needs attention right now, reply with an empty string."
+    "You are running a silent background check. Review tasks and facts in your context. "
+    "If something genuinely needs proactive attention or a follow-up message to the user, "
+    "send it now. "
+    "IMPORTANT: If nothing needs attention, you MUST reply with exactly the text: NOTHING. "
+    "Do not explain, do not say 'nothing needs attention', just reply: NOTHING."
 )
+
+_IDLE_SUPPRESS = {"nothing", "nothing.", "nothing needs attention", "nothing right now"}
+
+
+def _is_idle_suppressed(text: str) -> bool:
+    return text.lower().strip().rstrip(".").strip() in _IDLE_SUPPRESS or text.upper() == "NOTHING"
 
 
 def _parse_and_apply_memory_writes(text: str) -> str:
@@ -124,13 +132,18 @@ def run(connector: Connector) -> None:
 
     poll_interval = config.get_poll_interval()
     idle_interval = config.get_idle_interval()
-    phone = config.get_phone()
+    phone = connector.primary_recipient
 
     conversation_history: list[dict[str, str]] = []
     last_poll = datetime.now(timezone.utc)
     last_idle = time.monotonic()
     last_imap_check: datetime | None = None
     schedules = scheduler.load_schedules()
+
+    try:
+        connector.send_message(phone, "awfulclaw is online.")
+    except Exception as exc:
+        logger.warning("Failed to send startup notification: %s", exc)
 
     try:
         while True:
@@ -195,11 +208,15 @@ def run(connector: Connector) -> None:
                     system=system,
                 )
                 idle_reply = _parse_and_apply_memory_writes(idle_reply)
-                if idle_reply:
+                if idle_reply and not _is_idle_suppressed(idle_reply):
                     connector.send_message(phone, idle_reply)
                     logger.info("Idle message sent: %s", idle_reply[:80])
 
             time.sleep(poll_interval)
 
     except KeyboardInterrupt:
+        try:
+            connector.send_message(phone, "awfulclaw is going offline.")
+        except Exception as exc:
+            logger.warning("Failed to send shutdown notification: %s", exc)
         logger.info("awfulclaw exiting — goodbye")

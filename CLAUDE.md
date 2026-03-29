@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-**awfulclaw** — an autonomous AI agent that runs a poll+event loop, communicates via iMessage or Telegram, and stores memory as Markdown files under `memory/`. Claude is invoked via the `claude` CLI subprocess (no API key required).
+**awfulclaw** — an autonomous AI agent that runs a poll+event loop, communicates via Telegram or iMessage (Telegram is default), and stores memory as Markdown files under `memory/`. Claude is invoked via the `claude` CLI subprocess (no API key required).
 
 ## Setup
 
@@ -14,10 +14,9 @@ uv sync --extra dev   # install deps + dev tools
 
 Required env vars (in `.env`):
 ```
-AWFULCLAW_CHANNEL=imessage          # imessage (default) or telegram
-AWFULCLAW_PHONE=+15555550100        # iMessage contact (required if CHANNEL=imessage)
-TELEGRAM_BOT_TOKEN=<token>          # required if CHANNEL=telegram
-TELEGRAM_CHAT_ID=<chat-id>          # required if CHANNEL=telegram
+TELEGRAM_BOT_TOKEN=<token>          # required for default Telegram channel
+TELEGRAM_CHAT_ID=<chat-id>          # required for default Telegram channel
+AWFULCLAW_PHONE=+15555550100        # required only if AWFULCLAW_CHANNEL=imessage
 ```
 
 Optional:
