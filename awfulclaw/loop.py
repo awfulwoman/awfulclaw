@@ -51,7 +51,7 @@ def run() -> None:
 
             for msg in messages:
                 logger.info("Incoming from %s: %s", msg.sender, msg.body[:80])
-                system = context.build_system_prompt(msg.body)
+                system = context.build_system_prompt(msg.body, sender=msg.sender)
                 conversation_history.append({"role": "user", "content": msg.body})
                 reply = claude.chat(conversation_history, system=system)
                 reply = _parse_and_apply_memory_writes(reply)
