@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 _ROOT = Path("memory")
-_SUBDIRS = ("people", "tasks", "facts", "conversations")
+_SUBDIRS = ("people", "tasks", "facts", "conversations", "skills")
 
 
 def _resolve(path: str) -> Path:
