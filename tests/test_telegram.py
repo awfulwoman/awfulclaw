@@ -57,3 +57,68 @@ def test_unknown_message_type_skipped(connector: TelegramConnector) -> None:
     with patch("httpx.get", return_value=_mock_response([update])):
         msgs = connector.poll_new_messages(datetime.now(tz=timezone.utc))
     assert msgs == []
+
+
+def test_photo_message_with_caption(connector: TelegramConnector) -> None:
+    photo_payload = [
+        {"file_id": "small", "file_size": 100},
+        {"file_id": "large", "file_size": 5000},
+    ]
+    update = _make_update(4, {"photo": photo_payload, "caption": "look at this"})
+
+    get_file_resp = MagicMock()
+    get_file_resp.json.return_value = {"result": {"file_path": "photos/large.jpg"}}
+    get_file_resp.raise_for_status = MagicMock()
+
+    dl_resp = MagicMock()
+    dl_resp.content = b"fake-image-bytes"
+    dl_resp.raise_for_status = MagicMock()
+
+    poll_resp = _mock_response([update])
+
+    call_count = 0
+
+    def _fake_get(url: str, **kwargs: object) -> MagicMock:
+        nonlocal call_count
+        call_count += 1
+        if "getUpdates" in url:
+            return poll_resp
+        if "getFile" in url:
+            return get_file_resp
+        return dl_resp
+
+    with patch("httpx.get", side_effect=_fake_get):
+        msgs = connector.poll_new_messages(datetime.now(tz=timezone.utc))
+
+    assert len(msgs) == 1
+    assert msgs[0].body == "look at this"
+    assert msgs[0].image_data == b"fake-image-bytes"
+    assert msgs[0].image_mime == "image/jpeg"
+
+
+def test_photo_message_no_caption_uses_placeholder(connector: TelegramConnector) -> None:
+    photo_payload = [{"file_id": "only", "file_size": 1000}]
+    update = _make_update(5, {"photo": photo_payload})
+
+    get_file_resp = MagicMock()
+    get_file_resp.json.return_value = {"result": {"file_path": "photos/only.jpg"}}
+    get_file_resp.raise_for_status = MagicMock()
+
+    dl_resp = MagicMock()
+    dl_resp.content = b"img"
+    dl_resp.raise_for_status = MagicMock()
+
+    poll_resp = _mock_response([update])
+
+    def _fake_get(url: str, **kwargs: object) -> MagicMock:
+        if "getUpdates" in url:
+            return poll_resp
+        if "getFile" in url:
+            return get_file_resp
+        return dl_resp
+
+    with patch("httpx.get", side_effect=_fake_get):
+        msgs = connector.poll_new_messages(datetime.now(tz=timezone.utc))
+
+    assert len(msgs) == 1
+    assert msgs[0].body == "[image]"

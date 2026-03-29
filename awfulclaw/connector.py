@@ -13,6 +13,8 @@ class Message:
     body: str
     timestamp: datetime
     is_from_me: bool
+    image_data: bytes | None = None
+    image_mime: str | None = None
 
 
 class Connector(ABC):
