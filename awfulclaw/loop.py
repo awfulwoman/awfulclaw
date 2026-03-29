@@ -21,6 +21,8 @@ _MEMORY_WRITE_RE = re.compile(
     re.DOTALL,
 )
 
+_LOCATION_RE = re.compile(r"^\[Location:\s*(-?\d+\.?\d*),\s*(-?\d+\.?\d*)\]$")
+
 _SKILL_IMAP_RE = re.compile(r"<skill:imap\s*/>|<skill:imap\s*></skill:imap>")
 
 _SKILL_SCHEDULE_RE = re.compile(
@@ -224,6 +226,18 @@ def run(connector: Connector) -> None:
 
             for msg in messages:
                 logger.info("Incoming from %s: %s", msg.sender, msg.body[:80])
+
+                loc_match = _LOCATION_RE.match(msg.body)
+                if loc_match:
+                    lat, lon = loc_match.group(1), loc_match.group(2)
+                    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                    memory.write(
+                        "facts/location.md",
+                        f"Last known location: {lat}, {lon}\nUpdated: {ts}",
+                    )
+                    logger.info("Location saved: %s, %s", lat, lon)
+                    continue
+
                 system = context.build_system_prompt(msg.body, sender=msg.sender)
                 conversation_history.append({"role": "user", "content": msg.body})
                 reply = claude.chat(conversation_history, system=system)

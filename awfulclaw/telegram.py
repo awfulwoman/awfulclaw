@@ -72,13 +72,19 @@ class TelegramConnector(Connector):
                 continue
 
             text: str = msg.get("text") or ""
-            if not text:
+            location = msg.get("location")
+            if not text and not location:
                 continue
 
             ts = datetime.fromtimestamp(msg["date"], tz=timezone.utc)
             sender = str(msg.get("from", {}).get("id", ""))
 
-            messages.append(Message(sender=sender, body=text, timestamp=ts, is_from_me=False))
+            if location:
+                body = f"[Location: {location['latitude']}, {location['longitude']}]"
+            else:
+                body = text
+
+            messages.append(Message(sender=sender, body=body, timestamp=ts, is_from_me=False))
 
         return messages
 

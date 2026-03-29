@@ -48,3 +48,18 @@ def test_no_skills_dir_no_error(tmp_path: Path) -> None:
     # skills dir doesn't exist at all — should not raise
     prompt = context.build_system_prompt("Hello")
     assert "## Active Skills" not in prompt
+
+
+def test_location_in_prompt_when_file_exists(tmp_path: Path) -> None:
+    location_file = tmp_path / "memory" / "facts" / "location.md"
+    location_file.write_text(
+        "Last known location: 51.5074, -0.1278\nUpdated: 2026-03-29T20:00:00Z",
+        encoding="utf-8",
+    )
+    prompt = context.build_system_prompt("Hello")
+    assert "User's last known location: 51.5074, -0.1278 (as of 2026-03-29T20:00:00Z)" in prompt
+
+
+def test_location_absent_when_file_missing(tmp_path: Path) -> None:
+    prompt = context.build_system_prompt("Hello")
+    assert "last known location" not in prompt.lower()
