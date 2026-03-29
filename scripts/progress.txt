@@ -1,0 +1,58 @@
+## Codebase Patterns
+- Use `uv run --with <pkg> <pkg> ...` to run tools not in pyproject deps (ruff, pyright not installed as scripts)
+- Pyright config: use `typeCheckingMode = "strict"` not `strict = true` in pyproject.toml
+
+# Ralph Progress Log
+Milestone: baseline
+Started: Sun 29 Mar 2026 19:51:15 CEST
+---
+
+## [2026-03-29] - #1 Scaffold Python project
+- Created pyproject.toml, awfulclaw/__init__.py, __main__.py, config.py
+- Files changed: pyproject.toml, awfulclaw/__init__.py, awfulclaw/__main__.py, awfulclaw/config.py
+- **Learnings for future iterations:**
+  - ruff and pyright aren't auto-available as scripts; use `uv run --with ruff ruff ...` and `uv run --with pyright pyright ...`
+  - pyright strict mode in pyproject.toml uses `typeCheckingMode = "strict"` not `strict = true`
+  - uv sync installs successfully with hatchling build backend
+---
+
+## [2026-03-29] - #2 Implement structured memory layer
+- Created awfulclaw/memory.py with read, write, list_files, search; 9 unit tests
+- Files changed: awfulclaw/memory.py, tests/__init__.py, tests/test_memory.py
+- **Learnings for future iterations:**
+  - pytest not in path; use `uv run --with pytest pytest ...`
+  - ruff import ordering: stdlib before third-party, sorted within groups
+---
+
+## [2026-03-29] - #3 #4 iMessage read and send connectors
+- Created awfulclaw/imessage.py with poll_new_messages() and send_message()
+- Files changed: awfulclaw/imessage.py
+- **Learnings for future iterations:**
+  - macOS chat.db uses Cocoa epoch (2001-01-01); timestamps in nanoseconds
+  - SQLite connection: use `file:path?mode=ro` URI for read-only access
+---
+
+## [2026-03-29] - #5 Claude API client wrapper
+- Created awfulclaw/claude.py with chat() function
+- Files changed: awfulclaw/claude.py
+---
+
+## [2026-03-29] - #6 Conversation context builder
+- Created awfulclaw/context.py with build_system_prompt()
+- Files changed: awfulclaw/context.py
+---
+
+## [2026-03-29] - #7 Agent main event loop
+- Created awfulclaw/loop.py with run(); updated __main__.py
+- Files changed: awfulclaw/loop.py, awfulclaw/__main__.py
+- **Learnings for future iterations:**
+  - Memory write regex: use re.DOTALL so content can span multiple lines
+---
+
+## [2026-03-29] - #8 #9 Task and people memory integration
+- Enhanced context.py: sender-based people lookup, unknown sender notification
+- Updated loop.py to pass sender to build_system_prompt
+- Files changed: awfulclaw/context.py, awfulclaw/loop.py
+- **Learnings for future iterations:**
+  - Issues #8 and #9 were largely covered by #6/#7 groundwork; check prior issues before starting
+---
