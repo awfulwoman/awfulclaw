@@ -1,10 +1,14 @@
-"""Tests for schedule condition evaluation (_should_wake) in loop.py."""
+"""Tests for schedule condition evaluation (_should_wake) and tag parsing in loop.py."""
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from awfulclaw.loop import _should_wake
+import pytest
+
+from awfulclaw.loop import _parse_and_apply_schedule_tags, _should_wake
+from awfulclaw.scheduler import Schedule
 
 
 def test_wake_true_when_condition_returns_wake_agent_true() -> None:
@@ -51,3 +55,36 @@ def test_wake_true_on_invalid_json() -> None:
     mock_result.stdout = "not json"
     with patch("awfulclaw.loop.subprocess.run", return_value=mock_result):
         assert _should_wake("bad-json-cmd") is True
+
+
+# ---------------------------------------------------------------------------
+# Schedule tag parsing — condition attribute
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def tmp_memory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "memory").mkdir()
+
+
+def test_schedule_tag_with_condition_stores_condition() -> None:
+    tag = (
+        '<skill:schedule action="create" name="test" cron="0 * * * *"'
+        ' condition="python check.py">Check things</skill:schedule>'
+    )
+    schedules: list[Schedule] = []
+    _parse_and_apply_schedule_tags(tag, schedules)
+    assert len(schedules) == 1
+    assert schedules[0].condition == "python check.py"
+
+
+def test_schedule_tag_without_condition_stores_none() -> None:
+    tag = (
+        '<skill:schedule action="create" name="test" cron="0 * * * *">'
+        "Check things</skill:schedule>"
+    )
+    schedules: list[Schedule] = []
+    _parse_and_apply_schedule_tags(tag, schedules)
+    assert len(schedules) == 1
+    assert schedules[0].condition is None

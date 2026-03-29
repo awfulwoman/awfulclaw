@@ -152,6 +152,7 @@ def _parse_and_apply_schedule_tags(
         cron = attrs.get("cron", "").strip()
 
         if action == "create":
+            condition = attrs.get("condition", "").strip() or None
             at_str = attrs.get("at", "").strip()
             if at_str:
                 try:
@@ -161,12 +162,16 @@ def _parse_and_apply_schedule_tags(
                 except ValueError:
                     errors.append(f"Invalid datetime '{at_str}' for schedule '{name}'.")
                     return ""
-                new_sched = scheduler.Schedule.create(name=name, prompt=body, fire_at=fire_at)
+                new_sched = scheduler.Schedule.create(
+                    name=name, prompt=body, fire_at=fire_at, condition=condition
+                )
             else:
                 if not croniter.is_valid(cron):
                     errors.append(f"Invalid cron expression '{cron}' for schedule '{name}'.")
                     return ""
-                new_sched = scheduler.Schedule.create(name=name, cron=cron, prompt=body)
+                new_sched = scheduler.Schedule.create(
+                    name=name, cron=cron, prompt=body, condition=condition
+                )
             # Overwrite existing schedule with same name (case-insensitive)
             idx = next(
                 (i for i, s in enumerate(schedules) if s.name.lower() == name.lower()),
