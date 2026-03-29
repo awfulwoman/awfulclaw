@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import signal
 import time
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -104,6 +105,7 @@ def handle_slash_command(body: str) -> str | None:
 
     if cmd == "/restart":
         import subprocess as _sp
+        _write_restart_reason("user_requested")
         _sp.Popen(["bash", str(Path("scripts/restart-service.sh").resolve())])
         return "Restarting…"
 
@@ -257,6 +259,62 @@ def _session_path() -> str:
 
 
 _MEMORY_ROOT = Path("memory")
+_RESTART_REASON_PATH = _MEMORY_ROOT / ".restart_reason"
+
+
+def _write_restart_reason(reason: str) -> None:
+    try:
+        _RESTART_REASON_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _RESTART_REASON_PATH.write_text(reason, encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _pop_restart_reason() -> str | None:
+    try:
+        if _RESTART_REASON_PATH.exists():
+            reason = _RESTART_REASON_PATH.read_text(encoding="utf-8").strip()
+            _RESTART_REASON_PATH.unlink()
+            return reason or None
+    except Exception:
+        pass
+    return None
+
+
+def _sigterm_handler(signum: int, frame: object) -> None:
+    _write_restart_reason("code_change")
+    exc = SystemExit(0)
+    exc._code_change = True  # type: ignore[attr-defined]
+    raise exc
+
+
+def _generate_startup_message(restart_reason: str | None) -> str:
+    if restart_reason == "code_change":
+        prompt = (
+            "You've just restarted because code changes were made. "
+            "Send a short natural message letting the user know you're back and picked up the changes. "
+            "One or two sentences. Don't use the word 'awfulclaw'."
+        )
+    elif restart_reason == "user_requested":
+        prompt = (
+            "You've just restarted at the user's request. "
+            "Send a short natural message confirming you're back. One sentence."
+        )
+    else:
+        prompt = (
+            "You're coming online. Send a short natural greeting to let the user know you're here. "
+            "One sentence. Don't use the word 'awfulclaw'."
+        )
+    try:
+        system = context.build_system_prompt("")
+        return claude.chat([{"role": "user", "content": prompt}], system=system)
+    except Exception as exc:
+        logger.warning("Failed to generate startup message: %s", exc)
+        if restart_reason == "code_change":
+            return "I've restarted to pick up some code changes — back now!"
+        if restart_reason == "user_requested":
+            return "Restarted and ready!"
+        return "I'm online and ready."
 _TURN_RE = re.compile(r"^## \S+ — (User|Assistant)\s*$", re.MULTILINE)
 
 
@@ -303,6 +361,7 @@ def _append_turn(session_file: str, role: str, content: str) -> None:
 
 def run(connector: Connector) -> None:
     """Run the agent loop indefinitely until Ctrl-C."""
+    signal.signal(signal.SIGTERM, _sigterm_handler)
     logger.info("awfulclaw starting up")
 
     poll_interval = config.get_poll_interval()
@@ -329,7 +388,8 @@ def run(connector: Connector) -> None:
         logger.error("Failed to create session file: %s", exc)
 
     try:
-        connector.send_message(phone, "awfulclaw is online.")
+        restart_reason = _pop_restart_reason()
+        connector.send_message(phone, _generate_startup_message(restart_reason))
     except Exception as exc:
         logger.warning("Failed to send startup notification: %s", exc)
 
@@ -486,9 +546,13 @@ def run(connector: Connector) -> None:
 
             time.sleep(poll_interval)
 
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, SystemExit) as exc:
+        if isinstance(exc, SystemExit) and getattr(exc, "_code_change", False):
+            msg = "I've noticed some code changes — restarting to pick them up. Back in a moment!"
+        else:
+            msg = "Going offline now — catch you later!"
         try:
-            connector.send_message(phone, "awfulclaw is going offline.")
-        except Exception as exc:
-            logger.warning("Failed to send shutdown notification: %s", exc)
+            connector.send_message(phone, msg)
+        except Exception as send_exc:
+            logger.warning("Failed to send shutdown notification: %s", send_exc)
         logger.info("awfulclaw exiting — goodbye")
