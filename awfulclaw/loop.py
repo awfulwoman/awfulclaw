@@ -356,7 +356,12 @@ def run(connector: Connector) -> None:
 
                 system = context.build_system_prompt(msg.body, sender=msg.sender)
                 conversation_history.append({"role": "user", "content": msg.body})
-                reply = claude.chat(conversation_history, system=system)
+                reply = claude.chat(
+                    conversation_history,
+                    system=system,
+                    image_data=msg.image_data,
+                    image_mime=msg.image_mime,
+                )
                 reply = _parse_and_apply_memory_writes(reply)
 
                 reply, sched_errors = _parse_and_apply_schedule_tags(reply, schedules)

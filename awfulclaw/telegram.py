@@ -73,7 +73,8 @@ class TelegramConnector(Connector):
 
             text: str = msg.get("text") or ""
             location = msg.get("location")
-            if not text and not location:
+            photo = msg.get("photo")
+            if not text and not location and not photo:
                 continue
 
             ts = datetime.fromtimestamp(msg["date"], tz=timezone.utc)
@@ -81,12 +82,47 @@ class TelegramConnector(Connector):
 
             if location:
                 body = f"[Location: {location['latitude']}, {location['longitude']}]"
+                messages.append(Message(sender=sender, body=body, timestamp=ts, is_from_me=False))
+            elif photo:
+                caption: str = msg.get("caption") or "[image]"
+                image_data, image_mime = self._download_photo(photo)
+                messages.append(
+                    Message(
+                        sender=sender,
+                        body=caption,
+                        timestamp=ts,
+                        is_from_me=False,
+                        image_data=image_data,
+                        image_mime=image_mime,
+                    )
+                )
             else:
-                body = text
-
-            messages.append(Message(sender=sender, body=body, timestamp=ts, is_from_me=False))
+                messages.append(
+                    Message(sender=sender, body=text, timestamp=ts, is_from_me=False)
+                )
 
         return messages
+
+    def _download_photo(self, photo: list[dict[str, object]]) -> tuple[bytes, str]:
+        """Download the largest photo variant and return (bytes, mime_type)."""
+        def _file_size(p: dict[str, object]) -> int:
+            v = p.get("file_size")
+            return int(str(v)) if v is not None else 0
+
+        largest = max(photo, key=_file_size)
+        file_id = str(largest["file_id"])
+        try:
+            file_resp = httpx.get(
+                f"{self._base}/getFile", params={"file_id": file_id}, timeout=10
+            )
+            file_resp.raise_for_status()
+            file_path = file_resp.json()["result"]["file_path"]
+            dl_url = f"https://api.telegram.org/file/bot{self._token}/{file_path}"
+            img_resp = httpx.get(dl_url, timeout=30)
+            img_resp.raise_for_status()
+            return img_resp.content, "image/jpeg"
+        except httpx.HTTPError as exc:
+            raise RuntimeError(f"Failed to download Telegram photo: {exc}") from exc
 
     def send_message(self, to: str, body: str) -> None:
         payload = {"chat_id": self._chat_id, "text": body}
