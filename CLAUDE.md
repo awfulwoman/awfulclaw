@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-**awfulclaw** — an autonomous AI agent that runs a poll+event loop, communicates via Telegram or iMessage (Telegram is default), and stores memory as Markdown files under `memory/`. Claude is invoked via the `claude` CLI subprocess (no API key required).
+**awfulclaw** — an autonomous AI agent that runs a poll+event loop, communicates via Telegram, and stores memory as Markdown files under `memory/`. Claude is invoked via the `claude` CLI subprocess (no API key required).
 
 ## Setup
 
@@ -14,9 +14,8 @@ uv sync --extra dev   # install deps + dev tools
 
 Required env vars (in `.env`):
 ```
-TELEGRAM_BOT_TOKEN=<token>          # required for default Telegram channel
-TELEGRAM_CHAT_ID=<chat-id>          # required for default Telegram channel
-AWFULCLAW_PHONE=+15555550100        # required only if AWFULCLAW_CHANNEL=imessage
+TELEGRAM_BOT_TOKEN=<token>
+TELEGRAM_CHAT_ID=<chat-id>
 ```
 
 Optional:
@@ -38,8 +37,6 @@ No API key needed — auth comes from the locally installed `claude` CLI.
 uv run python -m awfulclaw      # starts the agent loop, Ctrl-C to stop
 ```
 
-iMessage requires macOS with Messages.app signed in and Full Disk Access granted to the terminal.
-
 ## Development
 
 ```bash
@@ -57,7 +54,7 @@ The agent loop (`loop.py`) is the core. On each tick it:
 2. For each message: calls `context.build_system_prompt()`, calls `claude.chat()` via CLI subprocess, intercepts special tags in the reply (see below), sends the cleaned reply via `connector.send_message()`
 3. On idle ticks: proactive Claude check + fires any due schedules from `memory/schedules.json`
 
-**Connectors** (`connector.py`) — `IMessageConnector` and `TelegramConnector` both implement the `Connector` ABC (`poll_new_messages`, `send_message`).
+**Connector** (`connector.py`) — `TelegramConnector` implements the `Connector` ABC (`poll_new_messages`, `send_message`, `primary_recipient`).
 
 **Claude invocation** (`claude.py`) — shells out to `claude --print --no-session-persistence --system-prompt ...`. Conversation history is formatted as plain text and passed via stdin.
 

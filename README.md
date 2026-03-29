@@ -2,27 +2,19 @@
 
 ## Overview
 
-awfulclaw is an autonomous AI agent that runs a poll-and-event loop, communicates via Telegram or iMessage, and responds using Claude. Between messages it proactively checks in based on stored context and fires any scheduled tasks. All memory is stored as Markdown files under `memory/` — Claude writes to them by embedding `<memory:write>` blocks in its replies, which the loop intercepts and strips before sending.
+awfulclaw is an autonomous AI agent that runs a poll-and-event loop, communicates via Telegram, and responds using Claude. Between messages it proactively checks in based on stored context and fires any scheduled tasks. All memory is stored as Markdown files under `memory/` — Claude writes to them by embedding `<memory:write>` blocks in its replies, which the loop intercepts and strips before sending.
 
 ## Requirements
 
 - Python 3.11+
 - [`uv`](https://github.com/astral-sh/uv)
 - Claude CLI installed and authenticated (`claude` command available)
-- **iMessage only:** macOS (tested on Ventura+) with Messages.app signed in
 
 ## Telegram Setup
 
 1. Message [@BotFather](https://t.me/botfather) on Telegram and run `/newbot` to create a bot — copy the token it gives you
 2. Start a conversation with your new bot, then visit `https://api.telegram.org/bot<TOKEN>/getUpdates` to find your `chat.id`
 3. Set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in your `.env`
-
-## iMessage Setup
-
-1. Open **System Settings → Privacy & Security → Full Disk Access**
-2. Add your terminal emulator (e.g. Terminal.app, iTerm2, Ghostty) to the list — Python needs this to read `~/Library/Messages/chat.db`
-3. Open Messages.app and confirm you are signed in and can send/receive iMessages
-4. Note the phone number or Apple ID of the contact you want the agent to talk to — this becomes `AWFULCLAW_PHONE`
 
 ## Installation
 
@@ -37,13 +29,8 @@ uv sync
 Create a `.env` file in the project root:
 
 ```env
-# Telegram (default channel)
 TELEGRAM_BOT_TOKEN=<your-bot-token>
 TELEGRAM_CHAT_ID=<your-chat-id>
-
-# iMessage (set AWFULCLAW_CHANNEL=imessage to use instead)
-# AWFULCLAW_CHANNEL=imessage
-# AWFULCLAW_PHONE=+15555550100
 ```
 
 Authentication comes from the `claude` CLI — no API key needed. Run `claude` and sign in if you haven't already.
