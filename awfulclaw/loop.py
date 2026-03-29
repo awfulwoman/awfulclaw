@@ -35,12 +35,12 @@ _imap_configured = bool(
 if not _imap_configured:
     logger.warning("IMAP not configured — <skill:imap/> will be unavailable")
 
-_IDLE_PROMPT = (
-    "You are running a silent background check. Review tasks and facts in your context. "
+_HEARTBEAT_PATH = "HEARTBEAT.md"
+_DEFAULT_HEARTBEAT = (
+    "You are running a silent background check. Review tasks and facts in your context.\n\n"
     "If something genuinely needs proactive attention or a follow-up message to the user, "
-    "send it now. "
-    "IMPORTANT: If nothing needs attention, you MUST reply with exactly the text: NOTHING. "
-    "Do not explain, do not say 'nothing needs attention', just reply: NOTHING."
+    "send it now.\n\n"
+    "IMPORTANT: If nothing needs attention, you MUST reply with exactly: NOTHING"
 )
 
 _IDLE_SUPPRESS = {"nothing", "nothing.", "nothing needs attention", "nothing right now"}
@@ -48,6 +48,14 @@ _IDLE_SUPPRESS = {"nothing", "nothing.", "nothing needs attention", "nothing rig
 
 def _is_idle_suppressed(text: str) -> bool:
     return text.lower().strip().rstrip(".").strip() in _IDLE_SUPPRESS or text.upper() == "NOTHING"
+
+
+def _load_heartbeat() -> str:
+    content = memory.read(_HEARTBEAT_PATH)
+    if not content:
+        memory.write(_HEARTBEAT_PATH, _DEFAULT_HEARTBEAT)
+        return _DEFAULT_HEARTBEAT
+    return content
 
 
 def _parse_and_apply_memory_writes(text: str) -> str:
@@ -237,7 +245,7 @@ def run(connector: Connector) -> None:
 
                 system = context.build_system_prompt("")
                 idle_reply = claude.chat(
-                    [{"role": "user", "content": _IDLE_PROMPT}],
+                    [{"role": "user", "content": _load_heartbeat()}],
                     system=system,
                 )
                 idle_reply = _parse_and_apply_memory_writes(idle_reply)
