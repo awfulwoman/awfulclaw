@@ -6,7 +6,7 @@ import logging
 import os
 import re
 import time
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from croniter import croniter  # type: ignore[import-untyped]
@@ -50,6 +50,15 @@ _DEFAULT_HEARTBEAT = (
 )
 
 _IDLE_SUPPRESS = {"nothing", "nothing.", "nothing needs attention", "nothing right now"}
+
+_BRIEFING_PROMPT = (
+    "Good morning! Please give me a concise daily briefing. Include:\n"
+    "1. Any open tasks from memory/tasks/\n"
+    "2. Schedules due today or this week\n"
+    "3. Anything flagged or important in memory/facts/\n"
+    "4. If IMAP is configured, check for new emails using <skill:imap/>\n\n"
+    "Keep it brief and actionable."
+)
 
 _SLASH_COMMANDS = "/tasks, /skills, /schedules"
 
@@ -301,6 +310,8 @@ def run(connector: Connector) -> None:
     last_poll = datetime.now(timezone.utc)
     last_idle = time.monotonic()
     last_imap_check: datetime | None = None
+    last_briefing_date: date | None = None
+    briefing_time = config.get_briefing_time()
     schedules = scheduler.load_schedules()
 
     session_file = _session_path()
@@ -419,6 +430,38 @@ def run(connector: Connector) -> None:
                     schedules[:] = [s for s in schedules if s.id not in one_off_ids]
                 if due:
                     scheduler.save_schedules(schedules)
+
+                if briefing_time is not None:
+                    today = now.date()
+                    delta_secs = (
+                        now.hour * 3600 + now.minute * 60 + now.second
+                        - briefing_time.hour * 3600 - briefing_time.minute * 60
+                    )
+                    if 0 <= delta_secs < poll_interval and last_briefing_date != today:
+                        last_briefing_date = today
+                        try:
+                            briefing_system = context.build_system_prompt(_BRIEFING_PROMPT)
+                            briefing_history: list[dict[str, str]] = [
+                                {"role": "user", "content": _BRIEFING_PROMPT}
+                            ]
+                            briefing_reply = claude.chat(briefing_history, system=briefing_system)
+                            briefing_reply = _parse_and_apply_memory_writes(briefing_reply)
+                            if _SKILL_IMAP_RE.search(briefing_reply):
+                                briefing_reply = _SKILL_IMAP_RE.sub("", briefing_reply).strip()
+                                imap_text, last_imap_check = _fetch_imap_results(last_imap_check)
+                                briefing_history.append(
+                                    {"role": "assistant", "content": briefing_reply}
+                                )
+                                briefing_history.append({"role": "user", "content": imap_text})
+                                briefing_reply = claude.chat(
+                                    briefing_history, system=briefing_system
+                                )
+                                briefing_reply = _parse_and_apply_memory_writes(briefing_reply)
+                            if briefing_reply:
+                                connector.send_message(phone, briefing_reply)
+                                logger.info("Daily briefing sent: %s", briefing_reply[:80])
+                        except Exception as exc:
+                            logger.error("Daily briefing failed: %s", exc)
 
                 system = context.build_system_prompt("")
                 idle_reply = claude.chat(
