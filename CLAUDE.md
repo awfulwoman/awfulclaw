@@ -48,21 +48,40 @@ uv run ruff format .                      # format
 uv run --with pyright pyright             # typecheck
 ```
 
+## Service
+
+The app runs as a launchd service (macOS). Scripts are in `scripts/`:
+
+```bash
+bash scripts/install-service.sh    # install + start agent and file watcher
+bash scripts/uninstall-service.sh  # stop and remove
+bash scripts/restart-service.sh    # manual restart
+```
+
+The file watcher (`ai.awfulclaw.watcher`) monitors `awfulclaw/` and restarts the agent when `.py` files change on the `main` branch (60s debounce, ignores `__pycache__`). On restart the agent sends a context-aware message explaining why it restarted.
+
 ## Architecture
 
 The agent loop (`loop.py`) is the core. On each tick it:
-1. Calls `connector.poll_new_messages()` — active connector is selected by `AWFULCLAW_CHANNEL` and instantiated in `config.get_connector()`
+1. Calls `connector.poll_new_messages()` — connector selected by `AWFULCLAW_CHANNEL`, instantiated in `config.get_connector()`
 2. For each message: calls `context.build_system_prompt()`, calls `claude.chat()` via CLI subprocess, intercepts special tags in the reply (see below), sends the cleaned reply via `connector.send_message()`
-3. On idle ticks: proactive Claude check + fires any due schedules from `memory/schedules.json`
+3. On idle ticks: runs a silent heartbeat check (`memory/HEARTBEAT.md`), fires any due schedules from `memory/schedules.json`, and sends the daily briefing if configured
 
-**Connector** (`connector.py`) — `TelegramConnector` implements the `Connector` ABC (`poll_new_messages`, `send_message`, `primary_recipient`).
+**Connector** (`connector.py`) — `TelegramConnector` implements the `Connector` ABC. Telegram poll offset is persisted to `memory/.telegram_offset` to survive restarts.
 
-**Claude invocation** (`claude.py`) — shells out to `claude --print --no-session-persistence --system-prompt ...`. Conversation history is formatted as plain text and passed via stdin.
+**Claude invocation** (`claude.py`) — shells out to `claude --print --no-session-persistence --system-prompt ...`. Conversation history is formatted as plain text and passed via stdin. Each call is a fresh subprocess — there is no persistent session.
 
-**Special reply tags** — the loop intercepts these before sending, strips them from the outgoing message:
-- `<memory:write path="...">content</memory:write>` — writes a memory file
+**System prompt** (`context.py`) — built fresh on every turn from `memory/SOUL.md` (personality/instructions), `memory/USER.md` (user profile), plus relevant facts, people, tasks, skills, and schedules. Editing `SOUL.md` takes effect on the next message.
+
+**Special reply tags** — intercepted and stripped before sending:
+- `<memory:write path="...">content</memory:write>` — writes to `memory/<path>` (the `memory/` prefix is optional)
 - `<skill:imap/>` — fetches unread emails via IMAP, injects results as a follow-up user message
-- `<skill:schedule action="create" name="..." cron="...">prompt</skill:schedule>` — creates a schedule
+- `<skill:web query="..."/>` — web search, results injected as follow-up
+- `<skill:search query="..."/>` — searches all memory files, results injected as follow-up
+- `<skill:schedule action="create" name="..." cron="..." [condition="cmd"]>prompt</skill:schedule>` — creates/updates a schedule; optional `condition` is a shell command that must print `{"wakeAgent": true/false}`
+- `<skill:schedule action="create" name="..." at="ISO-datetime">prompt</skill:schedule>` — one-off reminder
 - `<skill:schedule action="delete" name="..."/>` — deletes a schedule
 
-**Memory** lives in `memory/` with subdirs `people/`, `tasks/`, `facts/`, `conversations/`. Schedules persist in `memory/schedules.json`.
+**Slash commands** (user or agent can send): `/tasks`, `/skills`, `/schedules`, `/restart`
+
+**Memory** lives in `memory/` with subdirs `people/`, `tasks/`, `facts/`, `skills/`, `conversations/YYYY/MM/`. Schedules persist in `memory/schedules.json`.
