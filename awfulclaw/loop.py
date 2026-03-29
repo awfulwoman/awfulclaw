@@ -141,6 +141,11 @@ def run(connector: Connector) -> None:
     schedules = scheduler.load_schedules()
 
     try:
+        connector.send_message(phone, "awfulclaw is online.")
+    except Exception as exc:
+        logger.warning("Failed to send startup notification: %s", exc)
+
+    try:
         while True:
             now = datetime.now(timezone.utc)
             messages = connector.poll_new_messages(since=last_poll)
@@ -210,4 +215,8 @@ def run(connector: Connector) -> None:
             time.sleep(poll_interval)
 
     except KeyboardInterrupt:
+        try:
+            connector.send_message(phone, "awfulclaw is going offline.")
+        except Exception as exc:
+            logger.warning("Failed to send shutdown notification: %s", exc)
         logger.info("awfulclaw exiting — goodbye")
