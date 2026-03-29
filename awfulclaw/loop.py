@@ -7,6 +7,7 @@ import os
 import re
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 
 from croniter import croniter  # type: ignore[import-untyped]
 
@@ -126,6 +127,27 @@ def _fetch_imap_results(last_imap_check: datetime | None) -> tuple[str, datetime
     return result, now
 
 
+def _session_path() -> str:
+    """Return conversations/<iso-timestamp>.md with colons replaced by dashes."""
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S")
+    return f"conversations/{ts}.md"
+
+
+_MEMORY_ROOT = Path("memory")
+
+
+def _append_turn(session_file: str, role: str, content: str) -> None:
+    """Append a single conversation turn to the session file."""
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    entry = f"\n## {ts} — {role}\n{content}\n"
+    try:
+        full = _MEMORY_ROOT / session_file
+        with full.open("a", encoding="utf-8") as f:
+            f.write(entry)
+    except Exception as exc:
+        logger.error("Failed to append conversation turn: %s", exc)
+
+
 def run(connector: Connector) -> None:
     """Run the agent loop indefinitely until Ctrl-C."""
     logger.info("awfulclaw starting up")
@@ -139,6 +161,15 @@ def run(connector: Connector) -> None:
     last_idle = time.monotonic()
     last_imap_check: datetime | None = None
     schedules = scheduler.load_schedules()
+
+    session_file = _session_path()
+    try:
+        full = _MEMORY_ROOT / session_file
+        full.parent.mkdir(parents=True, exist_ok=True)
+        session_ts = session_file.removeprefix("conversations/").removesuffix(".md")
+        full.write_text(f"# Session: {session_ts}\n", encoding="utf-8")
+    except Exception as exc:
+        logger.error("Failed to create session file: %s", exc)
 
     try:
         connector.send_message(phone, "awfulclaw is online.")
@@ -176,6 +207,8 @@ def run(connector: Connector) -> None:
                     reply = _parse_and_apply_memory_writes(reply)
 
                 conversation_history.append({"role": "assistant", "content": reply})
+                _append_turn(session_file, "User", msg.body)
+                _append_turn(session_file, "Assistant", reply)
                 if reply:
                     connector.send_message(phone, reply)
                     logger.info("Sent reply: %s", reply[:80])
