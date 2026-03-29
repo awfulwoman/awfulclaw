@@ -4,62 +4,68 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-**awfulclaw** — an autonomous iMessage AI agent built with Python and the Anthropic SDK. It runs a poll+event loop, responds to iMessages via Claude, and stores memory as Markdown files under `memory/`.
+**awfulclaw** — an autonomous AI agent that runs a poll+event loop, communicates via iMessage or Telegram, and stores memory as Markdown files under `memory/`. Claude is invoked via the `claude` CLI subprocess (no API key required).
 
 ## Setup
 
 ```bash
-uv sync                  # install deps
-cp .env.example .env     # then fill in values (if example exists, else create .env)
+uv sync --extra dev   # install deps + dev tools
 ```
 
 Required env vars (in `.env`):
 ```
-AWFULCLAW_PHONE=+15555550100   # iMessage contact to converse with
+AWFULCLAW_CHANNEL=imessage          # imessage (default) or telegram
+AWFULCLAW_PHONE=+15555550100        # iMessage contact (required if CHANNEL=imessage)
+TELEGRAM_BOT_TOKEN=<token>          # required if CHANNEL=telegram
+TELEGRAM_CHAT_ID=<chat-id>          # required if CHANNEL=telegram
 ```
-
-No API key needed — auth comes from the locally installed `claude` CLI. Run `claude` at least once to authenticate before starting the agent.
 
 Optional:
 ```
-AWFULCLAW_CHANNEL=imessage          # connector: imessage (default) or telegram
 AWFULCLAW_MODEL=claude-sonnet-4-6   # default
-AWFULCLAW_POLL_INTERVAL=5           # seconds between iMessage polls
-AWFULCLAW_IDLE_INTERVAL=60          # seconds between proactive idle checks
-
-# Telegram connector (required if AWFULCLAW_CHANNEL=telegram)
-TELEGRAM_BOT_TOKEN=<your-bot-token>
-TELEGRAM_CHAT_ID=<your-chat-id>
+AWFULCLAW_POLL_INTERVAL=5           # seconds between polls
+AWFULCLAW_IDLE_INTERVAL=60          # seconds between idle checks
+IMAP_HOST=imap.example.com          # required to use <skill:imap/>
+IMAP_PORT=993
+IMAP_USER=you@example.com
+IMAP_PASSWORD=...
 ```
+
+No API key needed — auth comes from the locally installed `claude` CLI.
 
 ## Running
 
 ```bash
-python -m awfulclaw      # starts the agent loop, Ctrl-C to stop
+uv run python -m awfulclaw      # starts the agent loop, Ctrl-C to stop
 ```
 
-Requires macOS with the Messages app signed in (uses `osascript` to read/send iMessages).
+iMessage requires macOS with Messages.app signed in and Full Disk Access granted to the terminal.
 
 ## Development
 
 ```bash
-uv run pytest                        # all tests
-uv run pytest tests/test_memory.py   # single file
-uv run ruff check .                  # lint
-uv run ruff format .                 # format
-uv run pyright                       # typecheck
+uv run pytest                             # all tests
+uv run pytest tests/test_memory.py        # single file
+uv run ruff check .                       # lint
+uv run ruff format .                      # format
+uv run --with pyright pyright             # typecheck
 ```
 
 ## Architecture
 
-The agent loop (`loop.py`) is the entry point. On each tick it:
-1. Polls `imessage.poll_new_messages()` for new inbound texts
-2. Calls `context.build_system_prompt()` to assemble memory into the system prompt
-3. Calls `claude.chat()` with conversation history + system prompt
-4. Parses `<memory:write path="...">...</memory:write>` blocks out of the reply, writes them to disk via `memory.write()`, strips the blocks from the outgoing text
-5. Sends the cleaned reply via `imessage.send_message()`
-6. On idle ticks, runs a proactive check asking Claude if anything in memory needs attention
+The agent loop (`loop.py`) is the core. On each tick it:
+1. Calls `connector.poll_new_messages()` — active connector is selected by `AWFULCLAW_CHANNEL` and instantiated in `config.get_connector()`
+2. For each message: calls `context.build_system_prompt()`, calls `claude.chat()` via CLI subprocess, intercepts special tags in the reply (see below), sends the cleaned reply via `connector.send_message()`
+3. On idle ticks: proactive Claude check + fires any due schedules from `memory/schedules.json`
 
-**Memory** lives in `memory/` with subdirs `people/`, `tasks/`, `facts/`, `conversations/`. Claude writes to memory by embedding `<memory:write>` blocks in its replies — the loop intercepts and strips them before sending.
+**Connectors** (`connector.py`) — `IMessageConnector` and `TelegramConnector` both implement the `Connector` ABC (`poll_new_messages`, `send_message`).
 
-**iMessage I/O** is macOS-only via `osascript` subprocesses querying `~/Library/Messages/chat.db` (reads) and the Messages app (sends).
+**Claude invocation** (`claude.py`) — shells out to `claude --print --no-session-persistence --system-prompt ...`. Conversation history is formatted as plain text and passed via stdin.
+
+**Special reply tags** — the loop intercepts these before sending, strips them from the outgoing message:
+- `<memory:write path="...">content</memory:write>` — writes a memory file
+- `<skill:imap/>` — fetches unread emails via IMAP, injects results as a follow-up user message
+- `<skill:schedule action="create" name="..." cron="...">prompt</skill:schedule>` — creates a schedule
+- `<skill:schedule action="delete" name="..."/>` — deletes a schedule
+
+**Memory** lives in `memory/` with subdirs `people/`, `tasks/`, `facts/`, `conversations/`. Schedules persist in `memory/schedules.json`.
