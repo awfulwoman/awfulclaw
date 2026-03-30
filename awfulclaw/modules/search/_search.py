@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 
 import awfulclaw.memory as memory
-from awfulclaw.db import get_db
+from awfulclaw.db import get_db, search_facts, search_people
 from awfulclaw.modules.base import Module, SkillTag
 
 _SKILL_SEARCH_RE = re.compile(r'<skill:search\s+query="([^"]*?)"\s*/?>')
@@ -41,7 +41,8 @@ Returns matching lines grouped by file. Use when you need to recall facts, tasks
 
     def dispatch(self, tag_match: re.Match[str], history: list[dict[str, str]], system: str) -> str:
         query = tag_match.group(1)
-        results = memory.search_all(query)
+        results = memory.search_all(query, subdirs=["tasks", "skills"])
+        results = search_facts(query) + search_people(query) + results
         lines = [f"[Memory search results for: {query}]"]
         current_file: str | None = None
         count = 0

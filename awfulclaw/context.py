@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from awfulclaw import memory, scheduler
+from awfulclaw.db import list_facts, list_people, read_fact, read_person
 from awfulclaw.modules import get_registry
 
 _MAX_CHARS = 8000
@@ -92,11 +93,11 @@ def _load_user() -> str:
 
 
 def _find_person_by_phone(phone: str) -> tuple[str, str] | None:
-    """Return (filename, content) of the first people file matching the phone number."""
-    for filename in memory.list_files("people"):
-        content = memory.read(f"people/{filename}")
+    """Return (name, content) of the first person record matching the phone number."""
+    for name in list_people():
+        content = read_person(name)
         if phone in content:
-            return filename, content
+            return f"{name}.md", content
     return None
 
 
@@ -152,28 +153,28 @@ Use the context already loaded in this prompt to assemble the answer — no tool
     ]
 
     # Location (dedicated section with formatted label)
-    location_content = memory.read("facts/location.md")
+    location_content = read_fact("location")
     if location_content:
-        lines = {
+        loc_lines = {
             line.split(":", 1)[0].strip(): line.split(":", 1)[1].strip()
             for line in location_content.splitlines()
             if ":" in line
         }
-        lat_lon = lines.get("Last known location", "")
-        updated = lines.get("Updated", "")
+        lat_lon = loc_lines.get("Last known location", "")
+        updated = loc_lines.get("Updated", "")
         if lat_lon:
             loc_label = f"User's last known location: {lat_lon}"
             if updated:
                 loc_label += f" (as of {updated})"
             sections.append(loc_label)
 
-    # All facts (excluding location.md, handled above)
-    for filename in memory.list_files("facts"):
-        if filename == "location.md":
+    # All facts (excluding location, handled above)
+    for key in list_facts():
+        if key == "location":
             continue
-        content = memory.read(f"facts/{filename}")
+        content = read_fact(key)
         if content:
-            sections.append(f"## Fact: {filename}\n{content}")
+            sections.append(f"## Fact: {key}.md\n{content}")
 
     # People: sender match first, then by words in message
     if sender:
@@ -188,12 +189,12 @@ Use the context already loaded in this prompt to assemble the answer — no tool
             )
 
     words = set(incoming_message.lower().split())
-    for filename in memory.list_files("people"):
+    for name in list_people():
+        filename = f"{name}.md"
         if filename in included_people:
             continue
-        content = memory.read(f"people/{filename}")
-        name_stem = filename.replace(".md", "").lower()
-        if name_stem in words or any(word in content.lower() for word in words if len(word) > 3):
+        content = read_person(name)
+        if name in words or any(word in content.lower() for word in words if len(word) > 3):
             sections.append(f"## Person: {filename}\n{content}")
 
     # Open tasks (files containing unchecked checkboxes)

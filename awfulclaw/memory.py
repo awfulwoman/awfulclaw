@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 _ROOT = Path("memory")
-_SUBDIRS = ("people", "tasks", "facts", "conversations", "skills")
+_SUBDIRS = ("tasks", "skills")
 
 
 def _resolve(path: str) -> Path:

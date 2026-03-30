@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from awfulclaw import claude, config, context, memory, scheduler
-from awfulclaw.db import get_db, init_db
+from awfulclaw.db import get_db, init_db, write_fact, write_person
 from awfulclaw.gateway import Gateway
 from awfulclaw.modules import get_registry
 
@@ -119,7 +119,15 @@ def _parse_and_apply_memory_writes(text: str) -> str:
         if _is_protected_path(path):
             logger.warning("Blocked write to protected path: %s", path)
             continue
-        memory.write(path, content.strip())
+        # Route facts/ and people/ writes to SQLite
+        if path.startswith("facts/"):
+            key = path[len("facts/"):].removesuffix(".md")
+            write_fact(key, content.strip())
+        elif path.startswith("people/"):
+            name = path[len("people/"):].removesuffix(".md")
+            write_person(name, content.strip())
+        else:
+            memory.write(path, content.strip())
         logger.info("Memory write: %s", path)
     return _MEMORY_WRITE_RE.sub("", text).strip()
 
@@ -267,10 +275,7 @@ async def run(gateway: Gateway) -> None:
             if loc_match:
                 lat, lon = loc_match.group(1), loc_match.group(2)
                 ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-                memory.write(
-                    "facts/location.md",
-                    f"Last known location: {lat}, {lon}\nUpdated: {ts}",
-                )
+                write_fact("location", f"Last known location: {lat}, {lon}\nUpdated: {ts}")
                 logger.info("Location saved: %s, %s", lat, lon)
                 continue
 
