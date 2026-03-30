@@ -25,6 +25,7 @@ class MCPRegistry:
 
     def __init__(self) -> None:
         self._servers: dict[str, dict[str, object]] = {}
+        self._skipped: dict[str, list[str]] = {}  # name -> missing env vars
         self._config_mtime: float | None = None
 
     def register(
@@ -50,6 +51,7 @@ class MCPRegistry:
         """
         data = json.loads(path.read_text(encoding="utf-8"))
         self._servers = {}
+        self._skipped = {}
         self._config_mtime = path.stat().st_mtime
 
         for entry in data.get("servers", []):
@@ -62,6 +64,7 @@ class MCPRegistry:
                     name,
                     ", ".join(missing),
                 )
+                self._skipped[name] = missing
                 continue
 
             raw_env: dict[str, str] = entry.get("env", {})
@@ -95,3 +98,7 @@ class MCPRegistry:
 
     def is_empty(self) -> bool:
         return len(self._servers) == 0
+
+    def skipped_servers(self) -> dict[str, list[str]]:
+        """Return servers skipped at load time, mapped to their missing env vars."""
+        return dict(self._skipped)

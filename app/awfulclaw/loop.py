@@ -151,6 +151,7 @@ async def run(gateway: Gateway) -> None:
     _mcp_config: list[Path | None] = [
         None if mcp_registry.is_empty() else mcp_registry.generate_config()
     ]
+    _skipped_mcp: list[dict[str, list[str]]] = [mcp_registry.skipped_servers()]
 
     poll_interval = config.get_poll_interval()
     idle_interval = config.get_idle_interval()
@@ -180,7 +181,7 @@ async def run(gateway: Gateway) -> None:
     # Run startup briefing synchronously before entering the loop
     try:
         startup_prompt = briefings.get_startup_prompt()
-        startup_system = context.build_system_prompt(startup_prompt)
+        startup_system = context.build_system_prompt(startup_prompt, skipped_mcp_servers=_skipped_mcp[0])
         startup_reply = await ev_loop.run_in_executor(
             None,
             lambda: claude.chat([{"role": "user", "content": startup_prompt}], startup_system, None, None, _mcp_config[0]),
@@ -224,7 +225,7 @@ async def run(gateway: Gateway) -> None:
                     confirmation = f"[Secret received and stored to .env as {key}. Restart required to take effect.]"
                 except ValueError as exc:
                     confirmation = f"[Secret storage failed for {key}: {exc}]"
-                system = context.build_system_prompt(confirmation, sender=msg.sender)
+                system = context.build_system_prompt(confirmation, sender=msg.sender, skipped_mcp_servers=_skipped_mcp[0])
                 gateway.send_typing(msg.channel, recipient)
                 async with _history_lock:
                     conversation_history.append({"role": "user", "content": confirmation})
@@ -255,7 +256,7 @@ async def run(gateway: Gateway) -> None:
                 logger.info("Slash command '%s' handled", msg.body.split()[0])
                 continue
 
-            system = context.build_system_prompt(msg.body, sender=msg.sender)
+            system = context.build_system_prompt(msg.body, sender=msg.sender, skipped_mcp_servers=_skipped_mcp[0])
 
             gateway.send_typing(msg.channel, recipient)
 
@@ -289,11 +290,12 @@ async def run(gateway: Gateway) -> None:
         nonlocal last_idle_nudge
         if mcp_registry.reload_if_changed(_MCP_CONFIG_PATH):
             _mcp_config[0] = None if mcp_registry.is_empty() else mcp_registry.generate_config()
+            _skipped_mcp[0] = mcp_registry.skipped_servers()
 
         due_schedules = scheduler.run_due()
         for sched in due_schedules:
             try:
-                sched_system = context.build_system_prompt(sched.prompt)
+                sched_system = context.build_system_prompt(sched.prompt, skipped_mcp_servers=_skipped_mcp[0])
                 sched_history: list[dict[str, str]] = [{"role": "user", "content": sched.prompt}]
                 sched_reply = await _chat_async(sched_history, sched_system)
                 if sched_reply and not sched.silent:
@@ -306,7 +308,7 @@ async def run(gateway: Gateway) -> None:
 
         nudge_due = time.monotonic() - last_idle_nudge >= idle_nudge_cooldown
         if nudge_due:
-            system = context.build_system_prompt("")
+            system = context.build_system_prompt("", skipped_mcp_servers=_skipped_mcp[0])
             idle_reply = await _chat_async(
                 [{"role": "user", "content": _load_heartbeat()}],
                 system,

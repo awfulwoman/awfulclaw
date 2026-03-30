@@ -82,7 +82,12 @@ def _local_now(user_content: str) -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
 
-def build_system_prompt(incoming_message: str, sender: str = "", channel: str = "") -> str:
+def build_system_prompt(
+    incoming_message: str,
+    sender: str = "",
+    channel: str = "",
+    skipped_mcp_servers: dict[str, list[str]] | None = None,
+) -> str:
     """Build the system prompt with memory context for the incoming message."""
     user = _load_user()
     now = _local_now(user)
@@ -161,6 +166,17 @@ using this mechanism.\
         memory_instructions,
         f"## About You\n{user}",
     ]
+
+    if skipped_mcp_servers:
+        lines = ["## Unavailable MCP Servers (missing configuration)"]
+        for name, missing in skipped_mcp_servers.items():
+            lines.append(f"- **{name}** — needs env vars: {', '.join(missing)}")
+        lines.append(
+            "These servers are not loaded and their tools are unavailable. "
+            "If the user asks about them, explain what's missing and offer to "
+            "collect the required values using <secret:request>."
+        )
+        sections.append("\n".join(lines))
 
     # Location (dedicated section with formatted label)
     location_content = read_fact("location")
