@@ -5,8 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from unittest.mock import patch
 
-from awfulclaw.mcp.imap import imap_read
-from awfulclaw.modules.imap._imap import EmailSummary
+from awfulclaw.mcp.imap import EmailSummary, imap_read
 
 
 def _make_email(

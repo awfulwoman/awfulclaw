@@ -91,7 +91,6 @@ def test_check_and_fire_returns_none_when_not_configured() -> None:
     assert result is None
 
 
-def test_name_and_skill_tags() -> None:
+def test_name() -> None:
     mod = BriefingModule()
     assert mod.name == "briefing"
-    assert mod.skill_tags == []

@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from unittest.mock import patch
 
 from awfulclaw.modules import ModuleRegistry
-from awfulclaw.modules.base import Module, SkillTag
+from awfulclaw.modules.base import Module
 
 # ---------------------------------------------------------------------------
 # Tests
@@ -72,19 +71,6 @@ def test_reload_clears_and_rediscovers() -> None:
         @property
         def name(self) -> str:
             return "fake"
-
-        @property
-        def skill_tags(self) -> list[SkillTag]:
-            return []
-
-        @property
-        def system_prompt_fragment(self) -> str:
-            return ""
-
-        def dispatch(
-            self, tag_match: re.Match[str], history: list[dict[str, str]], system: str
-        ) -> str:
-            return ""
 
     reg.register(FakeModule())
     assert len(reg.get_all()) == 1

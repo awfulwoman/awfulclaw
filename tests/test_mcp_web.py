@@ -6,8 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from awfulclaw.mcp.web import web_search
-from awfulclaw.modules.web._web import SearchResult
+from awfulclaw.mcp.web import SearchResult, web_search
 
 
 def _make_results(*titles: str) -> list[SearchResult]:

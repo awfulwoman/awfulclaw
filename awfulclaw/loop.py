@@ -275,22 +275,17 @@ async def run(gateway: Gateway) -> None:
         if registry.check_for_changes():
             logger.info("Modules hot-reloaded")
 
-        schedule_module = registry.get("schedule")
-        if schedule_module is not None:
-            from awfulclaw.modules.schedule._schedule import ScheduleModule as _SM
-
-            if isinstance(schedule_module, _SM):
-                due_prompts = schedule_module.run_due()
-                for prompt in due_prompts:
-                    try:
-                        sched_system = context.build_system_prompt(prompt)
-                        sched_history: list[dict[str, str]] = [{"role": "user", "content": prompt}]
-                        sched_reply = await _chat_async(sched_history, sched_system)
-                        if sched_reply:
-                            gateway.send(gateway.primary_channel, phone, sched_reply)
-                            logger.info("Schedule reply sent: %s", sched_reply[:80])
-                    except Exception as exc:
-                        logger.error("Schedule prompt failed: %s", exc)
+        due_prompts = scheduler.run_due()
+        for prompt in due_prompts:
+            try:
+                sched_system = context.build_system_prompt(prompt)
+                sched_history: list[dict[str, str]] = [{"role": "user", "content": prompt}]
+                sched_reply = await _chat_async(sched_history, sched_system)
+                if sched_reply:
+                    gateway.send(gateway.primary_channel, phone, sched_reply)
+                    logger.info("Schedule reply sent: %s", sched_reply[:80])
+            except Exception as exc:
+                logger.error("Schedule prompt failed: %s", exc)
 
         if briefing_module is not None:
             from awfulclaw.modules.briefing._briefing import BriefingModule as _BM

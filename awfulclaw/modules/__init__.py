@@ -1,4 +1,4 @@
-"""Module registry for awfulclaw — auto-discovers modules under awfulclaw/modules/."""
+"""Module registry for awfulclaw — auto-discovers hook modules under awfulclaw/modules/."""
 
 from __future__ import annotations
 
@@ -8,9 +8,9 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
-from awfulclaw.modules.base import Module, SkillTag, SkillTagMatcher, ToolMatcher
+from awfulclaw.modules.base import Module
 
-__all__ = ["Module", "ModuleRegistry", "SkillTag", "SkillTagMatcher", "ToolMatcher", "get_registry"]
+__all__ = ["Module", "ModuleRegistry", "get_registry"]
 
 logger = logging.getLogger(__name__)
 
@@ -163,19 +163,6 @@ class ModuleRegistry:
 
     def get_available(self) -> list[Module]:
         return [m for m in self._modules.values() if m.is_available()]
-
-    def get_all_skill_tags(self) -> list[tuple[Module, SkillTag]]:
-        result: list[tuple[Module, SkillTag]] = []
-        for module in self.get_available():
-            for tag in module.skill_tags:
-                result.append((module, tag))
-        return result
-
-    def get_all_tool_matchers(self) -> list[SkillTagMatcher]:
-        return [SkillTagMatcher(module, tag) for module, tag in self.get_all_skill_tags()]
-
-    def get_system_prompt_fragments(self) -> list[str]:
-        return [m.system_prompt_fragment for m in self.get_available()]
 
 
 _registry: ModuleRegistry | None = None

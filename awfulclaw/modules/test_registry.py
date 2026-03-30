@@ -1,7 +1,6 @@
 """Tests for ModuleRegistry auto-discovery, skip behavior, and reload."""
 from __future__ import annotations
 
-import re
 import sys
 from pathlib import Path
 from unittest.mock import patch
@@ -9,7 +8,7 @@ from unittest.mock import patch
 import pytest
 
 from awfulclaw.modules import ModuleRegistry
-from awfulclaw.modules.base import Module, SkillTag
+from awfulclaw.modules.base import Module
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -21,24 +20,6 @@ class DummyModule(Module):
     def name(self) -> str:
         return "dummy"
 
-    @property
-    def skill_tags(self) -> list[SkillTag]:
-        return [
-            SkillTag(
-                name="dummy",
-                pattern=re.compile(r'<skill:dummy\s*/>'),
-                description="dummy skill",
-                usage="<skill:dummy/>",
-            )
-        ]
-
-    @property
-    def system_prompt_fragment(self) -> str:
-        return "### DUMMY\nUse <skill:dummy/>."
-
-    def dispatch(self, tag_match: re.Match[str], history: list[dict[str, str]], system: str) -> str:
-        return "[dummy result]"
-
     def is_available(self) -> bool:
         return True
 
@@ -47,17 +28,6 @@ class UnavailableModule(Module):
     @property
     def name(self) -> str:
         return "unavailable"
-
-    @property
-    def skill_tags(self) -> list[SkillTag]:
-        return []
-
-    @property
-    def system_prompt_fragment(self) -> str:
-        return ""
-
-    def dispatch(self, tag_match: re.Match[str], history: list[dict[str, str]], system: str) -> str:
-        return ""
 
     def is_available(self) -> bool:
         return False
@@ -87,26 +57,6 @@ def test_get_available_filters_unavailable():
     available = reg.get_available()
     assert len(available) == 1
     assert available[0].name == "dummy"
-
-
-def test_get_all_skill_tags():
-    reg = _make_registry()
-    reg.register(DummyModule())
-    reg.register(UnavailableModule())
-    tags = reg.get_all_skill_tags()
-    assert len(tags) == 1
-    module, tag = tags[0]
-    assert module.name == "dummy"
-    assert tag.name == "dummy"
-
-
-def test_get_system_prompt_fragments():
-    reg = _make_registry()
-    reg.register(DummyModule())
-    reg.register(UnavailableModule())
-    frags = reg.get_system_prompt_fragments()
-    assert len(frags) == 1
-    assert "DUMMY" in frags[0]
 
 
 def test_reload_clears_and_rediscovers():

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import logging
+import subprocess
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -11,6 +13,8 @@ from pathlib import Path
 from croniter import croniter  # type: ignore[import-untyped]
 
 from awfulclaw.db import get_db, init_db
+
+logger = logging.getLogger(__name__)
 
 _LEGACY_JSON = Path("memory/schedules.json")
 
@@ -151,6 +155,71 @@ def save_schedules(schedules: list[Schedule]) -> None:
             )
         else:
             conn.execute("DELETE FROM schedules")
+
+
+def should_wake(condition: str) -> bool:
+    """Run condition command; return True if Claude should be invoked.
+
+    Returns True (fail open) on command error, timeout, or invalid JSON.
+    Returns False only when the command succeeds and wakeAgent is False.
+    """
+    import shlex
+
+    try:
+        result = subprocess.run(
+            shlex.split(condition),
+            shell=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            logger.warning(
+                "Schedule condition exited %d — proceeding with Claude call", result.returncode
+            )
+            return True
+        data = json.loads(result.stdout)
+        wake = data.get("wakeAgent", True)
+        return bool(wake)
+    except subprocess.TimeoutExpired:
+        logger.warning("Schedule condition timed out — proceeding with Claude call")
+        return True
+    except (json.JSONDecodeError, Exception) as exc:
+        logger.warning("Schedule condition error: %s — proceeding with Claude call", exc)
+        return True
+
+
+def run_due() -> list[str]:
+    """Check for due schedules and return their prompts.
+
+    Returns a list of prompt strings for due schedules. The caller is
+    responsible for invoking Claude and sending the replies.
+    One-off schedules are removed after being returned.
+    """
+    now = datetime.now(timezone.utc)
+    schedules = load_schedules()
+    due = get_due(schedules, now)
+    prompts: list[str] = []
+    one_off_ids: set[str] = set()
+
+    for sched in due:
+        if sched.condition is not None and not should_wake(sched.condition):
+            logger.debug("Schedule '%s' suppressed by condition", sched.name)
+            if sched.fire_at is None:
+                sched.last_run = now
+            continue
+        prompts.append(sched.prompt)
+        if sched.fire_at is not None:
+            one_off_ids.add(sched.id)
+        else:
+            sched.last_run = now
+
+    if one_off_ids:
+        schedules[:] = [s for s in schedules if s.id not in one_off_ids]
+    if due:
+        save_schedules(schedules)
+
+    return prompts
 
 
 def get_due(schedules: list[Schedule], now: datetime) -> list[Schedule]:
