@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from awfulclaw import claude, config, context, memory, scheduler
+from awfulclaw.mcp.registry import MCPRegistry
 from awfulclaw.db import get_db, init_db, write_fact, write_person
 from awfulclaw.gateway import Gateway
 from awfulclaw.modules import get_registry
@@ -138,6 +139,7 @@ async def _dispatch_tools(
     system: str,
     sem: asyncio.Semaphore,
     ev_loop: asyncio.AbstractEventLoop,
+    mcp_config_path: Path | None = None,
 ) -> str:
     """Process all tool tags in reply using pluggable ToolMatcher instances.
 
@@ -156,7 +158,7 @@ async def _dispatch_tools(
                 async with sem:
                     reply = await ev_loop.run_in_executor(
                         None,
-                        lambda: claude.chat(hist_snapshot, system=system),
+                        lambda: claude.chat(hist_snapshot, system=system, mcp_config_path=mcp_config_path),
                     )
                 reply = _parse_and_apply_memory_writes(reply)
                 matched = True
@@ -215,6 +217,9 @@ async def run(gateway: Gateway) -> None:
     init_db()
     registry = get_registry()
 
+    mcp_registry = MCPRegistry()
+    mcp_config_path = None if mcp_registry.is_empty() else mcp_registry.generate_config()
+
     poll_interval = config.get_poll_interval()
     idle_interval = config.get_idle_interval()
     phone = gateway.primary_recipient
@@ -244,7 +249,7 @@ async def run(gateway: Gateway) -> None:
         async with _sem:
             return await ev_loop.run_in_executor(
                 None,
-                lambda: claude.chat(msgs, system, image_data, image_mime),
+                lambda: claude.chat(msgs, system, image_data, image_mime, mcp_config_path),
             )
 
     # Startup self-briefing (silent — no Telegram output)
@@ -298,7 +303,7 @@ async def run(gateway: Gateway) -> None:
                 )
                 reply = _parse_and_apply_memory_writes(reply)
                 reply = await _dispatch_tools(
-                    reply, conversation_history, system, _sem, ev_loop
+                    reply, conversation_history, system, _sem, ev_loop, mcp_config_path
                 )
                 conversation_history.append({"role": "assistant", "content": reply})
                 _MAX_HISTORY = 40
@@ -332,7 +337,7 @@ async def run(gateway: Gateway) -> None:
                         sched_reply = await _chat_async(sched_history, sched_system)
                         sched_reply = _parse_and_apply_memory_writes(sched_reply)
                         sched_reply = await _dispatch_tools(
-                            sched_reply, sched_history, sched_system, _sem, ev_loop
+                            sched_reply, sched_history, sched_system, _sem, ev_loop, mcp_config_path
                         )
                         if sched_reply:
                             gateway.send(gateway.primary_channel, phone, sched_reply)
@@ -354,7 +359,7 @@ async def run(gateway: Gateway) -> None:
                         briefing_reply = await _chat_async(briefing_history, briefing_system)
                         briefing_reply = _parse_and_apply_memory_writes(briefing_reply)
                         briefing_reply = await _dispatch_tools(
-                            briefing_reply, briefing_history, briefing_system, _sem, ev_loop
+                            briefing_reply, briefing_history, briefing_system, _sem, ev_loop, mcp_config_path
                         )
                         if briefing_reply:
                             gateway.send(gateway.primary_channel, phone, briefing_reply)
