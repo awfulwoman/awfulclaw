@@ -233,6 +233,11 @@ async def run(gateway: Gateway) -> None:
         "uv",
         ["run", "python", "-m", "awfulclaw.mcp.search"],
     )
+    mcp_registry.register(
+        "schedule",
+        "uv",
+        ["run", "python", "-m", "awfulclaw.mcp.schedule"],
+    )
     mcp_config_path = None if mcp_registry.is_empty() else mcp_registry.generate_config()
 
     poll_interval = config.get_poll_interval()
