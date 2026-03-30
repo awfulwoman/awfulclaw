@@ -54,6 +54,18 @@ Started: Mon 30 Mar 2026 13:18:13 CEST
   - The MCP config format the claude CLI expects: `{"mcpServers": {"name": {"command": ..., "args": [...], "env": {...}}}}`
 ---
 
+## [2026-03-30] - #104 Create MCP server for memory_write
+- Created `awfulclaw/mcp/memory_write.py`: FastMCP stdio server with `memory_write(path, content)` tool
+- Routes `facts/` and `people/` to SQLite; all other paths go to `memory.write()`
+- Blocks `SOUL.md`, `HEARTBEAT.md`, `skills/`; path traversal caught by `memory._resolve()`
+- Registered in `MCPRegistry` at startup in `loop.py`
+- Files changed: `awfulclaw/mcp/memory_write.py` (new), `tests/test_mcp_memory_write.py` (new), `awfulclaw/loop.py`
+- **Learnings for future iterations:**
+  - Use typed pytest fixtures (`tmp_path: Path`, `monkeypatch: pytest.MonkeyPatch`) in an `autouse` fixture to get 0 pyright errors — untyped inline fixtures cause pyright warnings
+  - FastMCP tool functions are plain functions decorated with `@mcp.tool()`, run via `mcp.run()` as `__main__`
+  - `memory._resolve()` already guards path traversal with `ValueError` — catch and return error string
+---
+
 ## [2026-03-30] - #103 Wire --mcp-config into claude.py
 - Added `mcp_config_path: Path | None` parameter to `chat()` and `_chat_cli()` in `awfulclaw/claude.py`
 - When provided, `--mcp-config <path>` appended to the subprocess command
