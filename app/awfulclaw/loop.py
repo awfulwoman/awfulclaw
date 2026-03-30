@@ -14,7 +14,7 @@ from pathlib import Path
 
 from awfulclaw_mcp.registry import MCPRegistry
 
-from awfulclaw import claude, config, context, memory, scheduler
+from awfulclaw import briefings, claude, config, context, memory, scheduler
 from awfulclaw.db import get_db, init_db, write_fact
 from awfulclaw.gateway import Gateway
 
@@ -117,6 +117,11 @@ async def run(gateway: Gateway) -> None:
     logger.info("awfulclaw starting up")
 
     init_db()
+
+    briefing_time = config.get_briefing_time()
+    if briefing_time is not None:
+        briefings.ensure_daily_briefing(briefing_time)
+    briefings.ensure_startup_briefing()
 
     _MCP_CONFIG_PATH = Path("config/mcp_servers.json")
     mcp_registry = MCPRegistry()
