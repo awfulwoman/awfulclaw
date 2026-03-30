@@ -116,6 +116,17 @@ Started: Mon 30 Mar 2026 13:18:13 CEST
   - `autouse=True` fixture with monkeypatch patches `load_schedules` to return [] and `save_schedules` to no-op — individual tests override with `patch()` context manager when they need to inspect saved data
 ---
 
+## [2026-03-30] - #109 Remove skill tag documentation from system prompt
+- Removed `## Available Skills` section (built from `registry.get_system_prompt_fragments()`) from `build_system_prompt()`
+- Removed `<memory:write>` tag syntax docs from `memory_instructions` block; retained profile update guidance and memory summary instructions
+- Removed `get_registry` import from `context.py` — no longer referenced
+- Updated `tests/test_context.py`: deleted 3 tests for removed feature, added 2 asserting absence of old sections
+- Files changed: `awfulclaw/context.py`, `tests/test_context.py`
+- **Learnings for future iterations:**
+  - `memory_instructions` string in `context.py` is a multi-paragraph block — edit carefully to preserve only the non-skill paragraphs
+  - After removing a feature, check for now-unused imports (e.g. `from unittest.mock import patch`) — ruff flags them
+---
+
 ## [2026-03-30] - #108 Create MCP server for imap
 - Created `awfulclaw/mcp/imap.py`: FastMCP stdio server with `imap_read` tool
 - Reuses `fetch_unread()` from `awfulclaw/modules/imap/_imap.py` — no logic duplication
