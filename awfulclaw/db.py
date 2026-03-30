@@ -33,3 +33,18 @@ def init_db() -> None:
                 condition TEXT
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS conversations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                role TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
+                content TEXT NOT NULL,
+                timestamp TEXT NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_conv_session ON conversations(session_id)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_conv_timestamp ON conversations(timestamp)
+        """)

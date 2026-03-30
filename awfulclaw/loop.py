@@ -6,11 +6,13 @@ import logging
 import re
 import signal
 import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
 from awfulclaw import claude, config, context, memory, scheduler
 from awfulclaw.connector import Connector
+from awfulclaw.db import get_db, init_db
 from awfulclaw.modules import get_registry
 
 logger = logging.getLogger(__name__)
@@ -152,13 +154,6 @@ def _dispatch_all_skills(
     return reply
 
 
-def _session_path() -> str:
-    """Return conversations/YYYY/MM/<iso-timestamp>.md with colons replaced by dashes."""
-    now = datetime.now(timezone.utc)
-    ts = now.strftime("%Y-%m-%dT%H-%M-%S")
-    return f"conversations/{now.year}/{now.month:02d}/{ts}.md"
-
-
 _MEMORY_ROOT = Path("memory")
 
 
@@ -166,48 +161,35 @@ def _sigterm_handler(signum: int, frame: object) -> None:
     raise SystemExit(0)
 
 
-_TURN_RE = re.compile(r"^## \S+ — (User|Assistant)\s*$", re.MULTILINE)
-
-
 def _load_recent_history(max_turns: int = 20) -> list[dict[str, str]]:
-    """Load the last *max_turns* turns from the most recent conversation file."""
-    conv_dir = _MEMORY_ROOT / "conversations"
+    """Load the last *max_turns* turns from SQLite conversations table."""
     try:
-        files = sorted(conv_dir.rglob("*.md"), key=lambda p: p.stat().st_mtime)
-        if not files:
-            return []
-        recent = files[-1]
-        text = recent.read_text(encoding="utf-8")
+        with get_db() as conn:
+            rows = conn.execute(
+                """
+                SELECT role, content FROM conversations
+                ORDER BY id DESC LIMIT ?
+                """,
+                (max_turns,),
+            ).fetchall()
+        return [{"role": r["role"], "content": r["content"]} for r in reversed(rows)]
     except Exception as exc:
-        logger.warning("Could not read recent conversation file: %s", exc)
-        return []
-
-    try:
-        parts = _TURN_RE.split(text)
-        # parts: [pre-header-text, role1, content1, role2, content2, ...]
-        turns: list[dict[str, str]] = []
-        i = 1
-        while i + 1 < len(parts):
-            role = parts[i].strip()
-            content = parts[i + 1].strip()
-            turns.append({"role": role.lower(), "content": content})
-            i += 2
-        return turns[-max_turns:]
-    except Exception as exc:
-        logger.warning("Failed to parse recent conversation history: %s", exc)
+        logger.warning("Could not load recent conversation history: %s", exc)
         return []
 
 
-def _append_turn(session_file: str, role: str, content: str) -> None:
-    """Append a single conversation turn to the session file."""
+def _append_turn(session_id: str, role: str, content: str) -> None:
+    """Insert a single conversation turn into SQLite."""
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    entry = f"\n## {ts} — {role}\n{content}\n"
     try:
-        full = _MEMORY_ROOT / session_file
-        with full.open("a", encoding="utf-8") as f:
-            f.write(entry)
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO conversations"
+                " (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)",
+                (session_id, role.lower(), content, ts),
+            )
     except Exception as exc:
-        logger.error("Failed to append conversation turn: %s", exc)
+        logger.error("Failed to insert conversation turn: %s", exc)
 
 
 def run(connector: Connector) -> None:
@@ -215,6 +197,7 @@ def run(connector: Connector) -> None:
     signal.signal(signal.SIGTERM, _sigterm_handler)
     logger.info("awfulclaw starting up")
 
+    init_db()
     registry = get_registry()
 
     poll_interval = config.get_poll_interval()
@@ -228,14 +211,7 @@ def run(connector: Connector) -> None:
     last_idle = time.monotonic()
     briefing_module = registry.get("briefing")
 
-    session_file = _session_path()
-    try:
-        full = _MEMORY_ROOT / session_file
-        full.parent.mkdir(parents=True, exist_ok=True)
-        session_ts = session_file.removeprefix("conversations/").removesuffix(".md")
-        full.write_text(f"# Session: {session_ts}\n", encoding="utf-8")
-    except Exception as exc:
-        logger.error("Failed to create session file: %s", exc)
+    session_id = str(uuid.uuid4())
 
     # Startup self-briefing (silent — no Telegram output)
     startup_module = registry.get("startup_briefing")
@@ -298,8 +274,8 @@ def run(connector: Connector) -> None:
                 _MAX_HISTORY = 40
                 if len(conversation_history) > _MAX_HISTORY:
                     conversation_history[:] = conversation_history[-_MAX_HISTORY:]
-                _append_turn(session_file, "User", msg.body)
-                _append_turn(session_file, "Assistant", reply)
+                _append_turn(session_id, "user", msg.body)
+                _append_turn(session_id, "assistant", reply)
                 if reply:
                     connector.send_message(phone, reply)
                     logger.info("Sent reply: %s", reply[:80])
