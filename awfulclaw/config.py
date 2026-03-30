@@ -30,6 +30,19 @@ def get_model() -> str:
     return os.getenv("AWFULCLAW_MODEL", "claude-sonnet-4-6")
 
 
+def get_allowed_tools() -> list[str]:
+    """Return list of allowed Claude tools from env, or sensible default."""
+    raw = os.getenv("AWFULCLAW_ALLOWED_TOOLS", "").strip()
+    if raw:
+        return [t.strip() for t in raw.split(",") if t.strip()]
+    return ["Read(memory/**)", "Write(memory/**)", "Edit(memory/**)"]
+
+
+def get_sandbox() -> bool:
+    """Return True if AWFULCLAW_SANDBOX=1 is set."""
+    return os.getenv("AWFULCLAW_SANDBOX", "0").strip() == "1"
+
+
 def get_poll_interval() -> int:
     return int(os.getenv("AWFULCLAW_POLL_INTERVAL", "5"))
 

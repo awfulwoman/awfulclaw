@@ -1,0 +1,27 @@
+; macOS sandbox profile for the claude CLI subprocess.
+; Invoked via: sandbox-exec -f sandbox.sb -D MEMORY_PATH=/abs/path/to/memory
+;
+; Policy: deny file writes everywhere, allow only memory/ and claude's own
+; dependencies. Network access is allowed (Claude CLI calls the API).
+
+(version 1)
+
+; Start with a default-deny posture for writes; allow everything else.
+(allow default)
+(deny file-write*)
+
+; Allow writes to the memory directory (passed in via -D MEMORY_PATH=...).
+(allow file-write* (subpath (param "MEMORY_PATH")))
+
+; Allow writes to standard macOS temp/cache dirs needed by the CLI runtime.
+(allow file-write*
+  (subpath "/tmp")
+  (subpath "/var/folders")
+  (subpath "/private/tmp")
+  (subpath "/private/var/folders"))
+
+; Allow writes to the user's home .claude dir (CLI state / session files).
+(allow file-write* (subpath (string-append (param "HOME") "/.claude")))
+
+; Network is unrestricted — Claude CLI must reach the Anthropic API.
+(allow network*)
