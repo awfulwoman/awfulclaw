@@ -238,6 +238,23 @@ async def run(gateway: Gateway) -> None:
         "uv",
         ["run", "python", "-m", "awfulclaw.mcp.schedule"],
     )
+    # IMAP is optional — only register when env vars are configured
+    if (
+        os.getenv("IMAP_HOST")
+        and os.getenv("IMAP_USER")
+        and os.getenv("IMAP_PASSWORD")
+    ):
+        mcp_registry.register(
+            "imap",
+            "uv",
+            ["run", "python", "-m", "awfulclaw.mcp.imap"],
+            env={
+                "IMAP_HOST": os.getenv("IMAP_HOST", ""),
+                "IMAP_PORT": os.getenv("IMAP_PORT", "993"),
+                "IMAP_USER": os.getenv("IMAP_USER", ""),
+                "IMAP_PASSWORD": os.getenv("IMAP_PASSWORD", ""),
+            },
+        )
     mcp_config_path = None if mcp_registry.is_empty() else mcp_registry.generate_config()
 
     poll_interval = config.get_poll_interval()
