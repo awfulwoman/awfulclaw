@@ -5,6 +5,19 @@
 - Pre-existing ruff errors: 2 (in test_telegram.py and startup_briefing test) — pre-existing, don't fix
 - ToolMatcher protocol in base.py: match()/execute()/strip() — execute() calls claude.chat() internally via lazy import to avoid circular deps; _parse_and_apply_memory_writes is still called by loop.py after execute() returns
 
+## [2026-03-30] - #95 Gateway abstraction: decouple message ingestion from agent loop
+- Added `channel: str = "telegram"` to `Message` dataclass
+- Created `awfulclaw/gateway.py` with `Gateway` wrapping one or more `Connector` instances; `poll(since)` aggregates + stamps channel, `send(channel, to, body)` routes outbound
+- Updated `loop.py:run()` to accept `Gateway`; all send/poll calls go through gateway
+- Updated `__main__.py` to create `Gateway({channel: connector})` before calling `run()`
+- Added `config.get_channel()` helper
+- Files changed: `awfulclaw/connector.py`, `awfulclaw/gateway.py`, `awfulclaw/loop.py`, `awfulclaw/__main__.py`, `awfulclaw/config.py`
+- **Learnings for future iterations:**
+  - Gateway's queue fill-and-drain in the same `poll()` call works cleanly for sync loops; async connectors could push to `_inbound` in background threads and `poll()` just drains
+  - Single-connector path is a transparent wrapper — behavior identical to pre-gateway
+  - `default_channel` property needed for idle/schedule/briefing sends that have no per-message channel context
+---
+
 ## [2026-03-30] - #97 Per-sender personality overlays in system prompt
 - Added `extract_personality_section()` to parse `## Personality` section from people/*.md files
 - Added `channel` param to `build_system_prompt()` for `SOUL_<channel>.md` override
