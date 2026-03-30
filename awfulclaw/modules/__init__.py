@@ -8,9 +8,16 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
-from awfulclaw.modules.base import Module, SkillTag
+from awfulclaw.modules.base import Module, SkillTag, SkillTagMatcher, ToolMatcher
 
-__all__ = ["Module", "ModuleRegistry", "SkillTag", "get_registry"]
+__all__ = [
+    "Module",
+    "ModuleRegistry",
+    "SkillTag",
+    "SkillTagMatcher",
+    "ToolMatcher",
+    "get_registry",
+]
 
 logger = logging.getLogger(__name__)
 
@@ -170,6 +177,10 @@ class ModuleRegistry:
             for tag in module.skill_tags:
                 result.append((module, tag))
         return result
+
+    def get_all_tool_matchers(self) -> list[ToolMatcher]:
+        """Return all skill tags wrapped as ToolMatcher instances."""
+        return [SkillTagMatcher(module, tag) for module, tag in self.get_all_skill_tags()]
 
     def get_system_prompt_fragments(self) -> list[str]:
         return [m.system_prompt_fragment for m in self.get_available()]

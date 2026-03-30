@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import Protocol
 
 
 @dataclass
@@ -13,6 +14,28 @@ class SkillTag:
     pattern: re.Pattern[str]
     description: str
     usage: str
+
+
+class ToolMatcher(Protocol):
+    """Protocol for pluggable tool dispatch strategies."""
+
+    def match(self, reply: str) -> re.Match[str] | None:
+        """Return a match if this tool should fire, or None."""
+        ...
+
+    def execute(
+        self,
+        match: re.Match[str],
+        reply: str,
+        history: list[dict[str, str]],
+        system: str,
+    ) -> str:
+        """Execute the tool. Return the new reply after re-invoking Claude."""
+        ...
+
+    def strip(self, reply: str) -> str:
+        """Strip any leftover/malformed tags from reply."""
+        ...
 
 
 class Module(ABC):
@@ -38,3 +61,32 @@ class Module(ABC):
     def is_available(self) -> bool:
         """Return True if this module's dependencies are met. Default: True."""
         return True
+
+
+class SkillTagMatcher:
+    """Wraps a Module + SkillTag pair as a ToolMatcher."""
+
+    def __init__(self, module: Module, skill_tag: SkillTag) -> None:
+        self._module = module
+        self._skill_tag = skill_tag
+
+    def match(self, reply: str) -> re.Match[str] | None:
+        return self._skill_tag.pattern.search(reply)
+
+    def execute(
+        self,
+        match: re.Match[str],
+        reply: str,
+        history: list[dict[str, str]],
+        system: str,
+    ) -> str:
+        from awfulclaw import claude  # local import to avoid circular dependency
+
+        cleaned = self._skill_tag.pattern.sub("", reply, count=1).strip()
+        result_text = self._module.dispatch(match, history, system)
+        history.append({"role": "assistant", "content": cleaned})
+        history.append({"role": "user", "content": result_text})
+        return claude.chat(history, system=system)
+
+    def strip(self, reply: str) -> str:
+        return self._skill_tag.pattern.sub("", reply).strip()

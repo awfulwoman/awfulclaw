@@ -120,35 +120,32 @@ def _parse_and_apply_memory_writes(text: str) -> str:
     return _MEMORY_WRITE_RE.sub("", text).strip()
 
 
-def _dispatch_all_skills(
+def _dispatch_tools(
     reply: str,
     history: list[dict[str, str]],
     system: str,
 ) -> str:
-    """Process all skill tags in reply using the module registry.
+    """Process all tool tags in reply using pluggable ToolMatcher instances.
 
     Handles multiple tags by processing them one at a time, re-invoking
     Claude after each. Strips leftover malformed tags at the end.
     """
     registry = get_registry()
+    matchers = registry.get_all_tool_matchers()
     for _round in range(5):  # max 5 dispatch rounds
         matched = False
-        for module, skill_tag in registry.get_all_skill_tags():
-            match = skill_tag.pattern.search(reply)
+        for matcher in matchers:
+            match = matcher.match(reply)
             if match:
-                reply = skill_tag.pattern.sub("", reply, count=1).strip()
-                result_text = module.dispatch(match, history, system)
-                history.append({"role": "assistant", "content": reply})
-                history.append({"role": "user", "content": result_text})
-                reply = claude.chat(history, system=system)
+                reply = matcher.execute(match, reply, history, system)
                 reply = _parse_and_apply_memory_writes(reply)
                 matched = True
                 break  # restart matching from the top
         if not matched:
             break
-    # Strip any leftover malformed skill tags
-    for module, skill_tag in registry.get_all_skill_tags():
-        reply = skill_tag.pattern.sub("", reply).strip()
+    # Strip any leftover malformed tags
+    for matcher in matchers:
+        reply = matcher.strip(reply)
     return reply
 
 
@@ -292,7 +289,7 @@ def run(connector: Connector) -> None:
                     image_mime=msg.image_mime,
                 )
                 reply = _parse_and_apply_memory_writes(reply)
-                reply = _dispatch_all_skills(reply, conversation_history, system)
+                reply = _dispatch_tools(reply, conversation_history, system)
 
                 conversation_history.append({"role": "assistant", "content": reply})
                 _MAX_HISTORY = 40
@@ -325,7 +322,7 @@ def run(connector: Connector) -> None:
                                 ]
                                 sched_reply = claude.chat(sched_history, system=sched_system)
                                 sched_reply = _parse_and_apply_memory_writes(sched_reply)
-                                sched_reply = _dispatch_all_skills(
+                                sched_reply = _dispatch_tools(
                                     sched_reply, sched_history, sched_system
                                 )
                                 if sched_reply:
@@ -349,7 +346,7 @@ def run(connector: Connector) -> None:
                                     briefing_history, system=briefing_system
                                 )
                                 briefing_reply = _parse_and_apply_memory_writes(briefing_reply)
-                                briefing_reply = _dispatch_all_skills(
+                                briefing_reply = _dispatch_tools(
                                     briefing_reply, briefing_history, briefing_system
                                 )
                                 if briefing_reply:
