@@ -104,39 +104,6 @@ def init_db() -> None:
     """Create tables if they don't exist."""
     with get_db() as conn:
         conn.execute("""
-            CREATE TABLE IF NOT EXISTS schedules (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                cron TEXT NOT NULL DEFAULT '',
-                prompt TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                last_run TEXT,
-                fire_at TEXT,
-                condition TEXT,
-                silent INTEGER NOT NULL DEFAULT 0
-            )
-        """)
-        # Migrate existing DBs that lack the silent column
-        try:
-            conn.execute("ALTER TABLE schedules ADD COLUMN silent INTEGER NOT NULL DEFAULT 0")
-        except Exception:
-            pass  # column already exists
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS conversations (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                session_id TEXT NOT NULL,
-                role TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
-                content TEXT NOT NULL,
-                timestamp TEXT NOT NULL
-            )
-        """)
-        conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_conv_session ON conversations(session_id)
-        """)
-        conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_conv_timestamp ON conversations(timestamp)
-        """)
-        conn.execute("""
             CREATE TABLE IF NOT EXISTS facts (
                 key TEXT PRIMARY KEY,
                 content TEXT NOT NULL,

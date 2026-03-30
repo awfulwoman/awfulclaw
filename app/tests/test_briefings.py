@@ -1,4 +1,4 @@
-"""Tests for briefings.py — daily and startup schedule auto-creation."""
+"""Tests for briefings.py — daily briefing schedule auto-creation and startup prompt."""
 
 from __future__ import annotations
 
@@ -9,10 +9,9 @@ import pytest
 from awfulclaw.briefings import (
     BRIEFING_PROMPT,
     ensure_daily_briefing,
-    ensure_startup_briefing,
     get_startup_prompt,
 )
-from awfulclaw.scheduler import load_schedules, run_due
+from awfulclaw.scheduler import load_schedules
 
 
 @pytest.fixture(autouse=True)
@@ -78,36 +77,6 @@ def test_daily_briefing_fires_on_cron() -> None:
     due = get_due([s], now)
     assert s in due
 
-
-# --- ensure_startup_briefing ---
-
-
-def test_startup_briefing_created_as_one_off() -> None:
-    ensure_startup_briefing()
-    schedules = load_schedules()
-    startup = [s for s in schedules if s.name == "startup_briefing"]
-    assert len(startup) == 1
-    assert startup[0].fire_at is not None
-    assert startup[0].cron == ""
-
-
-def test_startup_briefing_idempotent() -> None:
-    ensure_startup_briefing()
-    ensure_startup_briefing()
-    schedules = load_schedules()
-    assert len([s for s in schedules if s.name == "startup_briefing"]) == 1
-
-
-def test_startup_briefing_fires_once_then_deletes() -> None:
-    """run_due() fires the startup briefing and removes it (one-off)."""
-    ensure_startup_briefing()
-    assert any(s.name == "startup_briefing" for s in load_schedules())
-
-    prompts = run_due()
-    assert len(prompts) == 1
-
-    # One-off removed after firing
-    assert not any(s.name == "startup_briefing" for s in load_schedules())
 
 
 def test_startup_prompt_includes_progress_note(tmp_path: Path) -> None:

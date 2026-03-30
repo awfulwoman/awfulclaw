@@ -1,4 +1,4 @@
-"""Schedule data model and persistence backed by SQLite."""
+"""Schedule data model and persistence backed by memory/schedules.json."""
 
 from __future__ import annotations
 
@@ -8,12 +8,13 @@ import subprocess
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 
 from croniter import croniter  # type: ignore[import-untyped]
 
-from awfulclaw.db import get_db, init_db
-
 logger = logging.getLogger(__name__)
+
+_SCHEDULES_PATH = Path("memory/schedules.json")
 
 
 @dataclass
@@ -59,73 +60,54 @@ def _parse_dt(raw: str | None) -> datetime | None:
     return dt
 
 
-def _row_to_schedule(row: object) -> Schedule:
-    # row is a sqlite3.Row
-    import sqlite3
 
-    r: sqlite3.Row = row  # type: ignore[assignment]
-    created_at = _parse_dt(r["created_at"]) or datetime.now(timezone.utc)
+def _schedule_to_dict(s: Schedule) -> dict[str, object]:
+    return {
+        "id": s.id,
+        "name": s.name,
+        "cron": s.cron,
+        "prompt": s.prompt,
+        "created_at": s.created_at.isoformat(),
+        "last_run": s.last_run.isoformat() if s.last_run else None,
+        "fire_at": s.fire_at.isoformat() if s.fire_at else None,
+        "condition": s.condition,
+        "silent": s.silent,
+    }
+
+
+def _dict_to_schedule(d: dict[str, object]) -> Schedule:
     return Schedule(
-        id=r["id"],
-        name=r["name"],
-        cron=r["cron"],
-        prompt=r["prompt"],
-        created_at=created_at,
-        last_run=_parse_dt(r["last_run"]),
-        fire_at=_parse_dt(r["fire_at"]),
-        condition=r["condition"],
-        silent=bool(r["silent"]),
+        id=str(d["id"]),
+        name=str(d["name"]),
+        cron=str(d.get("cron", "")),
+        prompt=str(d["prompt"]),
+        created_at=_parse_dt(str(d["created_at"])) or datetime.now(timezone.utc),
+        last_run=_parse_dt(str(d["last_run"])) if d.get("last_run") else None,
+        fire_at=_parse_dt(str(d["fire_at"])) if d.get("fire_at") else None,
+        condition=str(d["condition"]) if d.get("condition") else None,
+        silent=bool(d.get("silent", False)),
     )
 
 
 def load_schedules() -> list[Schedule]:
-    """Read schedules from SQLite."""
-    init_db()
-    with get_db() as conn:
-        rows = conn.execute("SELECT * FROM schedules").fetchall()
-    return [_row_to_schedule(r) for r in rows]
+    """Read schedules from memory/schedules.json."""
+    if not _SCHEDULES_PATH.exists():
+        return []
+    try:
+        data: list[dict[str, object]] = json.loads(_SCHEDULES_PATH.read_text(encoding="utf-8"))
+        return [_dict_to_schedule(d) for d in data]
+    except Exception as exc:
+        logger.warning("Could not load schedules.json: %s", exc)
+        return []
 
 
 def save_schedules(schedules: list[Schedule]) -> None:
-    """Persist schedules to SQLite (full replace of the set)."""
-    init_db()
-    ids = [s.id for s in schedules]
-    with get_db() as conn:
-        for s in schedules:
-            conn.execute(
-                """
-                INSERT INTO schedules
-                    (id, name, cron, prompt, created_at, last_run, fire_at, condition, silent)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET
-                    name=excluded.name,
-                    cron=excluded.cron,
-                    prompt=excluded.prompt,
-                    created_at=excluded.created_at,
-                    last_run=excluded.last_run,
-                    fire_at=excluded.fire_at,
-                    condition=excluded.condition,
-                    silent=excluded.silent
-                """,
-                (
-                    s.id,
-                    s.name,
-                    s.cron,
-                    s.prompt,
-                    s.created_at.isoformat(),
-                    s.last_run.isoformat() if s.last_run else None,
-                    s.fire_at.isoformat() if s.fire_at else None,
-                    s.condition,
-                    int(s.silent),
-                ),
-            )
-        if ids:
-            placeholders = ",".join("?" * len(ids))
-            conn.execute(
-                f"DELETE FROM schedules WHERE id NOT IN ({placeholders})", ids
-            )
-        else:
-            conn.execute("DELETE FROM schedules")
+    """Persist schedules to memory/schedules.json."""
+    _SCHEDULES_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _SCHEDULES_PATH.write_text(
+        json.dumps([_schedule_to_dict(s) for s in schedules], indent=2),
+        encoding="utf-8",
+    )
 
 
 def should_wake(condition: str) -> bool:

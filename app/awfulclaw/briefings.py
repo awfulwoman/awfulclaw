@@ -1,8 +1,8 @@
-"""Briefing schedule setup — daily and startup briefings backed by DB-scheduled prompts."""
+"""Briefing prompts and schedule setup."""
 
 from __future__ import annotations
 
-from datetime import datetime, time, timezone
+from datetime import time
 
 BRIEFING_PROMPT = (
     "Good morning! Please give me a concise daily briefing. Include:\n"
@@ -50,16 +50,4 @@ def ensure_daily_briefing(briefing_time: time) -> None:
         return
     cron = f"{briefing_time.minute} {briefing_time.hour} * * *"
     s = Schedule.create(name="daily_briefing", cron=cron, prompt=BRIEFING_PROMPT)
-    save_schedules(schedules + [s])
-
-
-def ensure_startup_briefing() -> None:
-    """Create a one-off startup_briefing schedule (fire_at=now) if none already exists."""
-    from awfulclaw.scheduler import Schedule, load_schedules, save_schedules
-
-    schedules = load_schedules()
-    if any(s.name == "startup_briefing" for s in schedules):
-        return
-    now = datetime.now(timezone.utc)
-    s = Schedule.create(name="startup_briefing", prompt=get_startup_prompt(), fire_at=now, silent=True)
     save_schedules(schedules + [s])

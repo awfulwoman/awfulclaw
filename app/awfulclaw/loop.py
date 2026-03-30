@@ -8,14 +8,13 @@ import os
 import re
 import signal
 import time
-import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from awfulclaw_mcp.registry import MCPRegistry
 
 from awfulclaw import briefings, claude, config, context, memory, scheduler
-from awfulclaw.db import get_db, init_db, write_fact
+from awfulclaw.db import init_db, write_fact
 from awfulclaw.gateway import Gateway
 
 logger = logging.getLogger(__name__)
@@ -74,41 +73,62 @@ def _load_heartbeat() -> str:
 
 
 _MEMORY_ROOT = Path("memory")
+_CONVERSATIONS_DIR = _MEMORY_ROOT / "conversations"
 
 
 def _sigterm_handler(signum: int, frame: object) -> None:
     raise SystemExit(0)
 
 
+def _conv_path(dt: datetime) -> Path:
+    return _CONVERSATIONS_DIR / f"{dt.strftime('%Y-%m-%d')}.md"
+
+
+def _parse_conv_file(path: Path) -> list[dict[str, str]]:
+    """Parse a daily conversation markdown file into turn dicts."""
+    turns: list[dict[str, str]] = []
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return turns
+    # Split on section headers: ## HH:MM:SS — role
+    parts = re.split(r"^## \d{2}:\d{2}:\d{2} — (\w+)\s*$", text, flags=re.MULTILINE)
+    # parts[0] is pre-header text (ignored), then alternating role/content
+    i = 1
+    while i + 1 < len(parts):
+        role = parts[i].strip().lower()
+        content = parts[i + 1].strip()
+        if role in ("user", "assistant") and content:
+            turns.append({"role": role, "content": content})
+        i += 2
+    return turns
+
+
 def _load_recent_history(max_turns: int = 20) -> list[dict[str, str]]:
-    """Load the last *max_turns* turns from SQLite conversations table."""
-    try:
-        with get_db() as conn:
-            rows = conn.execute(
-                """
-                SELECT role, content FROM conversations
-                ORDER BY id DESC LIMIT ?
-                """,
-                (max_turns,),
-            ).fetchall()
-        return [{"role": r["role"], "content": r["content"]} for r in reversed(rows)]
-    except Exception as exc:
-        logger.warning("Could not load recent conversation history: %s", exc)
-        return []
+    """Load the last *max_turns* turns from daily conversation markdown files."""
+    turns: list[dict[str, str]] = []
+    now = datetime.now(timezone.utc)
+    for days_back in range(7):
+        dt = now - timedelta(days=days_back)
+        path = _conv_path(dt)
+        if path.exists():
+            turns = _parse_conv_file(path) + turns
+            if len(turns) >= max_turns:
+                break
+    return turns[-max_turns:]
 
 
-def _append_turn(session_id: str, role: str, content: str) -> None:
-    """Insert a single conversation turn into SQLite."""
-    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+def _append_turn(role: str, content: str) -> None:
+    """Append a single conversation turn to today's markdown file."""
+    now = datetime.now(timezone.utc)
+    path = _conv_path(now)
     try:
-        with get_db() as conn:
-            conn.execute(
-                "INSERT INTO conversations"
-                " (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)",
-                (session_id, role.lower(), content, ts),
-            )
-    except Exception as exc:
-        logger.error("Failed to insert conversation turn: %s", exc)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        ts = now.strftime("%H:%M:%S")
+        with path.open("a", encoding="utf-8") as f:
+            f.write(f"## {ts} — {role}\n\n{content}\n\n")
+    except OSError as exc:
+        logger.error("Failed to append conversation turn: %s", exc)
 
 
 async def run(gateway: Gateway) -> None:
@@ -121,7 +141,6 @@ async def run(gateway: Gateway) -> None:
     briefing_time = config.get_briefing_time()
     if briefing_time is not None:
         briefings.ensure_daily_briefing(briefing_time)
-    briefings.ensure_startup_briefing()
 
     _MCP_CONFIG_PATH = Path("config/mcp_servers.json")
     mcp_registry = MCPRegistry()
@@ -139,13 +158,27 @@ async def run(gateway: Gateway) -> None:
         logger.info("Restored %d turns from previous session", len(conversation_history))
     last_idle = time.monotonic()
 
-    session_id = str(uuid.uuid4())
     _max_concurrent = int(os.getenv("AWFULCLAW_MAX_CONCURRENT", "3"))
     _sem = asyncio.Semaphore(_max_concurrent)
     _history_lock = asyncio.Lock()
     ev_loop = asyncio.get_running_loop()
 
     gateway.start()
+
+    # Run startup briefing synchronously before entering the loop
+    try:
+        startup_prompt = briefings.get_startup_prompt()
+        startup_system = context.build_system_prompt(startup_prompt)
+        startup_reply = await ev_loop.run_in_executor(
+            None,
+            lambda: claude.chat([{"role": "user", "content": startup_prompt}], startup_system, None, None, _mcp_config[0]),
+        )
+        logger.info("Startup self-briefing completed")
+        if startup_reply:
+            _append_turn("user", startup_prompt)
+            _append_turn("assistant", startup_reply)
+    except Exception as exc:
+        logger.warning("Startup self-briefing failed: %s", exc)
 
     async def _chat_async(
         messages: list[dict[str, str]],
@@ -199,8 +232,8 @@ async def run(gateway: Gateway) -> None:
                 if len(conversation_history) > _MAX_HISTORY:
                     conversation_history[:] = conversation_history[-_MAX_HISTORY:]
 
-            _append_turn(session_id, "user", msg.body)
-            _append_turn(session_id, "assistant", reply)
+            _append_turn("user", msg.body)
+            _append_turn("assistant", reply)
             if reply:
                 gateway.send(msg.channel, recipient, reply)
                 logger.info("Sent reply: %s", reply[:80])
