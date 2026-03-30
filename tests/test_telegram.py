@@ -122,3 +122,24 @@ def test_photo_message_no_caption_uses_placeholder(connector: TelegramConnector)
 
     assert len(msgs) == 1
     assert msgs[0].body == "[image]"
+
+
+def test_rate_limit_drops_excess_messages(connector: TelegramConnector) -> None:
+    from awfulclaw.telegram import _RATE_LIMIT_MAX
+
+    updates = [_make_update(i, {"text": f"msg{i}"}) for i in range(_RATE_LIMIT_MAX + 3)]
+    with patch("httpx.get", return_value=_mock_response(updates)):
+        msgs = connector.poll_new_messages(datetime.now(tz=timezone.utc))
+    assert len(msgs) == _RATE_LIMIT_MAX
+
+
+def test_long_message_truncated(connector: TelegramConnector) -> None:
+    from awfulclaw.telegram import _MAX_MESSAGE_LENGTH
+
+    long_text = "x" * (_MAX_MESSAGE_LENGTH + 500)
+    update = _make_update(1, {"text": long_text})
+    with patch("httpx.get", return_value=_mock_response([update])):
+        msgs = connector.poll_new_messages(datetime.now(tz=timezone.utc))
+    assert len(msgs) == 1
+    assert len(msgs[0].body) == _MAX_MESSAGE_LENGTH + len("\n[truncated]")
+    assert msgs[0].body.endswith("[truncated]")

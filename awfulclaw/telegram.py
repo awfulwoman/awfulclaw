@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -39,6 +40,11 @@ def _get_chat_id() -> str:
 
 _OFFSET_PATH = Path("memory/.telegram_offset")
 
+# Rate limiting: max messages per window
+_RATE_LIMIT_WINDOW = 60  # seconds
+_RATE_LIMIT_MAX = 10  # max messages per window
+_MAX_MESSAGE_LENGTH = 4000  # characters
+
 
 class TelegramConnector(Connector):
     def __init__(self) -> None:
@@ -46,6 +52,7 @@ class TelegramConnector(Connector):
         self._chat_id = _get_chat_id()
         self._offset: int = self._load_offset()
         self._base = f"https://api.telegram.org/bot{self._token}"
+        self._msg_timestamps: list[float] = []
 
     def _load_offset(self) -> int:
         try:
@@ -91,11 +98,25 @@ class TelegramConnector(Connector):
             if chat_id != self._chat_id or sender_id != self._chat_id:
                 continue
 
+            # Rate limiting
+            now = time.monotonic()
+            self._msg_timestamps = [
+                t for t in self._msg_timestamps if now - t < _RATE_LIMIT_WINDOW
+            ]
+            if len(self._msg_timestamps) >= _RATE_LIMIT_MAX:
+                logger.warning("Rate limit exceeded, dropping message")
+                continue
+            self._msg_timestamps.append(now)
+
             text: str = msg.get("text") or ""
             location = msg.get("location")
             photo = msg.get("photo")
             if not text and not location and not photo:
                 continue
+
+            # Truncate oversized messages
+            if len(text) > _MAX_MESSAGE_LENGTH:
+                text = text[:_MAX_MESSAGE_LENGTH] + "\n[truncated]"
 
             ts = datetime.fromtimestamp(msg["date"], tz=timezone.utc)
             sender = str(msg.get("from", {}).get("id", ""))
