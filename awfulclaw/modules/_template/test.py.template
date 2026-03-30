@@ -1,0 +1,9 @@
+"""Tests for {{module_name}} module."""
+from awfulclaw.modules.{{module_name}} import create_module
+
+
+def test_create_module():
+    mod = create_module()
+    assert mod.name == "{{module_name}}"
+    assert mod.is_available()
+    assert len(mod.skill_tags) > 0
