@@ -28,5 +28,8 @@
 ; Allow writes to the user's home .claude dir (CLI state / session files).
 (allow file-write* (subpath (string-append (param "HOME") "/.claude")))
 
+; Allow uv to write to its cache (needed when MCP servers are spawned as children).
+(allow file-write* (subpath (string-append (param "HOME") "/.cache/uv")))
+
 ; Network is unrestricted — Claude CLI must reach the Anthropic API.
 (allow network*)
