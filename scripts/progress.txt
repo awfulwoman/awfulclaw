@@ -152,3 +152,19 @@ Started: Mon 30 Mar 2026 13:18:13 CEST
   - `ev_loop` is still used by `_chat_async` (run_in_executor) even after dispatch removal — keep it
   - Baseline pyright error count for loop.py was 34 (pre-existing) — verify count stays same after changes
 ---
+
+## [2026-03-30] - #111 Remove old module system and tool module directories
+- Simplified `Module` ABC in `base.py`: removed `SkillTag`, `ToolMatcher`, `SkillTagMatcher`, `skill_tags`, `system_prompt_fragment`, `dispatch()` — only `name` and `is_available()` remain
+- Simplified `ModuleRegistry` in `__init__.py`: removed `get_all_skill_tags()`, `get_all_tool_matchers()`, `get_system_prompt_fragments()`; kept discovery, hot-reload, get(), get_all(), get_available()
+- Deleted tool module dirs: `web/`, `search/`, `schedule/`, `imap/`, `module_generator/`
+- Moved `SearchResult`+`search()` inline to `awfulclaw/mcp/web.py`; moved `EmailSummary`+`fetch_unread()` inline to `awfulclaw/mcp/imap.py`
+- Moved `run_due()`+`should_wake()` from `ScheduleModule` to `scheduler.py`; `loop.py` calls `scheduler.run_due()` directly
+- Updated hook modules (`briefing/`, `startup_briefing/`) to match simplified ABC
+- Updated all affected tests: `test_loop_condition.py`, `test_mcp_web.py`, `test_mcp_imap.py`, `test_base.py`, `test_registry.py`, `test_hotreload.py`, `test_briefing.py`, `test_startup_briefing.py`
+- Files changed: `scheduler.py`, `modules/base.py`, `modules/__init__.py`, `modules/briefing/_briefing.py`, `modules/startup_briefing/_startup_briefing.py`, `loop.py`, `mcp/web.py`, `mcp/imap.py`, 8 test files, 5 module dirs deleted
+- **Learnings for future iterations:**
+  - MCP server files that re-export types from deleted modules need those types moved inline — both the server and its tests import from the server module now
+  - `run_due()` is background infrastructure (not a tool), so it lives in `scheduler.py` not `mcp/schedule.py`
+  - When simplifying an ABC, all concrete subclasses and their test files must be updated to remove the now-abstract methods
+  - Pre-existing pyright baseline: 141 errors across 7 files (loop.py=34, test_briefing.py=31, test_mcp_search.py=23, claude.py=19, test_telegram.py=16, test_mcp_schedule.py=14, test_mcp_registry.py=4)
+---
