@@ -1,9 +1,8 @@
-"""Schedule data model and persistence backed by memory/schedules.json."""
+"""Schedule data model and persistence backed by SQLite."""
 
 from __future__ import annotations
 
 import json
-import os
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -11,7 +10,9 @@ from pathlib import Path
 
 from croniter import croniter  # type: ignore[import-untyped]
 
-SCHEDULES_FILE = Path("memory/schedules.json")
+from awfulclaw.db import get_db, init_db
+
+_LEGACY_JSON = Path("memory/schedules.json")
 
 
 @dataclass
@@ -45,71 +46,111 @@ class Schedule:
         )
 
 
-def _to_dict(s: Schedule) -> dict[str, object]:
-    d: dict[str, object] = {
-        "id": s.id,
-        "name": s.name,
-        "cron": s.cron,
-        "prompt": s.prompt,
-        "created_at": s.created_at.isoformat(),
-        "last_run": s.last_run.isoformat() if s.last_run else None,
-        "fire_at": s.fire_at.isoformat() if s.fire_at else None,
-    }
-    if s.condition is not None:
-        d["condition"] = s.condition
-    return d
+def _parse_dt(raw: str | None) -> datetime | None:
+    if not raw:
+        return None
+    dt = datetime.fromisoformat(raw)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
-def _from_dict(d: dict[str, object]) -> Schedule:
-    created_at_raw = d.get("created_at")
-    if isinstance(created_at_raw, str):
-        created_at = datetime.fromisoformat(created_at_raw)
-        if created_at.tzinfo is None:
-            created_at = created_at.replace(tzinfo=timezone.utc)
-    else:
-        created_at = datetime.now(timezone.utc)
-    last_run_raw = d.get("last_run")
-    last_run: datetime | None = None
-    if isinstance(last_run_raw, str):
-        last_run = datetime.fromisoformat(last_run_raw)
-        if last_run.tzinfo is None:
-            last_run = last_run.replace(tzinfo=timezone.utc)
-    fire_at_raw = d.get("fire_at")
-    fire_at: datetime | None = None
-    if isinstance(fire_at_raw, str):
-        fire_at = datetime.fromisoformat(fire_at_raw)
-        if fire_at.tzinfo is None:
-            fire_at = fire_at.replace(tzinfo=timezone.utc)
-    condition_raw = d.get("condition")
-    condition = str(condition_raw) if isinstance(condition_raw, str) else None
+def _row_to_schedule(row: object) -> Schedule:
+    # row is a sqlite3.Row
+    import sqlite3
+
+    r: sqlite3.Row = row  # type: ignore[assignment]
+    created_at = _parse_dt(r["created_at"]) or datetime.now(timezone.utc)
     return Schedule(
-        id=str(d["id"]),
-        name=str(d["name"]),
-        cron=str(d["cron"]),
-        prompt=str(d["prompt"]),
+        id=r["id"],
+        name=r["name"],
+        cron=r["cron"],
+        prompt=r["prompt"],
         created_at=created_at,
-        last_run=last_run,
-        fire_at=fire_at,
-        condition=condition,
+        last_run=_parse_dt(r["last_run"]),
+        fire_at=_parse_dt(r["fire_at"]),
+        condition=r["condition"],
     )
 
 
+def _migrate_from_json() -> None:
+    """Import schedules.json into SQLite on first run, then rename it."""
+    if not _LEGACY_JSON.exists():
+        return
+    try:
+        with _LEGACY_JSON.open() as f:
+            data: list[dict[str, object]] = json.load(f)
+    except Exception:
+        return
+    with get_db() as conn:
+        for d in data:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO schedules
+                    (id, name, cron, prompt, created_at, last_run, fire_at, condition)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(d.get("id", uuid.uuid4().hex)),
+                    str(d.get("name", "")),
+                    str(d.get("cron", "")),
+                    str(d.get("prompt", "")),
+                    str(d.get("created_at", datetime.now(timezone.utc).isoformat())),
+                    d.get("last_run"),
+                    d.get("fire_at"),
+                    d.get("condition"),
+                ),
+            )
+    _LEGACY_JSON.rename(_LEGACY_JSON.with_suffix(".json.bak"))
+
+
 def load_schedules() -> list[Schedule]:
-    """Read and deserialise schedules; returns [] if the file does not exist."""
-    if not SCHEDULES_FILE.exists():
-        return []
-    with SCHEDULES_FILE.open() as f:
-        data: list[dict[str, object]] = json.load(f)
-    return [_from_dict(d) for d in data]
+    """Read schedules from SQLite; migrates from JSON on first run."""
+    init_db()
+    _migrate_from_json()
+    with get_db() as conn:
+        rows = conn.execute("SELECT * FROM schedules").fetchall()
+    return [_row_to_schedule(r) for r in rows]
 
 
 def save_schedules(schedules: list[Schedule]) -> None:
-    """Serialise and write schedules atomically."""
-    SCHEDULES_FILE.parent.mkdir(parents=True, exist_ok=True)
-    tmp = SCHEDULES_FILE.with_suffix(".json.tmp")
-    with tmp.open("w") as f:
-        json.dump([_to_dict(s) for s in schedules], f, indent=2)
-    os.replace(tmp, SCHEDULES_FILE)
+    """Persist schedules to SQLite (full replace of the set)."""
+    init_db()
+    ids = [s.id for s in schedules]
+    with get_db() as conn:
+        for s in schedules:
+            conn.execute(
+                """
+                INSERT INTO schedules
+                    (id, name, cron, prompt, created_at, last_run, fire_at, condition)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    name=excluded.name,
+                    cron=excluded.cron,
+                    prompt=excluded.prompt,
+                    created_at=excluded.created_at,
+                    last_run=excluded.last_run,
+                    fire_at=excluded.fire_at,
+                    condition=excluded.condition
+                """,
+                (
+                    s.id,
+                    s.name,
+                    s.cron,
+                    s.prompt,
+                    s.created_at.isoformat(),
+                    s.last_run.isoformat() if s.last_run else None,
+                    s.fire_at.isoformat() if s.fire_at else None,
+                    s.condition,
+                ),
+            )
+        if ids:
+            placeholders = ",".join("?" * len(ids))
+            conn.execute(
+                f"DELETE FROM schedules WHERE id NOT IN ({placeholders})", ids
+            )
+        else:
+            conn.execute("DELETE FROM schedules")
 
 
 def get_due(schedules: list[Schedule], now: datetime) -> list[Schedule]:
