@@ -30,13 +30,17 @@ line-length = 100
 [tool.ruff.lint]
 select = ["E", "F", "I"]
 
+[tool.hatch.build.targets.wheel]
+packages = ["app/awfulclaw", "app/awfulclaw_mcp"]
+
 [tool.pytest.ini_options]
-testpaths = ["tests", "awfulclaw/modules"]
+testpaths = ["app/tests"]
 
 [tool.pyright]
 pythonVersion = "3.11"
 typeCheckingMode = "strict"
 exclude = ["pull", ".venv"]
+extraPaths = ["app"]
 
 [dependency-groups]
 dev = [

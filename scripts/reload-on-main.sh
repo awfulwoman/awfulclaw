@@ -26,12 +26,11 @@ if [[ -f "$DEBOUNCE_FILE" ]]; then
 fi
 
 # Only restart if a core .py file changed.
-# Excludes __pycache__ (build artifacts) and modules/ (hot-reloaded at runtime — no restart needed).
-# Does NOT exclude mcp/ — MCP servers are spawned as subprocesses by the claude CLI and cannot
+# Excludes __pycache__ (build artifacts).
+# MCP servers are spawned as subprocesses by the claude CLI and cannot
 # be hot-reloaded, so changes there require a full agent restart.
-CHANGED_PY=$(find "$PROJECT_DIR/awfulclaw" -name "*.py" \
+CHANGED_PY=$(find "$PROJECT_DIR/app/awfulclaw" -name "*.py" \
     -not -path "*/__pycache__/*" \
-    -not -path "*/modules/*" \
     -newer "$DEBOUNCE_FILE" 2>/dev/null | head -1)
 
 if [[ -z "$CHANGED_PY" ]] && [[ -f "$DEBOUNCE_FILE" ]]; then
