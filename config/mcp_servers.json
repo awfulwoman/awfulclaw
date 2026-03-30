@@ -85,9 +85,11 @@
       "name": "mcp-obsidian",
       "command": "uv",
       "args": [
+        "run",
         "--project",
         "/Users/charlie/Code/awfulclaw/mcp_servers/mcp-obsidian",
-        "run",
+        "--python",
+        "3.12",
         "mcp-obsidian"
       ],
       "env": {
