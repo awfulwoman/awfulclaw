@@ -30,23 +30,11 @@ def get_model() -> str:
     return os.getenv("AWFULCLAW_MODEL", "claude-sonnet-4-6")
 
 
-def get_builtin_tools() -> list[str]:
-    """Return the built-in tools made available to Claude.
-
-    Restricts to a safe subset (no Bash, no Task) so that bypassing
-    permission prompts doesn't expose dangerous capabilities.
-    MCP tools are controlled separately via --mcp-config and are
-    always auto-approved via --permission-mode bypassPermissions.
-    """
-    raw = os.getenv("AWFULCLAW_ALLOWED_TOOLS", "").strip()
-    if raw:
-        return [t.strip() for t in raw.split(",") if t.strip()]
-    return ["Read", "Write", "Edit", "WebSearch", "WebFetch"]
 
 
 def get_sandbox() -> bool:
-    """Return True if AWFULCLAW_SANDBOX=1 is set."""
-    return os.getenv("AWFULCLAW_SANDBOX", "0").strip() == "1"
+    """Return True unless AWFULCLAW_SANDBOX=0 is explicitly set."""
+    return os.getenv("AWFULCLAW_SANDBOX", "1").strip() != "0"
 
 
 def get_poll_interval() -> int:
