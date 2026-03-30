@@ -125,7 +125,14 @@ def _load_heartbeat() -> str:
     return content
 
 
-_PROTECTED_PATHS = {"SOUL.md", "HEARTBEAT.md"}
+_PROTECTED_FILES = {"SOUL.md", "HEARTBEAT.md"}
+_PROTECTED_DIRS = ("skills/",)
+
+
+def _is_protected_path(path: str) -> bool:
+    if path in _PROTECTED_FILES:
+        return True
+    return any(path.startswith(d) for d in _PROTECTED_DIRS)
 
 
 def _parse_and_apply_memory_writes(text: str) -> str:
@@ -134,7 +141,7 @@ def _parse_and_apply_memory_writes(text: str) -> str:
         path = path.strip()
         if path.startswith("memory/"):
             path = path[len("memory/"):]
-        if path in _PROTECTED_PATHS:
+        if _is_protected_path(path):
             logger.warning("Blocked write to protected path: %s", path)
             continue
         memory.write(path, content.strip())
