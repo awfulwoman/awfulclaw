@@ -80,6 +80,12 @@ class Gateway:
                 break
         return messages
 
+    def send_typing(self, channel: str, to: str) -> None:
+        """Send a typing indicator on the given channel."""
+        connector = self._connectors.get(channel)
+        if connector is not None:
+            connector.send_typing(to)
+
     def send(self, channel: str, to: str, body: str) -> None:
         """Route an outbound message to the correct connector."""
         connector = self._connectors.get(channel)

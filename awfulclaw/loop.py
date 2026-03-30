@@ -149,11 +149,6 @@ async def run(gateway: Gateway) -> None:
         ["run", "python", "-m", "awfulclaw.mcp.memory_write"],
     )
     mcp_registry.register(
-        "web_search",
-        "uv",
-        ["run", "python", "-m", "awfulclaw.mcp.web"],
-    )
-    mcp_registry.register(
         "memory_search",
         "uv",
         ["run", "python", "-m", "awfulclaw.mcp.search"],
@@ -250,6 +245,9 @@ async def run(gateway: Gateway) -> None:
 
             system = context.build_system_prompt(msg.body, sender=msg.sender)
 
+            recipient = gateway.primary_recipient_for(msg.channel)
+            gateway.send_typing(msg.channel, recipient)
+
             async with _history_lock:
                 conversation_history.append({"role": "user", "content": msg.body})
                 reply = await _chat_async(
@@ -266,7 +264,6 @@ async def run(gateway: Gateway) -> None:
             _append_turn(session_id, "user", msg.body)
             _append_turn(session_id, "assistant", reply)
             if reply:
-                recipient = gateway.primary_recipient_for(msg.channel)
                 gateway.send(msg.channel, recipient, reply)
                 logger.info("Sent reply: %s", reply[:80])
 

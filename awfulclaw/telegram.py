@@ -167,6 +167,16 @@ class TelegramConnector(Connector):
         except httpx.HTTPError as exc:
             raise RuntimeError(f"Failed to download Telegram photo: {exc}") from exc
 
+    def send_typing(self, to: str) -> None:
+        try:
+            httpx.post(
+                f"{self._base}/sendChatAction",
+                json={"chat_id": self._chat_id, "action": "typing"},
+                timeout=5,
+            )
+        except httpx.HTTPError:
+            pass  # best-effort, don't break the flow
+
     def send_message(self, to: str, body: str) -> None:
         payload = {"chat_id": self._chat_id, "text": body}
         try:

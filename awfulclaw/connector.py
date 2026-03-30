@@ -28,5 +28,8 @@ class Connector(ABC):
     @abstractmethod
     def poll_new_messages(self, since: datetime) -> list[Message]: ...
 
+    def send_typing(self, to: str) -> None:
+        """Show a typing indicator to the recipient. Optional; default is a no-op."""
+
     @abstractmethod
     def send_message(self, to: str, body: str) -> None: ...

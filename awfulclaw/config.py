@@ -35,7 +35,19 @@ def get_allowed_tools() -> list[str]:
     raw = os.getenv("AWFULCLAW_ALLOWED_TOOLS", "").strip()
     if raw:
         return [t.strip() for t in raw.split(",") if t.strip()]
-    return ["Read(memory/**)", "Write(memory/**)", "Edit(memory/**)"]
+    return [
+        "Read(memory/**)",
+        "Write(memory/**)",
+        "Edit(memory/**)",
+        "WebSearch",
+        "WebFetch",
+        "mcp__memory_write__memory_write",
+        "mcp__memory_search__memory_search",
+        "mcp__schedule__schedule_create",
+        "mcp__schedule__schedule_delete",
+        "mcp__schedule__schedule_list",
+        "mcp__imap_read__imap_read",
+    ]
 
 
 def get_sandbox() -> bool:
