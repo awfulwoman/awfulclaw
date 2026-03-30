@@ -9,7 +9,6 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from awfulclaw import memory, scheduler
 from awfulclaw.db import list_facts, list_people, read_fact, read_person
-from awfulclaw.modules import get_registry
 
 _MAX_CHARS = 8000
 
@@ -98,13 +97,6 @@ def build_system_prompt(incoming_message: str, sender: str = "", channel: str = 
                 soul = soul + "\n\n## Personality overlay for this sender\n" + personality
 
     memory_instructions = """\
-## Memory
-You can persist information across conversations by writing to memory:
-  `<memory:write path="tasks/shopping.md">- [ ] Buy milk</memory:write>`
-  `<memory:write path="USER.md">updated profile content</memory:write>`
-The path is relative to the memory root. Subdirectories are created automatically. \
-Writes to `SOUL.md`, `HEARTBEAT.md`, and `skills/` are blocked.
-
 When you notice fields in the user profile (## About You section) are `unknown`, ask about them \
 naturally over time — one question per conversation, not all at once. Update the profile as you \
 learn more.
@@ -177,12 +169,6 @@ Use the context already loaded in this prompt to assemble the answer — no tool
         content = memory.read(f"tasks/{filename}")
         if "- [ ]" in content:
             sections.append(f"## Task: {filename}\n{content}")
-
-    # Module skill documentation
-    registry = get_registry()
-    fragments = registry.get_system_prompt_fragments()
-    if fragments:
-        sections.append("## Available Skills\n\n" + "\n\n".join(fragments))
 
     # Active schedules
     schedules = scheduler.load_schedules()
