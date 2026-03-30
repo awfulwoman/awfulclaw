@@ -17,8 +17,28 @@ def isolate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     init_db()
 
 
-def test_no_skills_section_in_prompt() -> None:
-    """No Available Skills section should appear in the system prompt."""
+def test_no_skills_section_when_dir_absent() -> None:
+    """No Available Skills section when config/skills/ does not exist."""
+    prompt = context.build_system_prompt("Hello")
+    assert "## Available Skills" not in prompt
+
+
+def test_skills_section_lists_names(tmp_path: Path) -> None:
+    """Available Skills section appears with skill names when config/skills/ has .md files."""
+    skills_dir = tmp_path / "config" / "skills"
+    skills_dir.mkdir(parents=True)
+    (skills_dir / "daily-briefing.md").write_text("# Daily Briefing\nDo the thing.", encoding="utf-8")  # noqa: E501
+    (skills_dir / "weekly-review.md").write_text("# Weekly Review\nReview stuff.", encoding="utf-8")
+    prompt = context.build_system_prompt("Hello")
+    assert "## Available Skills" in prompt
+    assert "daily-briefing" in prompt
+    assert "weekly-review" in prompt
+    assert "skill_read" in prompt
+
+
+def test_no_skills_section_when_dir_empty(tmp_path: Path) -> None:
+    """No Available Skills section when config/skills/ exists but has no .md files."""
+    (tmp_path / "config" / "skills").mkdir(parents=True)
     prompt = context.build_system_prompt("Hello")
     assert "## Available Skills" not in prompt
 

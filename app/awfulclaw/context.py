@@ -5,10 +5,13 @@ from __future__ import annotations
 import re
 import re as _re
 from datetime import datetime, timezone
+from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from awfulclaw import memory, scheduler
 from awfulclaw.db import list_facts, list_people, read_fact, read_person
+
+_SKILLS_DIR = Path("config/skills")
 
 _MAX_CHARS = 8000
 
@@ -179,6 +182,16 @@ Use the context already loaded in this prompt to assemble the answer — no tool
                 timing = f"cron: `{s.cron}` | last run: {last}"
             lines.append(f"- **{s.name}** | {timing}\n  Prompt: {s.prompt}")
         sections.append("\n".join(lines))
+
+    # Available skills
+    if _SKILLS_DIR.exists():
+        skill_names = sorted(f.stem for f in _SKILLS_DIR.glob("*.md"))
+        if skill_names:
+            sections.append(
+                "## Available Skills\n"
+                + ", ".join(skill_names)
+                + "\nUse the skill_read MCP tool to load a skill's instructions."
+            )
 
     prompt = "\n\n".join(sections)
 

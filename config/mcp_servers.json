@@ -16,6 +16,11 @@
       "args": ["run", "python", "-m", "awfulclaw_mcp.schedule"]
     },
     {
+      "name": "skills",
+      "command": "uv",
+      "args": ["run", "python", "-m", "awfulclaw_mcp.skills"]
+    },
+    {
       "name": "imap",
       "command": "uv",
       "args": ["run", "python", "-m", "awfulclaw_mcp.imap"],
