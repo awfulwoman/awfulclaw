@@ -103,3 +103,15 @@ Started: Mon 30 Mar 2026 13:18:13 CEST
   - Test fixture `autouse=True` with `monkeypatch` lets you set safe defaults; individual tests override only what they need
   - `lambda: (_ for _ in ()).throw(...)` is not valid syntax for raising in a lambda — use a named `_raise()` function instead
 ---
+
+## [2026-03-30] - #107 Create MCP server for schedule
+- Created `awfulclaw/mcp/schedule.py`: FastMCP stdio server with `schedule_create`, `schedule_delete`, `schedule_list` tools
+- Reuses `awfulclaw/scheduler.py` directly (load_schedules, save_schedules, Schedule.create) — no logic duplication
+- Registered in `MCPRegistry` at startup in `loop.py`
+- Old `schedule` module untouched and still functional
+- 12 unit tests in `tests/test_mcp_schedule.py` with mocked scheduler calls
+- **Learnings for future iterations:**
+  - `list[str]` annotation needed on empty list vars used as `lines` to avoid pyright "partially unknown" errors
+  - Schedule MCP pattern: thin wrapper calling scheduler module directly; no re-implementation needed
+  - `autouse=True` fixture with monkeypatch patches `load_schedules` to return [] and `save_schedules` to no-op — individual tests override with `patch()` context manager when they need to inspect saved data
+---
