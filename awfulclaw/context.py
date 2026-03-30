@@ -15,41 +15,6 @@ _MAX_CHARS = 8000
 
 _DEFAULT_SOUL = """\
 You are a helpful, concise personal assistant. You communicate naturally and directly.
-
-You have access to a persistent memory system stored as Markdown files under `memory/`.
-You can write to memory using `<memory:write path="...">...</memory:write>` tags in your replies.
-You have skills in `skills/`, a user profile at `USER.md`, tasks in `tasks/`,
-facts in `facts/`, and conversation history in `conversations/`.
-
-To search the web use:
-  `<skill:web query="your search query"/>`
-The system will inject the top results as a follow-up user message, then you reply with a summary.
-Use this when the user asks about current events, facts you're unsure of, or anything that benefits
-from an up-to-date web source.
-
-To search past conversations and memory use:
-  `<skill:search query="your search terms"/>`
-The system will search all memory files (people, tasks, facts, conversations, skills) for matching
-content and inject the results as a follow-up user message. Use this when the user asks what you
-discussed before, references a past conversation, or asks about stored facts or history.
-
-To create a recurring schedule use:
-  `<skill:schedule action="create" name="..." cron="0 9 * * *">prompt</skill:schedule>`
-To create a one-off reminder at a specific datetime use:
-  `<skill:schedule action="create" name="..." at="2026-04-01T15:00:00Z">prompt</skill:schedule>`
-Optionally add a `condition` attribute with a shell command. The command must print JSON with a
-`wakeAgent` boolean key. If `wakeAgent` is false, the Claude invocation is skipped for that tick
-(but the schedule still advances). Use this to avoid unnecessary LLM calls:
-  `<skill:schedule action="create" name="..." cron="0 * * * *"
-    condition="python check.py">prompt</skill:schedule>`
-To delete a schedule use:
-  `<skill:schedule action="delete" name="..."/>`
-
-When you notice that fields in the user profile (## About You section) are `unknown`, ask about them
-naturally over time — one question per conversation, not all at once. As you learn more about the
-user, update their profile using `<memory:write path="USER.md">...</memory:write>`.
-
-Always be honest about what you know and don't know.
 """
 
 _DEFAULT_USER = """\
@@ -132,8 +97,18 @@ def build_system_prompt(incoming_message: str, sender: str = "", channel: str = 
             if personality:
                 soul = soul + "\n\n## Personality overlay for this sender\n" + personality
 
-    memory_summary_instruction = """\
-## Memory Summary Instruction
+    memory_instructions = """\
+## Memory
+You can persist information across conversations by writing to memory:
+  `<memory:write path="tasks/shopping.md">- [ ] Buy milk</memory:write>`
+  `<memory:write path="USER.md">updated profile content</memory:write>`
+The path is relative to the memory root. Subdirectories are created automatically. \
+Writes to `SOUL.md`, `HEARTBEAT.md`, and `skills/` are blocked.
+
+When you notice fields in the user profile (## About You section) are `unknown`, ask about them \
+naturally over time — one question per conversation, not all at once. Update the profile as you \
+learn more.
+
 When the user asks a variant of 'what do you know about me?', 'show me my tasks', \
 'what\'s on my plate', 'what do you remember?', or 'summarise my memory', respond with a \
 structured summary covering:
@@ -141,14 +116,14 @@ structured summary covering:
 2. **Open Tasks** — all unchecked items (- [ ]) from memory/tasks/ files
 3. **Active Skills** — names of all files in memory/skills/
 4. **Upcoming Schedules** — all active schedules with their cron and next prompt
-5. **Key Facts** — titles/summaries of all files in memory/facts/
+5. **Key Facts** — all facts stored in the database
 Use the context already loaded in this prompt to assemble the answer — no tool calls needed.\
 """
 
     sections: list[str] = [
         f"Current date and time: {now}",
         soul,
-        memory_summary_instruction,
+        memory_instructions,
         f"## About You\n{user}",
     ]
 
