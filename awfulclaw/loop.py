@@ -237,6 +237,25 @@ def run(connector: Connector) -> None:
     except Exception as exc:
         logger.error("Failed to create session file: %s", exc)
 
+    # Startup self-briefing (silent — no Telegram output)
+    startup_module = registry.get("startup_briefing")
+    if startup_module is not None:
+        from awfulclaw.modules.startup_briefing._startup_briefing import (
+            StartupBriefingModule as _SBM,
+        )
+
+        if isinstance(startup_module, _SBM):
+            try:
+                startup_prompt = startup_module.get_startup_prompt()
+                startup_system = context.build_system_prompt(startup_prompt)
+                startup_history = list(conversation_history)
+                startup_history.append({"role": "user", "content": startup_prompt})
+                startup_reply = claude.chat(startup_history, system=startup_system)
+                _parse_and_apply_memory_writes(startup_reply)
+                logger.info("Startup self-briefing completed")
+            except Exception as exc:
+                logger.error("Startup self-briefing failed: %s", exc)
+
     try:
         while True:
             now = datetime.now(timezone.utc)
