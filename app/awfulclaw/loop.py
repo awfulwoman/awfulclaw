@@ -55,6 +55,7 @@ def handle_slash_command(body: str) -> str | None:
     if cmd == "/restart":
         import subprocess as _sp
 
+        _RESTART_FLAG.touch()
         _sp.Popen(["bash", str(Path("scripts/restart-service.sh").resolve())])
         return "Restarting…"
 
@@ -75,6 +76,7 @@ def _load_heartbeat() -> str:
 
 _MEMORY_ROOT = Path("memory")
 _CONVERSATIONS_DIR = _MEMORY_ROOT / "conversations"
+_RESTART_FLAG = _MEMORY_ROOT / ".restart_requested"
 
 
 def _sigterm_handler(signum: int, frame: object) -> None:
@@ -168,6 +170,12 @@ async def run(gateway: Gateway) -> None:
     ev_loop = asyncio.get_running_loop()
 
     gateway.start()
+
+    # Notify user if this startup was triggered by a /restart command.
+    if _RESTART_FLAG.exists():
+        _RESTART_FLAG.unlink()
+        gateway.send(gateway.primary_channel, phone, "Restarted successfully.")
+        logger.info("Sent restart notification")
 
     # Run startup briefing synchronously before entering the loop
     try:
