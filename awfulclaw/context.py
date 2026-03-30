@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 
 from awfulclaw import memory, scheduler
@@ -58,13 +59,25 @@ Background: unknown
 """
 
 
-def _load_soul() -> str:
-    """Read memory/SOUL.md, creating it with defaults if absent."""
+def _load_soul(channel: str = "") -> str:
+    """Read memory/SOUL.md (or channel-specific override), creating defaults if absent."""
+    if channel:
+        override = memory.read(f"SOUL_{channel}.md")
+        if override:
+            return override
     content = memory.read("SOUL.md")
     if not content:
         memory.write("SOUL.md", _DEFAULT_SOUL)
         content = _DEFAULT_SOUL
     return content
+
+
+def extract_personality_section(content: str) -> str | None:
+    """Extract text under '## Personality' heading, or None if absent."""
+    m = re.search(r"^## Personality\s*\n(.*?)(?=^##|\Z)", content, re.MULTILINE | re.DOTALL)
+    if m:
+        return m.group(1).strip()
+    return None
 
 
 def _load_user() -> str:
@@ -85,10 +98,10 @@ def _find_person_by_phone(phone: str) -> tuple[str, str] | None:
     return None
 
 
-def build_system_prompt(incoming_message: str, sender: str = "") -> str:
+def build_system_prompt(incoming_message: str, sender: str = "", channel: str = "") -> str:
     """Build the system prompt with memory context for the incoming message."""
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    soul = _load_soul()
+    soul = _load_soul(channel)
     user = _load_user()
     memory_summary_instruction = """\
 ## Memory Summary Instruction
@@ -143,6 +156,10 @@ Use the context already loaded in this prompt to assemble the answer — no tool
             filename, content = match
             sections.append(f"## Person: {filename}\n{content}")
             included_people.add(filename)
+            overlay = extract_personality_section(content)
+            if overlay:
+                soul = soul + "\n\n" + overlay
+                sections[1] = soul  # soul is always index 1 (after datetime)
         else:
             sections.append(
                 f"## Unknown sender: {sender}\n"

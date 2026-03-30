@@ -53,3 +53,57 @@ def test_location_in_prompt_when_file_exists(tmp_path: Path) -> None:
 def test_location_absent_when_file_missing() -> None:
     prompt = context.build_system_prompt("Hello")
     assert "last known location" not in prompt.lower()
+
+
+def test_extract_personality_section_present() -> None:
+    content = "# Charlie\nPhone: +1234\n\n## Personality\nBe terse.\n\n## Other\nstuff"
+    result = context.extract_personality_section(content)
+    assert result == "Be terse."
+
+
+def test_extract_personality_section_absent() -> None:
+    content = "# Charlie\nPhone: +1234\n\n## Notes\nsome notes"
+    assert context.extract_personality_section(content) is None
+
+
+def test_extract_personality_section_at_end() -> None:
+    content = "# Charlie\n\n## Personality\nBe direct. Skip pleasantries."
+    result = context.extract_personality_section(content)
+    assert result == "Be direct. Skip pleasantries."
+
+
+def test_personality_overlay_appended_to_soul(tmp_path: Path) -> None:
+    person_file = tmp_path / "memory" / "people" / "charlie.md"
+    person_file.write_text(
+        "# Charlie\nPhone: +1234567890\n\n## Personality\nBe extremely concise.",
+        encoding="utf-8",
+    )
+    prompt = context.build_system_prompt("Hello", sender="+1234567890")
+    assert "Be extremely concise." in prompt
+    # Overlay must appear after the base soul content
+    soul_pos = prompt.index("helpful")  # from default soul
+    overlay_pos = prompt.index("Be extremely concise.")
+    assert overlay_pos > soul_pos
+
+
+def test_personality_overlay_not_present_without_section(tmp_path: Path) -> None:
+    person_file = tmp_path / "memory" / "people" / "charlie.md"
+    person_file.write_text(
+        "# Charlie\nPhone: +1234567890\n\n## Notes\nSome notes here.",
+        encoding="utf-8",
+    )
+    prompt = context.build_system_prompt("Hello", sender="+1234567890")
+    assert "Some notes here." not in prompt.split("## Person:")[0]
+
+
+def test_channel_soul_override(tmp_path: Path) -> None:
+    channel_soul = tmp_path / "memory" / "SOUL_telegram.md"
+    channel_soul.write_text("Custom telegram soul.", encoding="utf-8")
+    prompt = context.build_system_prompt("Hello", channel="telegram")
+    assert "Custom telegram soul." in prompt
+
+
+def test_channel_soul_fallback_when_missing() -> None:
+    prompt = context.build_system_prompt("Hello", channel="telegram")
+    # Falls back to default soul
+    assert "helpful" in prompt.lower()
