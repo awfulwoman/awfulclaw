@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import os
 import re
 import signal
 import time
@@ -122,10 +124,12 @@ def _parse_and_apply_memory_writes(text: str) -> str:
     return _MEMORY_WRITE_RE.sub("", text).strip()
 
 
-def _dispatch_all_skills(
+async def _dispatch_all_skills(
     reply: str,
     history: list[dict[str, str]],
     system: str,
+    sem: asyncio.Semaphore,
+    ev_loop: asyncio.AbstractEventLoop,
 ) -> str:
     """Process all skill tags in reply using the module registry.
 
@@ -142,7 +146,12 @@ def _dispatch_all_skills(
                 result_text = module.dispatch(match, history, system)
                 history.append({"role": "assistant", "content": reply})
                 history.append({"role": "user", "content": result_text})
-                reply = claude.chat(history, system=system)
+                hist_snapshot = list(history)
+                async with sem:
+                    reply = await ev_loop.run_in_executor(
+                        None,
+                        lambda: claude.chat(hist_snapshot, system=system),
+                    )
                 reply = _parse_and_apply_memory_writes(reply)
                 matched = True
                 break  # restart matching from the top
@@ -192,7 +201,7 @@ def _append_turn(session_id: str, role: str, content: str) -> None:
         logger.error("Failed to insert conversation turn: %s", exc)
 
 
-def run(connector: Connector) -> None:
+async def run(connector: Connector) -> None:
     """Run the agent loop indefinitely until Ctrl-C."""
     signal.signal(signal.SIGTERM, _sigterm_handler)
     logger.info("awfulclaw starting up")
@@ -213,6 +222,25 @@ def run(connector: Connector) -> None:
 
     session_id = str(uuid.uuid4())
 
+    _max_concurrent = int(os.getenv("AWFULCLAW_MAX_CONCURRENT", "3"))
+    _sem = asyncio.Semaphore(_max_concurrent)
+    _history_lock = asyncio.Lock()
+    ev_loop = asyncio.get_running_loop()
+
+    async def _chat_async(
+        messages: list[dict[str, str]],
+        system: str,
+        image_data: bytes | None = None,
+        image_mime: str | None = None,
+    ) -> str:
+        """Run claude.chat in a thread executor, bounded by the concurrency semaphore."""
+        msgs = list(messages)
+        async with _sem:
+            return await ev_loop.run_in_executor(
+                None,
+                lambda: claude.chat(msgs, system, image_data, image_mime),
+            )
+
     # Startup self-briefing (silent — no Telegram output)
     startup_module = registry.get("startup_briefing")
     if startup_module is not None:
@@ -226,125 +254,140 @@ def run(connector: Connector) -> None:
                 startup_system = context.build_system_prompt(startup_prompt)
                 startup_history = list(conversation_history)
                 startup_history.append({"role": "user", "content": startup_prompt})
-                startup_reply = claude.chat(startup_history, system=startup_system)
+                startup_reply = await _chat_async(startup_history, startup_system)
                 _parse_and_apply_memory_writes(startup_reply)
                 logger.info("Startup self-briefing completed")
             except Exception as exc:
                 logger.error("Startup self-briefing failed: %s", exc)
 
-    try:
-        while True:
-            now = datetime.now(timezone.utc)
-            messages = connector.poll_new_messages(since=last_poll)
-            last_poll = now
+    async def _handle_messages(messages: list) -> None:  # type: ignore[type-arg]
+        """Process a batch of user messages sequentially, in order."""
+        for msg in messages:
+            logger.info("Incoming from %s: %s", msg.sender, msg.body[:80])
 
-            for msg in messages:
-                logger.info("Incoming from %s: %s", msg.sender, msg.body[:80])
+            loc_match = _LOCATION_RE.match(msg.body)
+            if loc_match:
+                lat, lon = loc_match.group(1), loc_match.group(2)
+                ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                memory.write(
+                    "facts/location.md",
+                    f"Last known location: {lat}, {lon}\nUpdated: {ts}",
+                )
+                logger.info("Location saved: %s, %s", lat, lon)
+                continue
 
-                loc_match = _LOCATION_RE.match(msg.body)
-                if loc_match:
-                    lat, lon = loc_match.group(1), loc_match.group(2)
-                    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-                    memory.write(
-                        "facts/location.md",
-                        f"Last known location: {lat}, {lon}\nUpdated: {ts}",
-                    )
-                    logger.info("Location saved: %s, %s", lat, lon)
-                    continue
+            slash_reply = handle_slash_command(msg.body)
+            if slash_reply is not None:
+                connector.send_message(phone, slash_reply)
+                logger.info("Slash command '%s' handled", msg.body.split()[0])
+                continue
 
-                slash_reply = handle_slash_command(msg.body)
-                if slash_reply is not None:
-                    connector.send_message(phone, slash_reply)
-                    logger.info("Slash command '%s' handled", msg.body.split()[0])
-                    continue
+            system = context.build_system_prompt(msg.body, sender=msg.sender)
 
-                system = context.build_system_prompt(msg.body, sender=msg.sender)
-
+            async with _history_lock:
                 conversation_history.append({"role": "user", "content": msg.body})
-                reply = claude.chat(
+                reply = await _chat_async(
                     conversation_history,
-                    system=system,
-                    image_data=msg.image_data,
-                    image_mime=msg.image_mime,
+                    system,
+                    msg.image_data,
+                    msg.image_mime,
                 )
                 reply = _parse_and_apply_memory_writes(reply)
-                reply = _dispatch_all_skills(reply, conversation_history, system)
-
+                reply = await _dispatch_all_skills(
+                    reply, conversation_history, system, _sem, ev_loop
+                )
                 conversation_history.append({"role": "assistant", "content": reply})
                 _MAX_HISTORY = 40
                 if len(conversation_history) > _MAX_HISTORY:
                     conversation_history[:] = conversation_history[-_MAX_HISTORY:]
-                _append_turn(session_id, "user", msg.body)
-                _append_turn(session_id, "assistant", reply)
-                if reply:
-                    connector.send_message(phone, reply)
-                    logger.info("Sent reply: %s", reply[:80])
+
+            _append_turn(session_id, "user", msg.body)
+            _append_turn(session_id, "assistant", reply)
+            if reply:
+                connector.send_message(phone, reply)
+                logger.info("Sent reply: %s", reply[:80])
+
+    async def _run_idle_tick() -> None:
+        """Run scheduled prompts, briefing, and heartbeat check."""
+        if registry.check_for_changes():
+            logger.info("Modules hot-reloaded")
+
+        schedule_module = registry.get("schedule")
+        if schedule_module is not None:
+            from awfulclaw.modules.schedule._schedule import ScheduleModule as _SM
+
+            if isinstance(schedule_module, _SM):
+                due_prompts = schedule_module.run_due()
+                for prompt in due_prompts:
+                    try:
+                        sched_system = context.build_system_prompt(prompt)
+                        sched_history: list[dict[str, str]] = [
+                            {"role": "user", "content": prompt}
+                        ]
+                        sched_reply = await _chat_async(sched_history, sched_system)
+                        sched_reply = _parse_and_apply_memory_writes(sched_reply)
+                        sched_reply = await _dispatch_all_skills(
+                            sched_reply, sched_history, sched_system, _sem, ev_loop
+                        )
+                        if sched_reply:
+                            connector.send_message(phone, sched_reply)
+                            logger.info("Schedule reply sent: %s", sched_reply[:80])
+                    except Exception as exc:
+                        logger.error("Schedule prompt failed: %s", exc)
+
+        if briefing_module is not None:
+            from awfulclaw.modules.briefing._briefing import BriefingModule as _BM
+
+            if isinstance(briefing_module, _BM):
+                briefing_prompt = briefing_module.check_and_fire(poll_interval)
+                if briefing_prompt is not None:
+                    try:
+                        briefing_system = context.build_system_prompt(briefing_prompt)
+                        briefing_history: list[dict[str, str]] = [
+                            {"role": "user", "content": briefing_prompt}
+                        ]
+                        briefing_reply = await _chat_async(briefing_history, briefing_system)
+                        briefing_reply = _parse_and_apply_memory_writes(briefing_reply)
+                        briefing_reply = await _dispatch_all_skills(
+                            briefing_reply, briefing_history, briefing_system, _sem, ev_loop
+                        )
+                        if briefing_reply:
+                            connector.send_message(phone, briefing_reply)
+                            logger.info("Daily briefing sent: %s", briefing_reply[:80])
+                    except Exception as exc:
+                        logger.error("Daily briefing failed: %s", exc)
+
+        system = context.build_system_prompt("")
+        idle_reply = await _chat_async(
+            [{"role": "user", "content": _load_heartbeat()}],
+            system,
+        )
+        idle_reply = _parse_and_apply_memory_writes(idle_reply)
+        if idle_reply and not _is_idle_suppressed(idle_reply):
+            connector.send_message(phone, idle_reply)
+            logger.info("Idle message sent: %s", idle_reply[:80])
+
+    try:
+        while True:
+            now = datetime.now(timezone.utc)
+            messages = await ev_loop.run_in_executor(
+                None,
+                lambda: connector.poll_new_messages(since=last_poll),
+            )
+            last_poll = now
+
+            coroutines = []
+            if messages:
+                coroutines.append(_handle_messages(messages))
 
             if time.monotonic() - last_idle >= idle_interval:
                 last_idle = time.monotonic()
-                now = datetime.now(timezone.utc)
+                coroutines.append(_run_idle_tick())
 
-                if registry.check_for_changes():
-                    logger.info("Modules hot-reloaded")
+            if coroutines:
+                await asyncio.gather(*coroutines)
 
-                schedule_module = registry.get("schedule")
-                if schedule_module is not None:
-                    from awfulclaw.modules.schedule._schedule import ScheduleModule as _SM
-
-                    if isinstance(schedule_module, _SM):
-                        due_prompts = schedule_module.run_due()
-                        for prompt in due_prompts:
-                            try:
-                                sched_system = context.build_system_prompt(prompt)
-                                sched_history: list[dict[str, str]] = [
-                                    {"role": "user", "content": prompt}
-                                ]
-                                sched_reply = claude.chat(sched_history, system=sched_system)
-                                sched_reply = _parse_and_apply_memory_writes(sched_reply)
-                                sched_reply = _dispatch_all_skills(
-                                    sched_reply, sched_history, sched_system
-                                )
-                                if sched_reply:
-                                    connector.send_message(phone, sched_reply)
-                                    logger.info("Schedule reply sent: %s", sched_reply[:80])
-                            except Exception as exc:
-                                logger.error("Schedule prompt failed: %s", exc)
-
-                if briefing_module is not None:
-                    from awfulclaw.modules.briefing._briefing import BriefingModule as _BM
-
-                    if isinstance(briefing_module, _BM):
-                        briefing_prompt = briefing_module.check_and_fire(poll_interval)
-                        if briefing_prompt is not None:
-                            try:
-                                briefing_system = context.build_system_prompt(briefing_prompt)
-                                briefing_history: list[dict[str, str]] = [
-                                    {"role": "user", "content": briefing_prompt}
-                                ]
-                                briefing_reply = claude.chat(
-                                    briefing_history, system=briefing_system
-                                )
-                                briefing_reply = _parse_and_apply_memory_writes(briefing_reply)
-                                briefing_reply = _dispatch_all_skills(
-                                    briefing_reply, briefing_history, briefing_system
-                                )
-                                if briefing_reply:
-                                    connector.send_message(phone, briefing_reply)
-                                    logger.info("Daily briefing sent: %s", briefing_reply[:80])
-                            except Exception as exc:
-                                logger.error("Daily briefing failed: %s", exc)
-
-                system = context.build_system_prompt("")
-                idle_reply = claude.chat(
-                    [{"role": "user", "content": _load_heartbeat()}],
-                    system=system,
-                )
-                idle_reply = _parse_and_apply_memory_writes(idle_reply)
-                if idle_reply and not _is_idle_suppressed(idle_reply):
-                    connector.send_message(phone, idle_reply)
-                    logger.info("Idle message sent: %s", idle_reply[:80])
-
-            time.sleep(poll_interval)
+            await asyncio.sleep(poll_interval)
 
     except (KeyboardInterrupt, SystemExit):
         logger.info("awfulclaw exiting — goodbye")

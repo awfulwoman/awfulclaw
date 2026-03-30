@@ -1,5 +1,6 @@
 """Entry point for `python -m awfulclaw`."""
 
+import asyncio
 import logging
 
 from awfulclaw import config, loop
@@ -12,7 +13,7 @@ def main() -> None:
     print("Use Ctrl-C to exit.")
     try:
         connector = config.get_connector()
-        loop.run(connector)
+        asyncio.run(loop.run(connector))
     except RuntimeError as exc:
         logging.error("%s", exc)
         raise SystemExit(1)
