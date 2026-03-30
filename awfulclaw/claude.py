@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import logging
 import os
+import pathlib
 import subprocess
 import time as _time
 
@@ -39,7 +40,9 @@ class ClaudeSession:
             "--print",
             "--system-prompt", augmented_system,
             "--model", config.get_model(),
+            "--allowedTools", ",".join(config.get_allowed_tools()),
         ]
+        cmd = _wrap_sandbox(cmd)
         self._process = subprocess.Popen(
             cmd,
             stdin=subprocess.PIPE,
@@ -115,6 +118,21 @@ def chat(
     return _chat_cli(messages, system)
 
 
+def _wrap_sandbox(cmd: list[str]) -> list[str]:
+    """Wrap *cmd* with sandbox-exec if AWFULCLAW_SANDBOX=1."""
+    if not config.get_sandbox():
+        return cmd
+    sb_profile = pathlib.Path(__file__).parent.parent / "scripts" / "sandbox.sb"
+    memory_path = str((pathlib.Path(__file__).parent.parent / "memory").resolve())
+    home_path = str(pathlib.Path.home())
+    return [
+        "sandbox-exec",
+        "-f", str(sb_profile),
+        "-D", f"MEMORY_PATH={memory_path}",
+        "-D", f"HOME={home_path}",
+    ] + cmd
+
+
 def _chat_cli(messages: list[dict[str, str]], system: str) -> str:
     """Invoke the claude CLI and return the assistant reply text."""
     prompt = _format_messages(messages)
@@ -125,7 +143,9 @@ def _chat_cli(messages: list[dict[str, str]], system: str) -> str:
         "--no-session-persistence",
         "--system-prompt", system,
         "--model", config.get_model(),
+        "--allowedTools", ",".join(config.get_allowed_tools()),
     ]
+    cmd = _wrap_sandbox(cmd)
 
     result = subprocess.run(cmd, input=prompt, capture_output=True, text=True)
 

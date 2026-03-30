@@ -1,0 +1,43 @@
+# Ralph Progress Log
+Milestone: extensibility
+Started: Mon 30 Mar 2026 13:18:13 CEST
+---
+
+## [2026-03-30] - #97 Per-sender personality overlays in system prompt
+- Added `_extract_personality_section()` helper with regex to extract `## Personality` section (stops at next `##` heading)
+- Modified `_load_soul(channel)` to check for `SOUL_<channel>.md` before falling back to `SOUL.md`
+- Restructured `build_system_prompt()` to resolve sender's person file early (before building sections list) so personality overlay can be applied to `soul` var before it's used in `sections`
+- Files changed: `awfulclaw/context.py`, `tests/test_context.py`
+- **Learnings for future iterations:**
+  - `build_system_prompt` builds `sections` list with `soul` as `sections[1]` — any modifications to `soul` must happen BEFORE the sections list is built
+  - `_find_person_by_phone()` returns `(filename, content)` tuple — already exists and can be reused
+  - All existing helper functions in context.py use `_` prefix (private convention) — keep consistent
+  - Pre-existing ruff errors in test_telegram.py and startup_briefing module (67 pyright errors, 2 ruff errors before this issue)
+---
+
+## [2026-03-30] - #96 Generic tool dispatch loop with pluggable matchers
+- Defined `ToolMatcher` Protocol in `awfulclaw/modules/base.py` with `match()` and `execute()` methods
+- Added `SkillTagMatcher` class in `base.py` — wraps `Module + SkillTag`, strips tag, dispatches, updates history, returns cleaned reply
+- Added `get_all_tool_matchers()` to `ModuleRegistry` returning `list[SkillTagMatcher]`
+- Refactored `_dispatch_all_skills()` → `_dispatch_tools()` in `loop.py`; loop calls `claude.chat()` after each `execute()`; cleanup loop uses `_` for unused `module` variable
+- Files changed: `awfulclaw/modules/base.py`, `awfulclaw/modules/__init__.py`, `awfulclaw/loop.py`
+- **Learnings for future iterations:**
+  - `SkillTagMatcher.execute()` updates history in-place and returns cleaned reply; the loop is still responsible for calling `claude.chat()` after execute — keeps matchers free of Claude dependency
+  - Pyright flags unused loop variables — use `_` for the unused element of a tuple unpack
+  - `get_all_tool_matchers()` in registry wraps `get_all_skill_tags()` — adding new ToolMatcher types requires a new method/factory in the registry or building matchers in `loop.py`
+---
+
+## [2026-03-30] - #95 Gateway abstraction: decouple message ingestion from agent loop
+- Created `awfulclaw/gateway.py` with `Gateway` class: owns `dict[str, Connector]`, `queue.Queue[Message]` inbound queue, `threading.Event` stop signal, and background polling threads per connector
+- Added `channel: str = "telegram"` to `Message` dataclass (default preserves backward compat)
+- Added `get_channel()` to `config.py` so `__main__.py` can name the channel when building the gateway
+- Changed `loop.run(connector)` → `loop.run(gateway)`: drains `gateway.get_messages()` each tick; sends via `gateway.send(channel, recipient, body)`; calls `gateway.start()` on entry and `gateway.stop()` on exit
+- Updated `__main__.py` to create `Gateway([(channel, connector)])` before calling `loop.run()`
+- Files changed: `awfulclaw/gateway.py` (new), `awfulclaw/connector.py`, `awfulclaw/config.py`, `awfulclaw/loop.py`, `awfulclaw/__main__.py`
+- **Learnings for future iterations:**
+  - `queue.Queue` (threading) is the right choice here — loop is synchronous, asyncio would require a full rewrite
+  - Gateway background threads use `threading.Event.wait(timeout)` for the poll interval — avoids busy-loop and responds to `stop()` promptly
+  - `primary_recipient_for(channel)` method lets message-handler replies route back to the correct channel without exposing `_connectors` dict
+  - Pre-existing pyright errors (67) and ruff errors (2) in test_telegram.py and startup_briefing — don't touch those files
+  - The `now = datetime.now(timezone.utc)` line in the idle block was unused after the gateway removed `last_poll` tracking — removed it to avoid pyright warnings
+---

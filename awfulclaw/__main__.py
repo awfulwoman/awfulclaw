@@ -4,6 +4,7 @@ import asyncio
 import logging
 
 from awfulclaw import config, loop
+from awfulclaw.gateway import Gateway
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
@@ -13,7 +14,9 @@ def main() -> None:
     print("Use Ctrl-C to exit.")
     try:
         connector = config.get_connector()
-        asyncio.run(loop.run(connector))
+        channel = config.get_channel()
+        gateway = Gateway([(channel, connector)])
+        asyncio.run(loop.run(gateway))
     except RuntimeError as exc:
         logging.error("%s", exc)
         raise SystemExit(1)

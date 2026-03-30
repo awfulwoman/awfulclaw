@@ -13,8 +13,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from awfulclaw import claude, config, context, memory, scheduler
-from awfulclaw.connector import Connector
 from awfulclaw.db import get_db, init_db
+from awfulclaw.gateway import Gateway
 from awfulclaw.modules import get_registry
 
 logger = logging.getLogger(__name__)
@@ -124,28 +124,26 @@ def _parse_and_apply_memory_writes(text: str) -> str:
     return _MEMORY_WRITE_RE.sub("", text).strip()
 
 
-async def _dispatch_all_skills(
+async def _dispatch_tools(
     reply: str,
     history: list[dict[str, str]],
     system: str,
     sem: asyncio.Semaphore,
     ev_loop: asyncio.AbstractEventLoop,
 ) -> str:
-    """Process all skill tags in reply using the module registry.
+    """Process all tool tags in reply using pluggable ToolMatcher instances.
 
     Handles multiple tags by processing them one at a time, re-invoking
     Claude after each. Strips leftover malformed tags at the end.
     """
     registry = get_registry()
+    matchers = registry.get_all_tool_matchers()
     for _round in range(5):  # max 5 dispatch rounds
         matched = False
-        for module, skill_tag in registry.get_all_skill_tags():
-            match = skill_tag.pattern.search(reply)
-            if match:
-                reply = skill_tag.pattern.sub("", reply, count=1).strip()
-                result_text = module.dispatch(match, history, system)
-                history.append({"role": "assistant", "content": reply})
-                history.append({"role": "user", "content": result_text})
+        for matcher in matchers:
+            m = matcher.match(reply)
+            if m:
+                reply = matcher.execute(m, reply, history, system)
                 hist_snapshot = list(history)
                 async with sem:
                     reply = await ev_loop.run_in_executor(
@@ -158,7 +156,7 @@ async def _dispatch_all_skills(
         if not matched:
             break
     # Strip any leftover malformed skill tags
-    for module, skill_tag in registry.get_all_skill_tags():
+    for _, skill_tag in registry.get_all_skill_tags():
         reply = skill_tag.pattern.sub("", reply).strip()
     return reply
 
@@ -201,7 +199,7 @@ def _append_turn(session_id: str, role: str, content: str) -> None:
         logger.error("Failed to insert conversation turn: %s", exc)
 
 
-async def run(connector: Connector) -> None:
+async def run(gateway: Gateway) -> None:
     """Run the agent loop indefinitely until Ctrl-C."""
     signal.signal(signal.SIGTERM, _sigterm_handler)
     logger.info("awfulclaw starting up")
@@ -211,21 +209,21 @@ async def run(connector: Connector) -> None:
 
     poll_interval = config.get_poll_interval()
     idle_interval = config.get_idle_interval()
-    phone = connector.primary_recipient
+    phone = gateway.primary_recipient
 
     conversation_history: list[dict[str, str]] = _load_recent_history()
     if conversation_history:
         logger.info("Restored %d turns from previous session", len(conversation_history))
-    last_poll = datetime.now(timezone.utc)
     last_idle = time.monotonic()
     briefing_module = registry.get("briefing")
 
     session_id = str(uuid.uuid4())
-
     _max_concurrent = int(os.getenv("AWFULCLAW_MAX_CONCURRENT", "3"))
     _sem = asyncio.Semaphore(_max_concurrent)
     _history_lock = asyncio.Lock()
     ev_loop = asyncio.get_running_loop()
+
+    gateway.start()
 
     async def _chat_async(
         messages: list[dict[str, str]],
@@ -278,7 +276,8 @@ async def run(connector: Connector) -> None:
 
             slash_reply = handle_slash_command(msg.body)
             if slash_reply is not None:
-                connector.send_message(phone, slash_reply)
+                recipient = gateway.primary_recipient_for(msg.channel)
+                gateway.send(msg.channel, recipient, slash_reply)
                 logger.info("Slash command '%s' handled", msg.body.split()[0])
                 continue
 
@@ -293,7 +292,7 @@ async def run(connector: Connector) -> None:
                     msg.image_mime,
                 )
                 reply = _parse_and_apply_memory_writes(reply)
-                reply = await _dispatch_all_skills(
+                reply = await _dispatch_tools(
                     reply, conversation_history, system, _sem, ev_loop
                 )
                 conversation_history.append({"role": "assistant", "content": reply})
@@ -304,7 +303,8 @@ async def run(connector: Connector) -> None:
             _append_turn(session_id, "user", msg.body)
             _append_turn(session_id, "assistant", reply)
             if reply:
-                connector.send_message(phone, reply)
+                recipient = gateway.primary_recipient_for(msg.channel)
+                gateway.send(msg.channel, recipient, reply)
                 logger.info("Sent reply: %s", reply[:80])
 
     async def _run_idle_tick() -> None:
@@ -326,11 +326,11 @@ async def run(connector: Connector) -> None:
                         ]
                         sched_reply = await _chat_async(sched_history, sched_system)
                         sched_reply = _parse_and_apply_memory_writes(sched_reply)
-                        sched_reply = await _dispatch_all_skills(
+                        sched_reply = await _dispatch_tools(
                             sched_reply, sched_history, sched_system, _sem, ev_loop
                         )
                         if sched_reply:
-                            connector.send_message(phone, sched_reply)
+                            gateway.send(gateway.primary_channel, phone, sched_reply)
                             logger.info("Schedule reply sent: %s", sched_reply[:80])
                     except Exception as exc:
                         logger.error("Schedule prompt failed: %s", exc)
@@ -348,11 +348,11 @@ async def run(connector: Connector) -> None:
                         ]
                         briefing_reply = await _chat_async(briefing_history, briefing_system)
                         briefing_reply = _parse_and_apply_memory_writes(briefing_reply)
-                        briefing_reply = await _dispatch_all_skills(
+                        briefing_reply = await _dispatch_tools(
                             briefing_reply, briefing_history, briefing_system, _sem, ev_loop
                         )
                         if briefing_reply:
-                            connector.send_message(phone, briefing_reply)
+                            gateway.send(gateway.primary_channel, phone, briefing_reply)
                             logger.info("Daily briefing sent: %s", briefing_reply[:80])
                     except Exception as exc:
                         logger.error("Daily briefing failed: %s", exc)
@@ -364,17 +364,12 @@ async def run(connector: Connector) -> None:
         )
         idle_reply = _parse_and_apply_memory_writes(idle_reply)
         if idle_reply and not _is_idle_suppressed(idle_reply):
-            connector.send_message(phone, idle_reply)
+            gateway.send(gateway.primary_channel, phone, idle_reply)
             logger.info("Idle message sent: %s", idle_reply[:80])
 
     try:
         while True:
-            now = datetime.now(timezone.utc)
-            messages = await ev_loop.run_in_executor(
-                None,
-                lambda: connector.poll_new_messages(since=last_poll),
-            )
-            last_poll = now
+            messages = gateway.get_messages()
 
             coroutines = []
             if messages:
@@ -390,4 +385,5 @@ async def run(connector: Connector) -> None:
             await asyncio.sleep(poll_interval)
 
     except (KeyboardInterrupt, SystemExit):
+        gateway.stop()
         logger.info("awfulclaw exiting — goodbye")

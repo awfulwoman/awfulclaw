@@ -15,6 +15,7 @@ class Message:
     is_from_me: bool
     image_data: bytes | None = None
     image_mime: str | None = None
+    channel: str = "telegram"
 
 
 class Connector(ABC):
