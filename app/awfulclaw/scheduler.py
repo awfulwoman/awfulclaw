@@ -8,15 +8,12 @@ import subprocess
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from pathlib import Path
 
 from croniter import croniter  # type: ignore[import-untyped]
 
 from awfulclaw.db import get_db, init_db
 
 logger = logging.getLogger(__name__)
-
-_LEGACY_JSON = Path("memory/schedules.json")
 
 
 @dataclass
@@ -77,41 +74,9 @@ def _row_to_schedule(row: object) -> Schedule:
     )
 
 
-def _migrate_from_json() -> None:
-    """Import schedules.json into SQLite on first run, then rename it."""
-    if not _LEGACY_JSON.exists():
-        return
-    try:
-        with _LEGACY_JSON.open() as f:
-            data: list[dict[str, object]] = json.load(f)
-    except Exception:
-        return
-    with get_db() as conn:
-        for d in data:
-            conn.execute(
-                """
-                INSERT OR IGNORE INTO schedules
-                    (id, name, cron, prompt, created_at, last_run, fire_at, condition)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    str(d.get("id", uuid.uuid4().hex)),
-                    str(d.get("name", "")),
-                    str(d.get("cron", "")),
-                    str(d.get("prompt", "")),
-                    str(d.get("created_at", datetime.now(timezone.utc).isoformat())),
-                    d.get("last_run"),
-                    d.get("fire_at"),
-                    d.get("condition"),
-                ),
-            )
-    _LEGACY_JSON.rename(_LEGACY_JSON.with_suffix(".json.bak"))
-
-
 def load_schedules() -> list[Schedule]:
-    """Read schedules from SQLite; migrates from JSON on first run."""
+    """Read schedules from SQLite."""
     init_db()
-    _migrate_from_json()
     with get_db() as conn:
         rows = conn.execute("SELECT * FROM schedules").fetchall()
     return [_row_to_schedule(r) for r in rows]

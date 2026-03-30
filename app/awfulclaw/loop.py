@@ -32,7 +32,7 @@ _DEFAULT_HEARTBEAT = (
 
 _IDLE_SUPPRESS = {"nothing", "nothing.", "nothing needs attention", "nothing right now"}
 
-_SLASH_COMMANDS = "/tasks, /skills, /schedules, /restart"
+_SLASH_COMMANDS = "/schedules, /restart"
 
 
 def handle_slash_command(body: str) -> str | None:
@@ -40,29 +40,6 @@ def handle_slash_command(body: str) -> str | None:
     cmd = body.strip().lower().split()[0] if body.strip().startswith("/") else None
     if cmd is None:
         return None
-
-    if cmd == "/tasks":
-        files = sorted((Path("memory") / "tasks").glob("*.md"))
-        lines: list[str] = []
-        for f in files:
-            open_items = [
-                line
-                for line in f.read_text(encoding="utf-8").splitlines()
-                if line.strip().startswith("- [ ]")
-            ]
-            if open_items:
-                lines.append(f"**{f.stem}**")
-                lines.extend(open_items)
-        return "\n".join(lines) if lines else "No open tasks."
-
-    if cmd == "/skills":
-        files = sorted((Path("memory") / "skills").glob("*.md"))
-        if not files:
-            return "No skills saved."
-        parts: list[str] = []
-        for f in files:
-            parts.append(f"**{f.stem}**\n{f.read_text(encoding='utf-8').strip()}")
-        return "\n\n".join(parts)
 
     if cmd == "/schedules":
         schedules = scheduler.load_schedules()

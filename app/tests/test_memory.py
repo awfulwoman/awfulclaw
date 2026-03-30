@@ -70,23 +70,22 @@ def test_search_no_match() -> None:
     assert mem.search("facts", "xyzzy") == []
 
 
-def test_subdirs_created_on_first_run() -> None:
+def test_root_created_on_first_run() -> None:
     import awfulclaw.memory as mem
 
     mem._ensure_root()  # pyright: ignore[reportPrivateUsage]
-    for sub in ("tasks", "skills"):
-        assert Path(f"memory/{sub}").is_dir()
+    assert Path("memory").is_dir()
 
 
 def test_search_all_finds_across_subdirs() -> None:
     import awfulclaw.memory as mem
 
-    mem.write("tasks/note.md", "I love Python")
-    mem.write("skills/tip.md", "We talked about Python yesterday")
-    results = mem.search_all("python")
+    mem.write("notes/note.md", "I love Python")
+    mem.write("tips/tip.md", "We talked about Python yesterday")
+    results = mem.search_all("python", subdirs=["notes", "tips"])
     paths = [r[0] for r in results]
-    assert "tasks/note.md" in paths
-    assert "skills/tip.md" in paths
+    assert "notes/note.md" in paths
+    assert "tips/tip.md" in paths
 
 
 def test_search_all_returns_empty_when_no_matches() -> None:

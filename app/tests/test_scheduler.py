@@ -31,28 +31,6 @@ def test_save_and_load_round_trip() -> None:
     assert loaded[0].created_at == s.created_at
 
 
-def test_load_existing_schedule_without_created_at_defaults_to_now() -> None:
-    """Schedules serialised before created_at was added load without error."""
-    import json
-    from pathlib import Path
-
-    data = [
-        {
-            "id": "abc123",
-            "name": "Old",
-            "cron": "0 9 * * *",
-            "prompt": "Hi",
-            "last_run": None,
-            "fire_at": None,
-        }
-    ]
-    Path("memory").mkdir(exist_ok=True)
-    Path("memory/schedules.json").write_text(json.dumps(data))
-    loaded = load_schedules()
-    assert len(loaded) == 1
-    assert loaded[0].created_at is not None
-    assert loaded[0].created_at.tzinfo is not None
-
 
 def test_save_round_trip_with_last_run() -> None:
     s = Schedule.create(name="Hourly", cron="0 * * * *", prompt="Check in")
@@ -184,25 +162,6 @@ def test_condition_none_round_trip() -> None:
     loaded = load_schedules()
     assert loaded[0].condition is None
 
-
-def test_condition_absent_in_json_defaults_none() -> None:
-    import json
-    from pathlib import Path
-
-    data = [
-        {
-            "id": "abc",
-            "name": "Old",
-            "cron": "0 9 * * *",
-            "prompt": "Hi",
-            "last_run": None,
-            "fire_at": None,
-        }
-    ]
-    Path("memory").mkdir(exist_ok=True)
-    Path("memory/schedules.json").write_text(json.dumps(data))
-    loaded = load_schedules()
-    assert loaded[0].condition is None
 
 
 def test_get_due_fires_on_next_interval() -> None:

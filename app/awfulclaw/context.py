@@ -101,14 +101,11 @@ When you notice fields in the user profile (## About You section) are `unknown`,
 naturally over time — one question per conversation, not all at once. Update the profile as you \
 learn more.
 
-When the user asks a variant of 'what do you know about me?', 'show me my tasks', \
-'what\'s on my plate', 'what do you remember?', or 'summarise my memory', respond with a \
-structured summary covering:
+When the user asks a variant of 'what do you know about me?', 'what\'s on my plate', \
+'what do you remember?', or 'summarise my memory', respond with a structured summary covering:
 1. **Profile** — key fields from the About You / USER.md section
-2. **Open Tasks** — all unchecked items (- [ ]) from memory/tasks/ files
-3. **Active Skills** — names of all files in memory/skills/
-4. **Upcoming Schedules** — all active schedules with their cron and next prompt
-5. **Key Facts** — all facts stored in the database
+2. **Upcoming Schedules** — all active schedules with their cron and next prompt
+3. **Key Facts** — all facts stored in the database
 Use the context already loaded in this prompt to assemble the answer — no tool calls needed.\
 """
 

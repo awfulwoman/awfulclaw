@@ -6,7 +6,6 @@ import os
 from pathlib import Path
 
 _ROOT = Path("memory")
-_SUBDIRS = ("tasks", "skills")
 
 
 def _resolve(path: str) -> Path:
@@ -22,8 +21,7 @@ def _resolve(path: str) -> Path:
 
 
 def _ensure_root() -> None:
-    for sub in _SUBDIRS:
-        (_ROOT / sub).mkdir(parents=True, exist_ok=True)
+    _ROOT.mkdir(parents=True, exist_ok=True)
 
 
 def read(path: str) -> str:
@@ -78,7 +76,7 @@ def search_all(
     """Search across all subdirs. Returns (relative_path, matching_line) tuples."""
     _ensure_root()
     if subdirs is None:
-        subdirs = list(_SUBDIRS)
+        subdirs = []
     results: list[tuple[str, str]] = []
     query_lower = query.lower()
     for subdir in subdirs:
