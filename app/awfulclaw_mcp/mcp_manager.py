@@ -202,6 +202,95 @@ def ensure_installed(entry: dict[str, Any]) -> None:
         logger.warning("Unknown install_type %r for %r — skipping dep install", install_type, name)
 
 
+def _check_server_status(entry: dict[str, Any]) -> str:
+    """Return 'loaded', 'skipped: <reason>', or 'unknown'."""
+    required: list[str] = entry.get("env_required", [])
+    missing = [v for v in required if not os.getenv(v)]
+    if missing:
+        return f"skipped — missing env vars: {', '.join(missing)}"
+    return "loaded"
+
+
+@mcp.tool()
+def mcp_server_status() -> str:
+    """Show the status of all registered MCP servers.
+
+    Reports whether each server is loaded, skipped due to missing env vars,
+    or has a known configuration problem.
+    """
+    data = _load_config()
+    servers: list[dict[str, Any]] = data.get("servers", [])
+    if not servers:
+        return "No MCP servers registered."
+    lines: list[str] = []
+    for s in servers:
+        status = _check_server_status(s)
+        lines.append(f"- **{s['name']}**: {status}")
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def mcp_server_diagnose(name: str) -> str:
+    """Attempt to start an MCP server and capture any startup errors.
+
+    Spawns the server process for up to 3 seconds and reports whether it
+    started cleanly or crashed, including any stderr output.
+    """
+    import time
+
+    data = _load_config()
+    entry = next((s for s in data.get("servers", []) if s["name"] == name), None)
+    if entry is None:
+        return f"Server '{name}' not found in config."
+
+    status = _check_server_status(entry)
+    if status != "loaded":
+        return f"Server '{name}' cannot be started: {status}"
+
+    cmd: list[str] = [entry["command"]] + [str(a) for a in entry.get("args", [])]
+    raw_env: dict[str, str] = entry.get("env", {})
+    env = {**os.environ, **{k: v.replace("${" + k + "}", os.environ.get(k, ""))
+                             for k, v in raw_env.items()}}
+
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=env,
+        )
+        time.sleep(3)
+        proc.poll()
+        if proc.returncode is None:
+            proc.terminate()
+            proc.wait(timeout=5)
+            return f"Server '{name}' started and ran for 3s without errors — looks healthy."
+        else:
+            _, stderr = proc.communicate()
+            return (
+                f"Server '{name}' exited with code {proc.returncode}.\n"
+                f"stderr:\n{stderr.strip() or '(empty)'}"
+            )
+    except Exception as exc:
+        return f"Failed to start '{name}': {exc}"
+
+
+@mcp.tool()
+def mcp_server_restart() -> str:
+    """Restart the awfulclaw agent service.
+
+    This restarts the entire agent process, which reloads all MCP servers
+    and picks up any new environment variables. Use after adding credentials
+    or fixing configuration issues.
+    """
+    flag = _project_root() / "memory" / ".restart_requested"
+    flag.touch()
+    restart_script = _project_root() / "scripts" / "restart-service.sh"
+    subprocess.Popen(["bash", str(restart_script)])
+    return "Restarting the agent service. You'll receive a confirmation when it's back up."
+
+
 @mcp.tool()
 def mcp_server_list() -> str:
     """List all registered MCP servers from config/mcp_servers.json."""

@@ -127,8 +127,9 @@ Use them proactively when the user's request maps to one:
 `memory_search`
 - **Schedules** — create, update, or delete recurring or one-off scheduled prompts via \
 `schedule_create` / `schedule_delete` / `schedule_list`
-- **MCP servers** — install, register, or remove MCP servers (including from GitHub URLs) via \
-`mcp_server_add_from_github` / `mcp_server_add` / `mcp_server_remove` / `mcp_server_list`
+- **MCP servers** — install, register, remove, and diagnose MCP servers via \
+`mcp_server_add_from_github` / `mcp_server_add` / `mcp_server_remove` / `mcp_server_list` / \
+`mcp_server_status` / `mcp_server_diagnose` / `mcp_server_restart`
 - **Environment variables** — list configured env var names via `env_keys`; set a new env var \
 via `env_set` (if you already have the value); or ask the user to provide a secret (see below)
 - **Email** — read unread emails via `imap_fetch` (if configured)
