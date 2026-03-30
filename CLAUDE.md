@@ -58,29 +58,36 @@ bash scripts/uninstall-service.sh  # stop and remove
 bash scripts/restart-service.sh    # manual restart
 ```
 
-The file watcher (`ai.awfulclaw.watcher`) monitors `awfulclaw/` and restarts the agent when `.py` files change on the `main` branch (60s debounce, ignores `__pycache__`). On restart the agent sends a context-aware message explaining why it restarted.
+The file watcher (`ai.awfulclaw.watcher`) monitors `awfulclaw/` and restarts the agent when core `.py` files change on the `main` branch (60s debounce, ignores `__pycache__` and `awfulclaw/modules/`). Module changes are hot-reloaded without a full restart.
 
 ## Architecture
 
 The agent loop (`loop.py`) is the core. On each tick it:
 1. Calls `connector.poll_new_messages()` — connector selected by `AWFULCLAW_CHANNEL`, instantiated in `config.get_connector()`
-2. For each message: calls `context.build_system_prompt()`, calls `claude.chat()` via CLI subprocess, intercepts special tags in the reply (see below), sends the cleaned reply via `connector.send_message()`
-3. On idle ticks: runs a silent heartbeat check (`memory/HEARTBEAT.md`), fires any due schedules from `memory/schedules.json`, and sends the daily briefing if configured
+2. For each message: calls `context.build_system_prompt()`, calls `claude.chat()` via CLI subprocess, dispatches skill tags via the module registry, sends the cleaned reply via `connector.send_message()`
+3. On idle ticks: calls `registry.check_for_changes()` (hot-reload), runs due schedules from `memory/schedules.json`, and sends the daily briefing if configured
 
 **Connector** (`connector.py`) — `TelegramConnector` implements the `Connector` ABC. Telegram poll offset is persisted to `memory/.telegram_offset` to survive restarts.
 
 **Claude invocation** (`claude.py`) — shells out to `claude --print --no-session-persistence --system-prompt ...`. Conversation history is formatted as plain text and passed via stdin. Each call is a fresh subprocess — there is no persistent session.
 
-**System prompt** (`context.py`) — built fresh on every turn from `memory/SOUL.md` (personality/instructions), `memory/USER.md` (user profile), plus relevant facts, people, tasks, skills, and schedules. Editing `SOUL.md` takes effect on the next message.
+**System prompt** (`context.py`) — built fresh on every turn from `memory/SOUL.md` (personality/instructions), `memory/USER.md` (user profile), plus relevant facts, people, tasks, and schedules. Module skill documentation is injected automatically from the module registry.
+
+**Module system** (`awfulclaw/modules/`) — skills are implemented as modules:
+- Each module is a subpackage under `awfulclaw/modules/<name>/`
+- Must expose `create_module() -> Module` in its `__init__.py`
+- Implements the `Module` ABC from `awfulclaw/modules/base.py`
+- The registry (`get_registry()`) auto-discovers all modules on startup and hot-reloads on idle ticks
+- Built-in modules: `imap`, `schedule`, `search`, `web`, `module_generator`
+
+**Adding a new module:**
+1. Create `awfulclaw/modules/<name>/` with `__init__.py` (exporting `create_module()`) and `_<name>.py` (implementing `Module`)
+2. Or use the agent skill: `<skill:create_module name="..." description="...">docs</skill:create_module>`
+3. The registry picks it up on the next idle tick (hot-reload) — no restart needed
 
 **Special reply tags** — intercepted and stripped before sending:
-- `<memory:write path="...">content</memory:write>` — writes to `memory/<path>` (the `memory/` prefix is optional)
-- `<skill:imap/>` — fetches unread emails via IMAP, injects results as a follow-up user message
-- `<skill:web query="..."/>` — web search, results injected as follow-up
-- `<skill:search query="..."/>` — searches all memory files, results injected as follow-up
-- `<skill:schedule action="create" name="..." cron="..." [condition="cmd"]>prompt</skill:schedule>` — creates/updates a schedule; optional `condition` is a shell command that must print `{"wakeAgent": true/false}`
-- `<skill:schedule action="create" name="..." at="ISO-datetime">prompt</skill:schedule>` — one-off reminder
-- `<skill:schedule action="delete" name="..."/>` — deletes a schedule
+- `<memory:write path="...">content</memory:write>` — writes to `memory/<path>` (core, not a module)
+- Module skill tags (e.g. `<skill:web query="..."/>`) — dispatched via the module registry
 
 **Slash commands** (user or agent can send): `/tasks`, `/skills`, `/schedules`, `/restart`
 
