@@ -41,3 +41,27 @@ Started: Mon 30 Mar 2026 13:18:13 CEST
   - Pre-existing pyright errors (67) and ruff errors (2) in test_telegram.py and startup_briefing — don't touch those files
   - The `now = datetime.now(timezone.utc)` line in the idle block was unused after the gateway removed `last_poll` tracking — removed it to avoid pyright warnings
 ---
+
+## [2026-03-30] - #102 Add mcp dependency and create MCP config generator
+- Added `mcp>=1.26.0` to pyproject.toml via `uv add mcp`
+- Created `awfulclaw/mcp/__init__.py` with `generate_mcp_config()` — uses `mkstemp` (not deprecated `mktemp`) to write `{"mcpServers": ...}` JSON to a temp file
+- Created `awfulclaw/mcp/registry.py` with `MCPRegistry`: `register(name, command, args, env)` + `generate_config() -> Path` + `is_empty()`
+- Files changed: `awfulclaw/mcp/__init__.py` (new), `awfulclaw/mcp/registry.py` (new), `tests/test_mcp_registry.py` (new), `pyproject.toml`, `uv.lock`
+- **Learnings for future iterations:**
+  - Use `tempfile.mkstemp()` not `mktemp()` — pyright flags mktemp as deprecated
+  - `uv add mcp` auto-updates both `pyproject.toml` and `uv.lock`
+  - Pre-existing baseline: 104 pyright errors (test_telegram.py), 1 ruff error (test_telegram.py line length) — don't touch those files
+  - The MCP config format the claude CLI expects: `{"mcpServers": {"name": {"command": ..., "args": [...], "env": {...}}}}`
+---
+
+## [2026-03-30] - #103 Wire --mcp-config into claude.py
+- Added `mcp_config_path: Path | None` parameter to `chat()` and `_chat_cli()` in `awfulclaw/claude.py`
+- When provided, `--mcp-config <path>` appended to the subprocess command
+- `loop.py` creates `MCPRegistry()` at startup; generates config path (None when empty); passes through `_chat_async` closure and all `_dispatch_tools` call sites
+- Created `tests/test_claude.py` with 3 tests
+- Files changed: `awfulclaw/claude.py`, `awfulclaw/loop.py`, `tests/test_claude.py` (new)
+- **Learnings for future iterations:**
+  - `_chat_async` is a closure inside `run()` — it captures `mcp_config_path` from the outer scope, so no signature change needed; just use it in the lambda
+  - `_dispatch_tools` is a module-level async function so it does need the parameter threaded through explicitly
+  - All 104 pre-existing pyright errors are in test_telegram.py and test_mcp_registry.py — baseline remains unchanged
+---
