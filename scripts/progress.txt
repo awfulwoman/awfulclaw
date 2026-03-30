@@ -115,3 +115,16 @@ Started: Mon 30 Mar 2026 13:18:13 CEST
   - Schedule MCP pattern: thin wrapper calling scheduler module directly; no re-implementation needed
   - `autouse=True` fixture with monkeypatch patches `load_schedules` to return [] and `save_schedules` to no-op — individual tests override with `patch()` context manager when they need to inspect saved data
 ---
+
+## [2026-03-30] - #108 Create MCP server for imap
+- Created `awfulclaw/mcp/imap.py`: FastMCP stdio server with `imap_read` tool
+- Reuses `fetch_unread()` from `awfulclaw/modules/imap/_imap.py` — no logic duplication
+- Registered in `MCPRegistry` in `loop.py` only when `IMAP_HOST`, `IMAP_USER`, `IMAP_PASSWORD` env vars are all set; passes all 4 IMAP vars in the `env` block for the subprocess
+- Old `imap` module untouched and still functional
+- 6 unit tests in `tests/test_mcp_imap.py` with mocked `fetch_unread` calls
+- Files changed: `awfulclaw/mcp/imap.py` (new), `tests/test_mcp_imap.py` (new), `awfulclaw/loop.py`
+- **Learnings for future iterations:**
+  - IMAP MCP pattern: thin wrapper around `fetch_unread()`, conditional registration based on env var presence
+  - Pass env vars explicitly in the `env` dict when registering conditional MCP servers — subprocess won't inherit them otherwise
+  - Test with `patch("awfulclaw.mcp.imap.fetch_unread", ...)` — mock the import in the MCP module, not the source module
+---
