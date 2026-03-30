@@ -7,11 +7,16 @@ import email.header
 import imaplib
 import logging
 import os
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from email.message import Message
 
+from awfulclaw.modules.base import Module, SkillTag
+
 logger = logging.getLogger(__name__)
+
+_SKILL_IMAP_RE = re.compile(r"<skill:imap\s*/>|<skill:imap\s*></skill:imap>")
 
 
 @dataclass
@@ -41,15 +46,11 @@ def _get_plain_body(msg: Message) -> str:
             if part.get_content_type() == "text/plain":
                 payload = part.get_payload(decode=True)
                 if isinstance(payload, bytes):
-                    return payload.decode(
-                        part.get_content_charset() or "utf-8", errors="replace"
-                    )
+                    return payload.decode(part.get_content_charset() or "utf-8", errors="replace")
     else:
         payload = msg.get_payload(decode=True)
         if isinstance(payload, bytes):
-            return payload.decode(
-                msg.get_content_charset() or "utf-8", errors="replace"
-            )
+            return payload.decode(msg.get_content_charset() or "utf-8", errors="replace")
     return ""
 
 
@@ -102,6 +103,7 @@ def fetch_unread(since: datetime | None = None) -> list[EmailSummary]:
             date_str = msg.get("Date", "")
             try:
                 from email.utils import parsedate_to_datetime
+
                 timestamp = parsedate_to_datetime(date_str).astimezone(timezone.utc)
             except Exception:
                 timestamp = datetime.now(timezone.utc)
@@ -116,3 +118,52 @@ def fetch_unread(since: datetime | None = None) -> list[EmailSummary]:
             )
 
         return summaries
+
+
+class ImapModule(Module):
+    @property
+    def name(self) -> str:
+        return "imap"
+
+    @property
+    def skill_tags(self) -> list[SkillTag]:
+        return [
+            SkillTag(
+                name="imap",
+                pattern=_SKILL_IMAP_RE,
+                description="Fetch unread emails via IMAP",
+                usage="<skill:imap/>",
+            )
+        ]
+
+    @property
+    def system_prompt_fragment(self) -> str:
+        return """\
+### Email (IMAP)
+Fetch unread emails with:
+```
+<skill:imap/>
+```
+Returns a summary of unread messages from your INBOX. Only available when IMAP is configured."""
+
+    def dispatch(self, tag_match: re.Match[str], history: list[dict[str, str]], system: str) -> str:
+        try:
+            emails = fetch_unread()
+            if not emails:
+                return "[No new emails]"
+            lines = [f"[{len(emails)} new email(s):]"]
+            for e in emails:
+                lines.append(
+                    f"From: {e.from_addr}\nSubject: {e.subject}\n"
+                    f"Date: {e.timestamp.isoformat()}\n{e.body_preview}"
+                )
+            logger.info("IMAP skill: fetched %d email(s)", len(emails))
+            return "\n\n".join(lines)
+        except Exception as exc:
+            logger.warning("IMAP skill error: %s", exc)
+            return f"[IMAP unavailable: {exc}]"
+
+    def is_available(self) -> bool:
+        return bool(
+            os.getenv("IMAP_HOST") and os.getenv("IMAP_USER") and os.getenv("IMAP_PASSWORD")
+        )
