@@ -124,12 +124,31 @@ available beyond basic conversation. Use them proactively when the user's reques
 `schedule_create` / `schedule_delete` / `schedule_list`
 - **MCP servers** — install, register, or remove MCP servers (including from GitHub URLs) via \
 `mcp_server_add_from_github` / `mcp_server_add` / `mcp_server_remove` / `mcp_server_list`
+- **Environment variables** — list configured env var names via `env_keys`; set a new env var \
+via `env_set` (if you already have the value); or ask the user to provide a secret (see below)
 - **Email** — read unread emails via `imap_fetch` (if configured)
 - **Web search** — search the web if needed
 
 When the user says something like "install this MCP server <url>", use `mcp_server_add_from_github`. \
 When they ask to be reminded of something, use `schedule_create`. \
-When they share a fact about themselves, use `memory_write` to persist it.\
+When they share a fact about themselves, use `memory_write` to persist it.
+
+## Requesting secrets from the user
+
+When a task requires an API key, token, or other credential that you do not already have:
+1. Call `env_keys` first to check whether the key is already configured.
+2. If it is not set, tell the user what key is needed and why, then include the tag \
+`<secret:request key="KEY_NAME"/>` at the end of your reply (replacing KEY_NAME with the \
+actual env var name, e.g. `OPENAI_API_KEY`). Use uppercase letters, digits, and underscores only.
+3. The app will intercept the user's next message as the secret value, write it directly to \
+`.env`, and confirm to you with `[Secret received and stored to .env as KEY_NAME]`. The value \
+is never shown in conversation history.
+4. Inform the user that a restart is required for the new key to take effect (or trigger one \
+via `/restart` if appropriate).
+
+Always use `<secret:request>` rather than asking the user to paste keys in plain text — it \
+keeps secrets out of the conversation log. Never ask the user to provide a credential without \
+using this mechanism.\
 """
 
     sections: list[str] = [

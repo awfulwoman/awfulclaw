@@ -124,11 +124,13 @@ def _wrap_sandbox(cmd: list[str]) -> list[str]:
     if not config.get_sandbox():
         return cmd
     sb_profile = pathlib.Path(__file__).parent.parent / "scripts" / "sandbox.sb"
+    project_path = str((pathlib.Path(__file__).parent.parent).resolve())
     memory_path = str((pathlib.Path(__file__).parent.parent / "memory").resolve())
     home_path = str(pathlib.Path.home())
     return [
         "sandbox-exec",
         "-f", str(sb_profile),
+        "-D", f"PROJECT_PATH={project_path}",
         "-D", f"MEMORY_PATH={memory_path}",
         "-D", f"HOME={home_path}",
     ] + cmd

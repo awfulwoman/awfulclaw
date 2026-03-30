@@ -13,13 +13,14 @@ from pathlib import Path
 
 from awfulclaw_mcp.registry import MCPRegistry
 
-from awfulclaw import briefings, claude, config, context, memory, scheduler
+from awfulclaw import briefings, claude, config, context, env_utils, memory, scheduler
 from awfulclaw.db import init_db, write_fact
 from awfulclaw.gateway import Gateway
 
 logger = logging.getLogger(__name__)
 
 _LOCATION_RE = re.compile(r"^\[Location:\s*(-?\d+\.?\d*),\s*(-?\d+\.?\d*)\]$")
+_SECRET_REQUEST_RE = re.compile(r'<secret:request\s+key="([A-Z][A-Z0-9_]*)"\s*/?>')
 
 _HEARTBEAT_PATH = "HEARTBEAT.md"
 _DEFAULT_HEARTBEAT = (
@@ -163,6 +164,7 @@ async def run(gateway: Gateway) -> None:
     _max_concurrent = int(os.getenv("AWFULCLAW_MAX_CONCURRENT", "3"))
     _sem = asyncio.Semaphore(_max_concurrent)
     _history_lock = asyncio.Lock()
+    _pending_secret_key: list[str | None] = [None]
     ev_loop = asyncio.get_running_loop()
 
     gateway.start()
@@ -198,7 +200,37 @@ async def run(gateway: Gateway) -> None:
 
     async def _handle_messages(messages: list) -> None:  # type: ignore[type-arg]
         """Process a batch of user messages sequentially, in order."""
+        _MAX_HISTORY = 40
+
         for msg in messages:
+            recipient = gateway.primary_recipient_for(msg.channel)
+
+            # Secret interception: if agent asked for a secret last turn, this
+            # message is the value. Write it directly to .env and never log it.
+            if _pending_secret_key[0] is not None:
+                key = _pending_secret_key[0]
+                _pending_secret_key[0] = None
+                logger.info("Storing secret for key %s (value redacted)", key)
+                try:
+                    env_utils.set_env_var(key, msg.body.strip())
+                    confirmation = f"[Secret received and stored to .env as {key}. Restart required to take effect.]"
+                except ValueError as exc:
+                    confirmation = f"[Secret storage failed for {key}: {exc}]"
+                system = context.build_system_prompt(confirmation, sender=msg.sender)
+                gateway.send_typing(msg.channel, recipient)
+                async with _history_lock:
+                    conversation_history.append({"role": "user", "content": confirmation})
+                    reply = await _chat_async(conversation_history, system)
+                    conversation_history.append({"role": "assistant", "content": reply})
+                    if len(conversation_history) > _MAX_HISTORY:
+                        conversation_history[:] = conversation_history[-_MAX_HISTORY:]
+                _append_turn("user", f"[REDACTED — secret stored as {key}]")
+                _append_turn("assistant", reply)
+                if reply:
+                    gateway.send(msg.channel, recipient, reply)
+                    logger.info("Sent reply after secret storage: %s", reply[:80])
+                continue
+
             logger.info("Incoming from %s: %s", msg.sender, msg.body[:80])
 
             loc_match = _LOCATION_RE.match(msg.body)
@@ -211,14 +243,12 @@ async def run(gateway: Gateway) -> None:
 
             slash_reply = handle_slash_command(msg.body)
             if slash_reply is not None:
-                recipient = gateway.primary_recipient_for(msg.channel)
                 gateway.send(msg.channel, recipient, slash_reply)
                 logger.info("Slash command '%s' handled", msg.body.split()[0])
                 continue
 
             system = context.build_system_prompt(msg.body, sender=msg.sender)
 
-            recipient = gateway.primary_recipient_for(msg.channel)
             gateway.send_typing(msg.channel, recipient)
 
             async with _history_lock:
@@ -230,9 +260,15 @@ async def run(gateway: Gateway) -> None:
                     msg.image_mime,
                 )
                 conversation_history.append({"role": "assistant", "content": reply})
-                _MAX_HISTORY = 40
                 if len(conversation_history) > _MAX_HISTORY:
                     conversation_history[:] = conversation_history[-_MAX_HISTORY:]
+
+            # Check if the reply requests a secret from the user.
+            secret_match = _SECRET_REQUEST_RE.search(reply)
+            if secret_match:
+                _pending_secret_key[0] = secret_match.group(1)
+                reply = _SECRET_REQUEST_RE.sub("", reply).strip()
+                logger.info("Secret requested for key %s", _pending_secret_key[0])
 
             _append_turn("user", msg.body)
             _append_turn("assistant", reply)

@@ -41,6 +41,16 @@
       ]
     },
     {
+      "name": "env_manager",
+      "command": "uv",
+      "args": [
+        "run",
+        "python",
+        "-m",
+        "awfulclaw_mcp.env_manager"
+      ]
+    },
+    {
       "name": "mcp_manager",
       "command": "uv",
       "args": [

@@ -13,6 +13,11 @@
 ; Allow writes to the memory directory (passed in via -D MEMORY_PATH=...).
 (allow file-write* (subpath (param "MEMORY_PATH")))
 
+; Allow writes to the project .env file (passed in via -D PROJECT_PATH=...).
+(allow file-write*
+  (literal (string-append (param "PROJECT_PATH") "/.env"))
+  (literal (string-append (param "PROJECT_PATH") "/.env.tmp")))
+
 ; Allow writes to standard macOS temp/cache dirs needed by the CLI runtime.
 (allow file-write*
   (subpath "/tmp")
