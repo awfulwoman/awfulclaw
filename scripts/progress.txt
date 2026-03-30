@@ -8,3 +8,12 @@
   - The no-catch-up pattern: anchor croniter at created_at, find first candidate > last_run, fire if <= now
   - Pre-existing lint errors in loop.py/test_skills.py/test_telegram.py are unrelated to scheduler work — don't fix out of scope
 ---
+
+## [2026-03-30] - #77 Define Module ABC and SkillTag dataclass
+- Created `awfulclaw/modules/base.py` with `Module` ABC and `SkillTag` dataclass
+- Files: awfulclaw/modules/base.py, awfulclaw/modules/test_base.py
+- **Learnings for future iterations:**
+  - Use `re.Pattern[str]` and `re.Match[str]` (not bare `re.Pattern`/`re.Match`) to avoid pyright errors
+  - bundled tests live in `awfulclaw/modules/` alongside source (e.g. `test_base.py` next to `base.py`)
+  - pyproject.toml testpaths includes `awfulclaw` for bundled test discovery
+---
