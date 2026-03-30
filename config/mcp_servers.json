@@ -21,6 +21,11 @@
       "args": ["run", "python", "-m", "awfulclaw_mcp.skills"]
     },
     {
+      "name": "mcp_manager",
+      "command": "uv",
+      "args": ["run", "python", "-m", "awfulclaw_mcp.mcp_manager"]
+    },
+    {
       "name": "imap",
       "command": "uv",
       "args": ["run", "python", "-m", "awfulclaw_mcp.imap"],

@@ -67,6 +67,10 @@ class MCPRegistry:
             raw_env: dict[str, str] = entry.get("env", {})
             resolved_env = {k: _resolve_env(v) for k, v in raw_env.items()}
 
+            if "source" in entry:
+                from awfulclaw_mcp.mcp_manager import ensure_installed  # lazy to avoid circular
+                ensure_installed(entry)
+
             self._servers[name] = {
                 "command": entry["command"],
                 "args": entry["args"],
