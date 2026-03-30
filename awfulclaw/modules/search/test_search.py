@@ -10,6 +10,8 @@ import pytest
 @pytest.fixture(autouse=True)
 def tmp_memory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
+    from awfulclaw.db import init_db
+    init_db()
 
 
 def _dispatch(query: str) -> str:
@@ -24,9 +26,8 @@ def _dispatch(query: str) -> str:
 
 
 def test_dispatch_returns_results() -> None:
-    import awfulclaw.memory as mem
-
-    mem.write("facts/hello.md", "the quick brown fox")
+    from awfulclaw.db import write_fact
+    write_fact("hello", "the quick brown fox")
     result = _dispatch("quick")
     assert "quick" in result
     assert "facts/hello.md" in result
@@ -38,10 +39,9 @@ def test_dispatch_no_results() -> None:
 
 
 def test_dispatch_multiple_files() -> None:
-    import awfulclaw.memory as mem
-
-    mem.write("facts/a.md", "apple pie is tasty")
-    mem.write("facts/b.md", "apple cider is good")
+    from awfulclaw.db import write_fact
+    write_fact("a", "apple pie is tasty")
+    write_fact("b", "apple cider is good")
     result = _dispatch("apple")
     assert "facts/a.md" in result
     assert "facts/b.md" in result
