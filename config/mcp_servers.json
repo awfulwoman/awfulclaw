@@ -1,0 +1,31 @@
+{
+  "servers": [
+    {
+      "name": "memory_write",
+      "command": "uv",
+      "args": ["run", "python", "-m", "awfulclaw_mcp.memory_write"]
+    },
+    {
+      "name": "memory_search",
+      "command": "uv",
+      "args": ["run", "python", "-m", "awfulclaw_mcp.search"]
+    },
+    {
+      "name": "schedule",
+      "command": "uv",
+      "args": ["run", "python", "-m", "awfulclaw_mcp.schedule"]
+    },
+    {
+      "name": "imap",
+      "command": "uv",
+      "args": ["run", "python", "-m", "awfulclaw_mcp.imap"],
+      "env": {
+        "IMAP_HOST": "${IMAP_HOST}",
+        "IMAP_PORT": "${IMAP_PORT}",
+        "IMAP_USER": "${IMAP_USER}",
+        "IMAP_PASSWORD": "${IMAP_PASSWORD}"
+      },
+      "env_required": ["IMAP_HOST", "IMAP_USER", "IMAP_PASSWORD"]
+    }
+  ]
+}

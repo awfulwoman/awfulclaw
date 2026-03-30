@@ -118,36 +118,12 @@ async def run(gateway: Gateway) -> None:
 
     init_db()
 
+    _MCP_CONFIG_PATH = Path("config/mcp_servers.json")
     mcp_registry = MCPRegistry()
-    mcp_registry.register(
-        "memory_write",
-        "uv",
-        ["run", "python", "-m", "awfulclaw_mcp.memory_write"],
-    )
-    mcp_registry.register(
-        "memory_search",
-        "uv",
-        ["run", "python", "-m", "awfulclaw_mcp.search"],
-    )
-    mcp_registry.register(
-        "schedule",
-        "uv",
-        ["run", "python", "-m", "awfulclaw_mcp.schedule"],
-    )
-    # IMAP is optional — only register when env vars are configured
-    if os.getenv("IMAP_HOST") and os.getenv("IMAP_USER") and os.getenv("IMAP_PASSWORD"):
-        mcp_registry.register(
-            "imap",
-            "uv",
-            ["run", "python", "-m", "awfulclaw_mcp.imap"],
-            env={
-                "IMAP_HOST": os.getenv("IMAP_HOST", ""),
-                "IMAP_PORT": os.getenv("IMAP_PORT", "993"),
-                "IMAP_USER": os.getenv("IMAP_USER", ""),
-                "IMAP_PASSWORD": os.getenv("IMAP_PASSWORD", ""),
-            },
-        )
-    mcp_config_path = None if mcp_registry.is_empty() else mcp_registry.generate_config()
+    mcp_registry.load_from_config(_MCP_CONFIG_PATH)
+    _mcp_config: list[Path | None] = [
+        None if mcp_registry.is_empty() else mcp_registry.generate_config()
+    ]
 
     poll_interval = config.get_poll_interval()
     idle_interval = config.get_idle_interval()
@@ -177,7 +153,7 @@ async def run(gateway: Gateway) -> None:
         async with _sem:
             return await ev_loop.run_in_executor(
                 None,
-                lambda: claude.chat(msgs, system, image_data, image_mime, mcp_config_path),
+                lambda: claude.chat(msgs, system, image_data, image_mime, _mcp_config[0]),
             )
 
     async def _handle_messages(messages: list) -> None:  # type: ignore[type-arg]
@@ -226,6 +202,9 @@ async def run(gateway: Gateway) -> None:
 
     async def _run_idle_tick() -> None:
         """Run scheduled prompts and heartbeat check."""
+        if mcp_registry.reload_if_changed(_MCP_CONFIG_PATH):
+            _mcp_config[0] = None if mcp_registry.is_empty() else mcp_registry.generate_config()
+
         due_prompts = scheduler.run_due()
         for prompt in due_prompts:
             try:
