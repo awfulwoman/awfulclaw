@@ -10,6 +10,7 @@ dependencies = [
     "croniter",
     "ddgs>=9.12.0",
     "httpx",
+    "mcp>=1.26.0",
     "python-dotenv",
 ]
 

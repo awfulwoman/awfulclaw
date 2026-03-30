@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -19,27 +18,16 @@ def isolate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     init_db()
 
 
-def test_module_fragments_appear_in_prompt() -> None:
-    """Module system_prompt_fragments should appear in the system prompt."""
-    with patch("awfulclaw.modules.ModuleRegistry.get_system_prompt_fragments") as mock_frags:
-        mock_frags.return_value = ["### TESTTOOL\nUse <skill:testtool/> to do stuff."]
-        prompt = context.build_system_prompt("Hello")
-    assert "## Available Skills" in prompt
-    assert "TESTTOOL" in prompt
-
-
-def test_no_skills_section_when_no_fragments() -> None:
-    with patch("awfulclaw.modules.ModuleRegistry.get_system_prompt_fragments") as mock_frags:
-        mock_frags.return_value = []
-        prompt = context.build_system_prompt("Hello")
+def test_no_skills_section_in_prompt() -> None:
+    """No Available Skills section should appear in the system prompt."""
+    prompt = context.build_system_prompt("Hello")
     assert "## Available Skills" not in prompt
 
 
-def test_no_skills_section_when_no_available_modules() -> None:
-    with patch("awfulclaw.modules.ModuleRegistry.get_available") as mock_avail:
-        mock_avail.return_value = []
-        prompt = context.build_system_prompt("Hello")
-    assert "## Active Skills" not in prompt
+def test_no_memory_write_tag_docs_in_prompt() -> None:
+    """The <memory:write> tag syntax should not appear in the system prompt."""
+    prompt = context.build_system_prompt("Hello")
+    assert "<memory:write" not in prompt
 
 
 def test_location_in_prompt_when_file_exists() -> None:

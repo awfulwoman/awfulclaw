@@ -14,10 +14,9 @@ def tmp_memory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
 
 
-def test_name_and_skill_tags() -> None:
+def test_name() -> None:
     mod = StartupBriefingModule()
     assert mod.name == "startup_briefing"
-    assert mod.skill_tags == []
 
 
 def test_is_available() -> None:

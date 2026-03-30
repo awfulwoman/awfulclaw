@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import re
-
 from awfulclaw import memory
-from awfulclaw.modules.base import Module, SkillTag
+from awfulclaw.modules.base import Module
 
 _PROGRESS_PATH = "progress.md"
 
@@ -28,23 +26,6 @@ class StartupBriefingModule(Module):
     @property
     def name(self) -> str:
         return "startup_briefing"
-
-    @property
-    def skill_tags(self) -> list[SkillTag]:
-        return []
-
-    @property
-    def system_prompt_fragment(self) -> str:
-        return (
-            "### Startup Self-Briefing\n"
-            "On each restart a silent self-briefing runs automatically. "
-            "A progress note is maintained at memory/progress.md."
-        )
-
-    def dispatch(
-        self, tag_match: re.Match[str], history: list[dict[str, str]], system: str
-    ) -> str:
-        return ""
 
     def is_available(self) -> bool:
         return True

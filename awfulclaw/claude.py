@@ -107,6 +107,7 @@ def chat(
     system: str,
     image_data: bytes | None = None,
     image_mime: str | None = None,
+    mcp_config_path: pathlib.Path | None = None,
 ) -> str:
     """Invoke claude and return the assistant reply text.
 
@@ -115,7 +116,7 @@ def chat(
     """
     if image_data is not None:
         return _chat_sdk(messages, system, image_data, image_mime or "image/jpeg")
-    return _chat_cli(messages, system)
+    return _chat_cli(messages, system, mcp_config_path=mcp_config_path)
 
 
 def _wrap_sandbox(cmd: list[str]) -> list[str]:
@@ -133,7 +134,11 @@ def _wrap_sandbox(cmd: list[str]) -> list[str]:
     ] + cmd
 
 
-def _chat_cli(messages: list[dict[str, str]], system: str) -> str:
+def _chat_cli(
+    messages: list[dict[str, str]],
+    system: str,
+    mcp_config_path: pathlib.Path | None = None,
+) -> str:
     """Invoke the claude CLI and return the assistant reply text."""
     prompt = _format_messages(messages)
 
@@ -145,6 +150,8 @@ def _chat_cli(messages: list[dict[str, str]], system: str) -> str:
         "--model", config.get_model(),
         "--allowedTools", ",".join(config.get_allowed_tools()),
     ]
+    if mcp_config_path is not None:
+        cmd += ["--mcp-config", str(mcp_config_path)]
     cmd = _wrap_sandbox(cmd)
 
     result = subprocess.run(cmd, input=prompt, capture_output=True, text=True)

@@ -1,4 +1,4 @@
-"""IMAP client — fetches unread emails and returns structured summaries."""
+"""MCP server for reading emails via IMAP."""
 
 from __future__ import annotations
 
@@ -7,16 +7,15 @@ import email.header
 import imaplib
 import logging
 import os
-import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from email.message import Message
 
-from awfulclaw.modules.base import Module, SkillTag
+from mcp.server.fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
 
-_SKILL_IMAP_RE = re.compile(r"<skill:imap\s*/>|<skill:imap\s*></skill:imap>")
+mcp = FastMCP("imap_read")
 
 
 @dataclass
@@ -120,50 +119,27 @@ def fetch_unread(since: datetime | None = None) -> list[EmailSummary]:
         return summaries
 
 
-class ImapModule(Module):
-    @property
-    def name(self) -> str:
-        return "imap"
+@mcp.tool()
+def imap_read() -> str:
+    """Fetch unread emails from INBOX via IMAP.
 
-    @property
-    def skill_tags(self) -> list[SkillTag]:
-        return [
-            SkillTag(
-                name="imap",
-                pattern=_SKILL_IMAP_RE,
-                description="Fetch unread emails via IMAP",
-                usage="<skill:imap/>",
+    Returns a summary of unread messages. Only works when IMAP env vars are configured
+    (IMAP_HOST, IMAP_USER, IMAP_PASSWORD).
+    """
+    try:
+        emails = fetch_unread()
+        if not emails:
+            return "[No new emails]"
+        lines = [f"[{len(emails)} new email(s):]"]
+        for e in emails:
+            lines.append(
+                f"From: {e.from_addr}\nSubject: {e.subject}\n"
+                f"Date: {e.timestamp.isoformat()}\n{e.body_preview}"
             )
-        ]
+        return "\n\n".join(lines)
+    except Exception as exc:
+        return f"[IMAP unavailable: {exc}]"
 
-    @property
-    def system_prompt_fragment(self) -> str:
-        return """\
-### Email (IMAP)
-Fetch unread emails with:
-```
-<skill:imap/>
-```
-Returns a summary of unread messages from your INBOX. Only available when IMAP is configured."""
 
-    def dispatch(self, tag_match: re.Match[str], history: list[dict[str, str]], system: str) -> str:
-        try:
-            emails = fetch_unread()
-            if not emails:
-                return "[No new emails]"
-            lines = [f"[{len(emails)} new email(s):]"]
-            for e in emails:
-                lines.append(
-                    f"From: {e.from_addr}\nSubject: {e.subject}\n"
-                    f"Date: {e.timestamp.isoformat()}\n{e.body_preview}"
-                )
-            logger.info("IMAP skill: fetched %d email(s)", len(emails))
-            return "\n\n".join(lines)
-        except Exception as exc:
-            logger.warning("IMAP skill error: %s", exc)
-            return f"[IMAP unavailable: {exc}]"
-
-    def is_available(self) -> bool:
-        return bool(
-            os.getenv("IMAP_HOST") and os.getenv("IMAP_USER") and os.getenv("IMAP_PASSWORD")
-        )
+if __name__ == "__main__":
+    mcp.run()
