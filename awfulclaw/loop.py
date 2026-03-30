@@ -6,7 +6,7 @@ import logging
 import re
 import signal
 import time
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 from awfulclaw import claude, config, context, memory, scheduler
@@ -31,15 +31,6 @@ _DEFAULT_HEARTBEAT = (
 )
 
 _IDLE_SUPPRESS = {"nothing", "nothing.", "nothing needs attention", "nothing right now"}
-
-_BRIEFING_PROMPT = (
-    "Good morning! Please give me a concise daily briefing. Include:\n"
-    "1. Any open tasks from memory/tasks/\n"
-    "2. Schedules due today or this week\n"
-    "3. Anything flagged or important in memory/facts/\n"
-    "4. If IMAP is configured, check for new emails using <skill:imap/>\n\n"
-    "Keep it brief and actionable."
-)
 
 _SLASH_COMMANDS = "/tasks, /skills, /schedules, /restart"
 
@@ -235,8 +226,7 @@ def run(connector: Connector) -> None:
         logger.info("Restored %d turns from previous session", len(conversation_history))
     last_poll = datetime.now(timezone.utc)
     last_idle = time.monotonic()
-    last_briefing_date: date | None = None
-    briefing_time = config.get_briefing_time()
+    briefing_module = registry.get("briefing")
 
     session_file = _session_path()
     try:
@@ -325,32 +315,29 @@ def run(connector: Connector) -> None:
                             except Exception as exc:
                                 logger.error("Schedule prompt failed: %s", exc)
 
-                if briefing_time is not None:
-                    today = now.date()
-                    delta_secs = (
-                        now.hour * 3600
-                        + now.minute * 60
-                        + now.second
-                        - briefing_time.hour * 3600
-                        - briefing_time.minute * 60
-                    )
-                    if 0 <= delta_secs < poll_interval and last_briefing_date != today:
-                        last_briefing_date = today
-                        try:
-                            briefing_system = context.build_system_prompt(_BRIEFING_PROMPT)
-                            briefing_history: list[dict[str, str]] = [
-                                {"role": "user", "content": _BRIEFING_PROMPT}
-                            ]
-                            briefing_reply = claude.chat(briefing_history, system=briefing_system)
-                            briefing_reply = _parse_and_apply_memory_writes(briefing_reply)
-                            briefing_reply = _dispatch_all_skills(
-                                briefing_reply, briefing_history, briefing_system
-                            )
-                            if briefing_reply:
-                                connector.send_message(phone, briefing_reply)
-                                logger.info("Daily briefing sent: %s", briefing_reply[:80])
-                        except Exception as exc:
-                            logger.error("Daily briefing failed: %s", exc)
+                if briefing_module is not None:
+                    from awfulclaw.modules.briefing._briefing import BriefingModule as _BM
+
+                    if isinstance(briefing_module, _BM):
+                        briefing_prompt = briefing_module.check_and_fire(poll_interval)
+                        if briefing_prompt is not None:
+                            try:
+                                briefing_system = context.build_system_prompt(briefing_prompt)
+                                briefing_history: list[dict[str, str]] = [
+                                    {"role": "user", "content": briefing_prompt}
+                                ]
+                                briefing_reply = claude.chat(
+                                    briefing_history, system=briefing_system
+                                )
+                                briefing_reply = _parse_and_apply_memory_writes(briefing_reply)
+                                briefing_reply = _dispatch_all_skills(
+                                    briefing_reply, briefing_history, briefing_system
+                                )
+                                if briefing_reply:
+                                    connector.send_message(phone, briefing_reply)
+                                    logger.info("Daily briefing sent: %s", briefing_reply[:80])
+                            except Exception as exc:
+                                logger.error("Daily briefing failed: %s", exc)
 
                 system = context.build_system_prompt("")
                 idle_reply = claude.chat(
