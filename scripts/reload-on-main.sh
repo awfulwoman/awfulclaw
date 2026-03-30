@@ -25,8 +25,10 @@ if [[ -f "$DEBOUNCE_FILE" ]]; then
     fi
 fi
 
-# Only restart if a .py file changed (ignore __pycache__ and other generated files)
-CHANGED_PY=$(find "$PROJECT_DIR/awfulclaw" -name "*.py" -not -path "*/__pycache__/*" \
+# Only restart if a core .py file changed (ignore __pycache__ and modules/ — modules are hot-reloaded)
+CHANGED_PY=$(find "$PROJECT_DIR/awfulclaw" -name "*.py" \
+    -not -path "*/__pycache__/*" \
+    -not -path "*/modules/*" \
     -newer "$DEBOUNCE_FILE" 2>/dev/null | head -1)
 
 if [[ -z "$CHANGED_PY" ]] && [[ -f "$DEBOUNCE_FILE" ]]; then

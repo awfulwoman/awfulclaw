@@ -299,6 +299,9 @@ def run(connector: Connector) -> None:
                 last_idle = time.monotonic()
                 now = datetime.now(timezone.utc)
 
+                if registry.check_for_changes():
+                    logger.info("Modules hot-reloaded")
+
                 schedule_module = registry.get("schedule")
                 if schedule_module is not None:
                     from awfulclaw.modules.schedule._schedule import ScheduleModule as _SM
