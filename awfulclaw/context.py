@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import re
+import re as _re
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from awfulclaw import memory, scheduler
 from awfulclaw.modules import get_registry
@@ -98,11 +100,25 @@ def _find_person_by_phone(phone: str) -> tuple[str, str] | None:
     return None
 
 
+def _local_now(user_content: str) -> str:
+    """Return current datetime string in the user's timezone if known, else UTC."""
+    m = _re.search(r"(?i)^Timezone:\s*(.+)$", user_content, _re.MULTILINE)
+    if m:
+        tz_name = m.group(1).strip().split()[0]  # take first word, ignore "(Germany)" etc.
+        if tz_name.lower() not in ("unknown", ""):
+            try:
+                tz = ZoneInfo(tz_name)
+                return datetime.now(tz).strftime(f"%Y-%m-%d %H:%M {tz_name}")
+            except (ZoneInfoNotFoundError, KeyError):
+                pass
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+
 def build_system_prompt(incoming_message: str, sender: str = "", channel: str = "") -> str:
     """Build the system prompt with memory context for the incoming message."""
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    soul = _load_soul(channel)
     user = _load_user()
+    now = _local_now(user)
+    soul = _load_soul(channel)
 
     # Resolve sender person file early so personality overlay can be applied to soul
     included_people: set[str] = set()
