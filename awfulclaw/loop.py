@@ -125,12 +125,18 @@ def _load_heartbeat() -> str:
     return content
 
 
+_PROTECTED_PATHS = {"SOUL.md", "HEARTBEAT.md"}
+
+
 def _parse_and_apply_memory_writes(text: str) -> str:
     """Extract <memory:write> blocks, apply them, return cleaned text."""
     for path, content in _MEMORY_WRITE_RE.findall(text):
         path = path.strip()
         if path.startswith("memory/"):
             path = path[len("memory/"):]
+        if path in _PROTECTED_PATHS:
+            logger.warning("Blocked write to protected path: %s", path)
+            continue
         memory.write(path, content.strip())
         logger.info("Memory write: %s", path)
     return _MEMORY_WRITE_RE.sub("", text).strip()
@@ -448,6 +454,9 @@ def run(connector: Connector) -> None:
                     reply = _parse_and_apply_memory_writes(reply)
 
                 conversation_history.append({"role": "assistant", "content": reply})
+                _MAX_HISTORY = 40
+                if len(conversation_history) > _MAX_HISTORY:
+                    conversation_history[:] = conversation_history[-_MAX_HISTORY:]
                 _append_turn(session_file, "User", msg.body)
                 _append_turn(session_file, "Assistant", reply)
                 if reply:
