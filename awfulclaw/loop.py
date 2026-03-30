@@ -29,8 +29,11 @@ _LOCATION_RE = re.compile(r"^\[Location:\s*(-?\d+\.?\d*),\s*(-?\d+\.?\d*)\]$")
 _SKILL_IMAP_RE = re.compile(r"<skill:imap\s*/>|<skill:imap\s*></skill:imap>")
 
 _SKILL_WEB_RE = re.compile(r'<skill:web\s+query="([^"]*?)"\s*/?>')
+_SKILL_WEB_FALLBACK_RE = re.compile(r"<skill:web\b[^>]*/?>")
 
 _SKILL_SEARCH_RE = re.compile(r'<skill:search\s+query="([^"]*?)"\s*/?>')
+_SKILL_SEARCH_FALLBACK_RE = re.compile(r"<skill:search\b[^>]*/?>")
+
 
 _SKILL_SCHEDULE_RE = re.compile(
     r"<skill:schedule\s+([^>]*?)(?:/>|>(.*?)</skill:schedule>)",
@@ -271,6 +274,50 @@ def _fetch_web_results(query: str) -> str:
         return f"[Web search unavailable: {exc}]"
 
 
+def _dispatch_skills(
+    reply: str,
+    history: list[dict[str, str]],
+    system: str,
+) -> str:
+    """Process skill:web and skill:search tags in a reply, calling Claude for each.
+
+    Handles multiple tags by processing them one at a time, re-invoking Claude after each.
+    Strips malformed skill tags that don't match the expected format.
+    """
+    for _round in range(5):  # cap to prevent infinite loops
+        web_queries = _SKILL_WEB_RE.findall(reply)
+        search_queries = _SKILL_SEARCH_RE.findall(reply)
+        if not web_queries and not search_queries:
+            break
+
+        if web_queries:
+            query = web_queries[0]
+            reply = _SKILL_WEB_RE.sub("", reply, count=1).strip()
+            result_text = _fetch_web_results(query)
+        else:
+            query = search_queries[0]
+            reply = _SKILL_SEARCH_RE.sub("", reply, count=1).strip()
+            result_text = _fetch_search_results(query)
+
+        # Strip any remaining tags before sending to Claude
+        reply = _SKILL_WEB_RE.sub("", reply).strip()
+        reply = _SKILL_SEARCH_RE.sub("", reply).strip()
+
+        history.append({"role": "assistant", "content": reply})
+        history.append({"role": "user", "content": result_text})
+        reply = claude.chat(history, system=system)
+        reply = _parse_and_apply_memory_writes(reply)
+
+    # Strip any malformed skill tags that didn't match the primary regex
+    leftover = _SKILL_WEB_FALLBACK_RE.sub("", reply)
+    leftover = _SKILL_SEARCH_FALLBACK_RE.sub("", leftover).strip()
+    if leftover != reply:
+        logger.warning("Stripped malformed skill tags from reply")
+        reply = leftover
+
+    return reply
+
+
 def _session_path() -> str:
     """Return conversations/YYYY/MM/<iso-timestamp>.md with colons replaced by dashes."""
     now = datetime.now(timezone.utc)
@@ -440,25 +487,7 @@ def run(connector: Connector) -> None:
                     reply = claude.chat(conversation_history, system=system)
                     reply = _parse_and_apply_memory_writes(reply)
 
-                web_match = _SKILL_WEB_RE.search(reply)
-                if web_match:
-                    query = web_match.group(1)
-                    reply = _SKILL_WEB_RE.sub("", reply).strip()
-                    web_text = _fetch_web_results(query)
-                    conversation_history.append({"role": "assistant", "content": reply})
-                    conversation_history.append({"role": "user", "content": web_text})
-                    reply = claude.chat(conversation_history, system=system)
-                    reply = _parse_and_apply_memory_writes(reply)
-
-                search_match = _SKILL_SEARCH_RE.search(reply)
-                if search_match:
-                    query = search_match.group(1)
-                    reply = _SKILL_SEARCH_RE.sub("", reply).strip()
-                    search_text = _fetch_search_results(query)
-                    conversation_history.append({"role": "assistant", "content": reply})
-                    conversation_history.append({"role": "user", "content": search_text})
-                    reply = claude.chat(conversation_history, system=system)
-                    reply = _parse_and_apply_memory_writes(reply)
+                reply = _dispatch_skills(reply, conversation_history, system)
 
                 conversation_history.append({"role": "assistant", "content": reply})
                 _MAX_HISTORY = 40
@@ -491,26 +520,9 @@ def run(connector: Connector) -> None:
                         ]
                         sched_reply = claude.chat(sched_history, system=sched_system)
                         sched_reply = _parse_and_apply_memory_writes(sched_reply)
-
-                        web_match = _SKILL_WEB_RE.search(sched_reply)
-                        if web_match:
-                            query = web_match.group(1)
-                            sched_reply = _SKILL_WEB_RE.sub("", sched_reply).strip()
-                            web_text = _fetch_web_results(query)
-                            sched_history.append({"role": "assistant", "content": sched_reply})
-                            sched_history.append({"role": "user", "content": web_text})
-                            sched_reply = claude.chat(sched_history, system=sched_system)
-                            sched_reply = _parse_and_apply_memory_writes(sched_reply)
-
-                        search_match = _SKILL_SEARCH_RE.search(sched_reply)
-                        if search_match:
-                            query = search_match.group(1)
-                            sched_reply = _SKILL_SEARCH_RE.sub("", sched_reply).strip()
-                            search_text = _fetch_search_results(query)
-                            sched_history.append({"role": "assistant", "content": sched_reply})
-                            sched_history.append({"role": "user", "content": search_text})
-                            sched_reply = claude.chat(sched_history, system=sched_system)
-                            sched_reply = _parse_and_apply_memory_writes(sched_reply)
+                        sched_reply = _dispatch_skills(
+                            sched_reply, sched_history, sched_system
+                        )
 
                         if sched_reply:
                             connector.send_message(phone, sched_reply)
@@ -552,6 +564,9 @@ def run(connector: Connector) -> None:
                                     briefing_history, system=briefing_system
                                 )
                                 briefing_reply = _parse_and_apply_memory_writes(briefing_reply)
+                            briefing_reply = _dispatch_skills(
+                                briefing_reply, briefing_history, briefing_system
+                            )
                             if briefing_reply:
                                 connector.send_message(phone, briefing_reply)
                                 logger.info("Daily briefing sent: %s", briefing_reply[:80])

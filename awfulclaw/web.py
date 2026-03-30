@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -18,10 +19,14 @@ class SearchResult:
 def search(query: str, max_results: int = 5) -> list[SearchResult]:
     """Search DuckDuckGo, return up to max_results results."""
     try:
-        from ddgs import DDGS
+        from ddgs import DDGS  # type: ignore[import-untyped]
+        from ddgs.exceptions import DDGSException  # type: ignore[import-untyped]
 
-        with DDGS() as ddgs:
-            hits = ddgs.text(query, max_results=max_results)
+        try:
+            with DDGS() as ddgs:
+                hits: list[dict[str, Any]] = ddgs.text(query, max_results=max_results)  # type: ignore[assignment]
+        except DDGSException:
+            return []
     except Exception as exc:
         raise RuntimeError(f"DuckDuckGo search failed: {exc}") from exc
 
