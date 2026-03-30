@@ -139,3 +139,16 @@ Started: Mon 30 Mar 2026 13:18:13 CEST
   - Pass env vars explicitly in the `env` dict when registering conditional MCP servers — subprocess won't inherit them otherwise
   - Test with `patch("awfulclaw.mcp.imap.fetch_unread", ...)` — mock the import in the MCP module, not the source module
 ---
+
+## [2026-03-30] - #110 Remove regex dispatch from loop.py
+- Removed `_MEMORY_WRITE_RE`, `_parse_and_apply_memory_writes()`, `_dispatch_tools()`, `_PROTECTED_FILES/DIRS`, `_is_protected_path()` from `loop.py`
+- Removed `write_person` import (no longer needed after dispatch removal)
+- Removed all call sites across `_handle_messages`, `_run_idle_tick`, and startup briefing block
+- Reply from `claude.chat()` is now sent directly to the connector
+- Hook modules (briefing, startup_briefing) and hot-reload via `registry.check_for_changes()` remain untouched
+- Files changed: `awfulclaw/loop.py`
+- **Learnings for future iterations:**
+  - `memory` module was still needed in loop.py for `_load_heartbeat()` — don't remove it when cleaning up `_parse_and_apply_memory_writes`
+  - `ev_loop` is still used by `_chat_async` (run_in_executor) even after dispatch removal — keep it
+  - Baseline pyright error count for loop.py was 34 (pre-existing) — verify count stays same after changes
+---
