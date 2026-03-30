@@ -36,37 +36,15 @@ def get_allowed_tools() -> list[str]:
     if raw:
         return [t.strip() for t in raw.split(",") if t.strip()]
     return [
+        # Built-in tools: scoped to safe paths only
         "Read(memory/**)",
         "Write(memory/**)",
         "Edit(memory/**)",
         "WebSearch",
         "WebFetch",
-        "mcp__memory_write__memory_write",
-        "mcp__memory_search__memory_search",
-        "mcp__schedule__schedule_create",
-        "mcp__schedule__schedule_delete",
-        "mcp__schedule__schedule_list",
-        "mcp__imap_read__imap_read",
-        "mcp__skills__skill_read",
-        "mcp__mcp_manager__mcp_server_list",
-        "mcp__mcp_manager__mcp_server_add",
-        "mcp__mcp_manager__mcp_server_add_from_github",
-        "mcp__mcp_manager__mcp_server_remove",
-        "mcp__env_manager__env_set",
-        "mcp__env_manager__env_keys",
-        "mcp__mcp-obsidian__obsidian_list_files_in_vault",
-        "mcp__mcp-obsidian__obsidian_list_files_in_dir",
-        "mcp__mcp-obsidian__obsidian_get_file_contents",
-        "mcp__mcp-obsidian__obsidian_simple_search",
-        "mcp__mcp-obsidian__obsidian_complex_search",
-        "mcp__mcp-obsidian__obsidian_batch_get_file_contents",
-        "mcp__mcp-obsidian__obsidian_append_content",
-        "mcp__mcp-obsidian__obsidian_patch_content",
-        "mcp__mcp-obsidian__obsidian_put_content",
-        "mcp__mcp-obsidian__obsidian_delete_file",
-        "mcp__mcp-obsidian__obsidian_get_periodic_note",
-        "mcp__mcp-obsidian__obsidian_get_recent_periodic_notes",
-        "mcp__mcp-obsidian__obsidian_get_recent_changes",
+        # All MCP tools are purpose-built and safe — allow the whole namespace
+        # so new MCP servers don't require an allowlist update.
+        "mcp__*",
     ]
 
 
