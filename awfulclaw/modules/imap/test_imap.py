@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import email
 from datetime import datetime, timezone
+from email.message import Message
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -17,7 +17,7 @@ def _make_raw_email(
     body: str = "This is the body.",
     date: str = "Mon, 01 Jan 2024 12:00:00 +0000",
 ) -> bytes:
-    msg = email.message.Message()
+    msg = Message()
     msg["From"] = from_addr
     msg["Subject"] = subject
     msg["Date"] = date
@@ -102,3 +102,79 @@ def test_fetch_unread_with_since_filter(monkeypatch: pytest.MonkeyPatch) -> None
     call_args = mock_conn.search.call_args
     criteria = call_args[0]
     assert "SINCE" in criteria
+
+
+def test_imap_module_is_available_false_without_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    from awfulclaw.modules.imap._imap import ImapModule
+
+    monkeypatch.delenv("IMAP_HOST", raising=False)
+    monkeypatch.delenv("IMAP_USER", raising=False)
+    monkeypatch.delenv("IMAP_PASSWORD", raising=False)
+    mod = ImapModule()
+    assert mod.is_available() is False
+
+
+def test_imap_module_is_available_true_with_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    from awfulclaw.modules.imap._imap import ImapModule
+
+    monkeypatch.setenv("IMAP_HOST", "imap.example.com")
+    monkeypatch.setenv("IMAP_USER", "user@example.com")
+    monkeypatch.setenv("IMAP_PASSWORD", "secret")
+    mod = ImapModule()
+    assert mod.is_available() is True
+
+
+def test_imap_module_dispatch_formats_emails(monkeypatch: pytest.MonkeyPatch) -> None:
+    from awfulclaw.modules.imap._imap import ImapModule
+
+    monkeypatch.setenv("IMAP_HOST", "imap.example.com")
+    monkeypatch.setenv("IMAP_USER", "user@example.com")
+    monkeypatch.setenv("IMAP_PASSWORD", "secret")
+
+    raw = _make_raw_email(
+        from_addr="bob@example.com",
+        subject="Important",
+        body="Read this!",
+    )
+    mod = ImapModule()
+    tag = mod.skill_tags[0]
+    m = tag.pattern.match("<skill:imap/>")
+    assert m is not None
+
+    with patch("imaplib.IMAP4_SSL") as mock_cls:
+        _setup_mock_imap(mock_cls, [raw])
+        result = mod.dispatch(m, [], "")
+
+    assert "bob@example.com" in result
+    assert "Important" in result
+    assert "Read this!" in result
+
+
+def test_imap_module_dispatch_no_emails(monkeypatch: pytest.MonkeyPatch) -> None:
+    from awfulclaw.modules.imap._imap import ImapModule
+
+    monkeypatch.setenv("IMAP_HOST", "imap.example.com")
+    monkeypatch.setenv("IMAP_USER", "user@example.com")
+    monkeypatch.setenv("IMAP_PASSWORD", "secret")
+
+    mod = ImapModule()
+    tag = mod.skill_tags[0]
+    m = tag.pattern.match("<skill:imap/>")
+    assert m is not None
+
+    with patch("imaplib.IMAP4_SSL") as mock_cls:
+        mock_conn = MagicMock()
+        mock_cls.return_value.__enter__ = MagicMock(return_value=mock_conn)
+        mock_cls.return_value.__exit__ = MagicMock(return_value=False)
+        mock_conn.search.return_value = ("OK", [b""])
+        result = mod.dispatch(m, [], "")
+
+    assert "No new emails" in result
+
+
+def test_create_module() -> None:
+    from awfulclaw.modules.imap import create_module
+
+    mod = create_module()
+    assert mod.name == "imap"
+    assert len(mod.skill_tags) == 1

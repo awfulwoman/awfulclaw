@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from awfulclaw import memory, scheduler
-from awfulclaw import skills as skills_module
+from awfulclaw.modules import get_registry
 
 _MAX_CHARS = 8000
 
@@ -156,9 +156,7 @@ Use the context already loaded in this prompt to assemble the answer — no tool
             continue
         content = memory.read(f"people/{filename}")
         name_stem = filename.replace(".md", "").lower()
-        if name_stem in words or any(
-            word in content.lower() for word in words if len(word) > 3
-        ):
+        if name_stem in words or any(word in content.lower() for word in words if len(word) > 3):
             sections.append(f"## Person: {filename}\n{content}")
 
     # Open tasks (files containing unchecked checkboxes)
@@ -167,16 +165,11 @@ Use the context already loaded in this prompt to assemble the answer — no tool
         if "- [ ]" in content:
             sections.append(f"## Task: {filename}\n{content}")
 
-    # Matched skills
-    all_skills = skills_module.load_skills()
-    matched = skills_module.match_skills(incoming_message, all_skills)
-    if matched:
-        skill_lines = ["## Active Skills"]
-        for skill in matched:
-            skill_lines.append(f"### {skill.name}\n{skill.instruction}")
-            if skill.body:
-                skill_lines.append(skill.body)
-        sections.append("\n\n".join(skill_lines))
+    # Module skill documentation
+    registry = get_registry()
+    fragments = registry.get_system_prompt_fragments()
+    if fragments:
+        sections.append("## Available Skills\n\n" + "\n\n".join(fragments))
 
     # Active schedules
     schedules = scheduler.load_schedules()

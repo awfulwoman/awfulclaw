@@ -1,0 +1,35 @@
+"""{{MODULE_NAME}} module implementation."""
+from __future__ import annotations
+
+import re
+from awfulclaw.modules.base import Module, SkillTag
+
+
+class {{ModuleName}}Module(Module):
+    @property
+    def name(self) -> str:
+        return "{{module_name}}"
+
+    @property
+    def skill_tags(self) -> list[SkillTag]:
+        return [
+            SkillTag(
+                name="{{module_name}}",
+                pattern=re.compile(r'<skill:{{module_name}}\s+query="([^"]*?)"\s*/?>'),
+                description="{{description}}",
+                usage='<skill:{{module_name}} query="..."/>',
+            )
+        ]
+
+    @property
+    def system_prompt_fragment(self) -> str:
+        return """### {{MODULE_NAME}}
+{{documentation}}"""
+
+    def dispatch(self, tag_match: re.Match[str], history: list[dict[str, str]], system: str) -> str:
+        query = tag_match.group(1)
+        # TODO: implement
+        return f"[{{MODULE_NAME}} result for: {query}]"
+
+    def is_available(self) -> bool:
+        return True
