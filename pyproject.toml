@@ -31,7 +31,7 @@ line-length = 100
 select = ["E", "F", "I"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["app/awfulclaw"]
+packages = ["app/awfulclaw", "app/awfulclaw_mcp"]
 
 [tool.pytest.ini_options]
 testpaths = ["app/tests", "app/awfulclaw/modules"]

@@ -4,15 +4,15 @@ from __future__ import annotations
 
 import json
 
-from awfulclaw.mcp import generate_mcp_config
-from awfulclaw.mcp.registry import MCPRegistry
+from awfulclaw_mcp import generate_mcp_config
+from awfulclaw_mcp.registry import MCPRegistry
 
 
 def test_generate_mcp_config_schema():
     servers = {
         "web": {
             "command": "python",
-            "args": ["-m", "awfulclaw.mcp.web"],
+            "args": ["-m", "awfulclaw_mcp.web"],
             "env": {},
         }
     }
@@ -25,10 +25,10 @@ def test_generate_mcp_config_schema():
 
 def test_generate_mcp_config_multiple_servers():
     servers = {
-        "web": {"command": "python", "args": ["-m", "awfulclaw.mcp.web"], "env": {}},
+        "web": {"command": "python", "args": ["-m", "awfulclaw_mcp.web"], "env": {}},
         "search": {
             "command": "python",
-            "args": ["-m", "awfulclaw.mcp.search"],
+            "args": ["-m", "awfulclaw_mcp.search"],
             "env": {"KEY": "val"},
         },
     }
@@ -39,21 +39,21 @@ def test_generate_mcp_config_multiple_servers():
 
 def test_registry_register_and_generate():
     reg = MCPRegistry()
-    reg.register("web", "python", ["-m", "awfulclaw.mcp.web"])
+    reg.register("web", "python", ["-m", "awfulclaw_mcp.web"])
     path = reg.generate_config()
     data = json.loads(path.read_text())
     assert "mcpServers" in data
     assert "web" in data["mcpServers"]
     entry = data["mcpServers"]["web"]
     assert entry["command"] == "python"
-    assert entry["args"] == ["-m", "awfulclaw.mcp.web"]
+    assert entry["args"] == ["-m", "awfulclaw_mcp.web"]
     assert entry["env"] == {}
 
 
 def test_registry_register_with_env():
     reg = MCPRegistry()
     reg.register(
-        "imap", "python", ["-m", "awfulclaw.mcp.imap"], env={"IMAP_HOST": "imap.example.com"}
+        "imap", "python", ["-m", "awfulclaw_mcp.imap"], env={"IMAP_HOST": "imap.example.com"}
     )
     path = reg.generate_config()
     data = json.loads(path.read_text())

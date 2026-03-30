@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from awfulclaw.mcp.memory_write import memory_write
+from awfulclaw_mcp.memory_write import memory_write
 
 
 @pytest.fixture(autouse=True)
@@ -32,21 +32,21 @@ def test_write_creates_subdirectory(tmp_path: Path) -> None:
 
 
 def test_write_facts_routes_to_sqlite() -> None:
-    with patch("awfulclaw.mcp.memory_write.write_fact") as mock_write:
+    with patch("awfulclaw_mcp.memory_write.write_fact") as mock_write:
         result = memory_write("facts/location.md", "Paris")
         mock_write.assert_called_once_with("location", "Paris")
         assert result == "Written to memory/facts/location.md"
 
 
 def test_write_people_routes_to_sqlite() -> None:
-    with patch("awfulclaw.mcp.memory_write.write_person") as mock_write:
+    with patch("awfulclaw_mcp.memory_write.write_person") as mock_write:
         result = memory_write("people/alice.md", "Alice info")
         mock_write.assert_called_once_with("alice", "Alice info")
         assert result == "Written to memory/people/alice.md"
 
 
 def test_write_facts_strips_md_suffix() -> None:
-    with patch("awfulclaw.mcp.memory_write.write_fact") as mock_write:
+    with patch("awfulclaw_mcp.memory_write.write_fact") as mock_write:
         memory_write("facts/weather", "Sunny")
         mock_write.assert_called_once_with("weather", "Sunny")
 

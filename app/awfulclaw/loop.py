@@ -12,10 +12,11 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+from awfulclaw_mcp.registry import MCPRegistry
+
 from awfulclaw import claude, config, context, memory, scheduler
 from awfulclaw.db import get_db, init_db, write_fact
 from awfulclaw.gateway import Gateway
-from awfulclaw.mcp.registry import MCPRegistry
 from awfulclaw.modules import get_registry
 
 logger = logging.getLogger(__name__)
@@ -146,24 +147,24 @@ async def run(gateway: Gateway) -> None:
     mcp_registry.register(
         "memory_write",
         "uv",
-        ["run", "python", "-m", "awfulclaw.mcp.memory_write"],
+        ["run", "python", "-m", "awfulclaw_mcp.memory_write"],
     )
     mcp_registry.register(
         "memory_search",
         "uv",
-        ["run", "python", "-m", "awfulclaw.mcp.search"],
+        ["run", "python", "-m", "awfulclaw_mcp.search"],
     )
     mcp_registry.register(
         "schedule",
         "uv",
-        ["run", "python", "-m", "awfulclaw.mcp.schedule"],
+        ["run", "python", "-m", "awfulclaw_mcp.schedule"],
     )
     # IMAP is optional — only register when env vars are configured
     if os.getenv("IMAP_HOST") and os.getenv("IMAP_USER") and os.getenv("IMAP_PASSWORD"):
         mcp_registry.register(
             "imap",
             "uv",
-            ["run", "python", "-m", "awfulclaw.mcp.imap"],
+            ["run", "python", "-m", "awfulclaw_mcp.imap"],
             env={
                 "IMAP_HOST": os.getenv("IMAP_HOST", ""),
                 "IMAP_PORT": os.getenv("IMAP_PORT", "993"),
