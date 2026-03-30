@@ -278,6 +278,7 @@ async def run(gateway: Gateway) -> None:
 
     async def _run_idle_tick() -> None:
         """Run scheduled prompts and heartbeat check."""
+        nonlocal last_idle_nudge
         if mcp_registry.reload_if_changed(_MCP_CONFIG_PATH):
             _mcp_config[0] = None if mcp_registry.is_empty() else mcp_registry.generate_config()
 
