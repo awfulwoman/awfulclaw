@@ -34,7 +34,7 @@ select = ["E", "F", "I"]
 packages = ["app/awfulclaw", "app/awfulclaw_mcp"]
 
 [tool.pytest.ini_options]
-testpaths = ["app/tests", "app/awfulclaw/modules"]
+testpaths = ["app/tests"]
 
 [tool.pyright]
 pythonVersion = "3.11"

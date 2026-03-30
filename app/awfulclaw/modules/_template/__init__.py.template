@@ -1,7 +1,0 @@
-"""{{MODULE_NAME}} module."""
-from awfulclaw.modules.base import Module
-from awfulclaw.modules.{{module_name}}._{{module_name}} import {{ModuleName}}Module
-
-
-def create_module() -> Module:
-    return {{ModuleName}}Module()

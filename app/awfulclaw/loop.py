@@ -17,7 +17,6 @@ from awfulclaw_mcp.registry import MCPRegistry
 from awfulclaw import claude, config, context, memory, scheduler
 from awfulclaw.db import get_db, init_db, write_fact
 from awfulclaw.gateway import Gateway
-from awfulclaw.modules import get_registry
 
 logger = logging.getLogger(__name__)
 
@@ -141,7 +140,6 @@ async def run(gateway: Gateway) -> None:
     logger.info("awfulclaw starting up")
 
     init_db()
-    registry = get_registry()
 
     mcp_registry = MCPRegistry()
     mcp_registry.register(
@@ -182,7 +180,6 @@ async def run(gateway: Gateway) -> None:
     if conversation_history:
         logger.info("Restored %d turns from previous session", len(conversation_history))
     last_idle = time.monotonic()
-    briefing_module = registry.get("briefing")
 
     session_id = str(uuid.uuid4())
     _max_concurrent = int(os.getenv("AWFULCLAW_MAX_CONCURRENT", "3"))
@@ -205,24 +202,6 @@ async def run(gateway: Gateway) -> None:
                 None,
                 lambda: claude.chat(msgs, system, image_data, image_mime, mcp_config_path),
             )
-
-    # Startup self-briefing (silent — no Telegram output)
-    startup_module = registry.get("startup_briefing")
-    if startup_module is not None:
-        from awfulclaw.modules.startup_briefing._startup_briefing import (
-            StartupBriefingModule as _SBM,
-        )
-
-        if isinstance(startup_module, _SBM):
-            try:
-                startup_prompt = startup_module.get_startup_prompt()
-                startup_system = context.build_system_prompt(startup_prompt)
-                startup_history = list(conversation_history)
-                startup_history.append({"role": "user", "content": startup_prompt})
-                await _chat_async(startup_history, startup_system)
-                logger.info("Startup self-briefing completed")
-            except Exception as exc:
-                logger.error("Startup self-briefing failed: %s", exc)
 
     async def _handle_messages(messages: list) -> None:  # type: ignore[type-arg]
         """Process a batch of user messages sequentially, in order."""
@@ -269,10 +248,7 @@ async def run(gateway: Gateway) -> None:
                 logger.info("Sent reply: %s", reply[:80])
 
     async def _run_idle_tick() -> None:
-        """Run scheduled prompts, briefing, and heartbeat check."""
-        if registry.check_for_changes():
-            logger.info("Modules hot-reloaded")
-
+        """Run scheduled prompts and heartbeat check."""
         due_prompts = scheduler.run_due()
         for prompt in due_prompts:
             try:
@@ -284,24 +260,6 @@ async def run(gateway: Gateway) -> None:
                     logger.info("Schedule reply sent: %s", sched_reply[:80])
             except Exception as exc:
                 logger.error("Schedule prompt failed: %s", exc)
-
-        if briefing_module is not None:
-            from awfulclaw.modules.briefing._briefing import BriefingModule as _BM
-
-            if isinstance(briefing_module, _BM):
-                briefing_prompt = briefing_module.check_and_fire(poll_interval)
-                if briefing_prompt is not None:
-                    try:
-                        briefing_system = context.build_system_prompt(briefing_prompt)
-                        briefing_history: list[dict[str, str]] = [
-                            {"role": "user", "content": briefing_prompt}
-                        ]
-                        briefing_reply = await _chat_async(briefing_history, briefing_system)
-                        if briefing_reply:
-                            gateway.send(gateway.primary_channel, phone, briefing_reply)
-                            logger.info("Daily briefing sent: %s", briefing_reply[:80])
-                    except Exception as exc:
-                        logger.error("Daily briefing failed: %s", exc)
 
         system = context.build_system_prompt("")
         idle_reply = await _chat_async(
