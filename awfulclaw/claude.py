@@ -5,10 +5,15 @@ from __future__ import annotations
 import base64
 import logging
 import os
+import pathlib
 import subprocess
 import time as _time
 
 from awfulclaw import config
+
+_REPO_ROOT = pathlib.Path(__file__).parent.parent
+_MEMORY_DIR = _REPO_ROOT / "memory"
+_SANDBOX_PROFILE = _REPO_ROOT / "scripts" / "sandbox.sb"
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +45,10 @@ class ClaudeSession:
             "--system-prompt", augmented_system,
             "--model", config.get_model(),
         ]
+        allowed_tools = config.get_allowed_tools()
+        if allowed_tools:
+            cmd += ["--allowedTools", ",".join(allowed_tools)]
+        cmd = _maybe_sandbox(cmd)
         self._process = subprocess.Popen(
             cmd,
             stdin=subprocess.PIPE,
@@ -115,6 +124,18 @@ def chat(
     return _chat_cli(messages, system)
 
 
+def _maybe_sandbox(cmd: list[str]) -> list[str]:
+    """Wrap cmd with sandbox-exec if AWFULCLAW_SANDBOX=1."""
+    if not config.get_sandbox_enabled():
+        return cmd
+    memory_dir = str(_MEMORY_DIR.resolve())
+    return [
+        "sandbox-exec",
+        "-f", str(_SANDBOX_PROFILE),
+        "-D", f"MEMORY_DIR={memory_dir}",
+    ] + cmd
+
+
 def _chat_cli(messages: list[dict[str, str]], system: str) -> str:
     """Invoke the claude CLI and return the assistant reply text."""
     prompt = _format_messages(messages)
@@ -126,6 +147,10 @@ def _chat_cli(messages: list[dict[str, str]], system: str) -> str:
         "--system-prompt", system,
         "--model", config.get_model(),
     ]
+    allowed_tools = config.get_allowed_tools()
+    if allowed_tools:
+        cmd += ["--allowedTools", ",".join(allowed_tools)]
+    cmd = _maybe_sandbox(cmd)
 
     result = subprocess.run(cmd, input=prompt, capture_output=True, text=True)
 

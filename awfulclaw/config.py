@@ -38,6 +38,18 @@ def get_idle_interval() -> int:
     return int(os.getenv("AWFULCLAW_IDLE_INTERVAL", "60"))
 
 
+def get_allowed_tools() -> list[str]:
+    """Return the list of tools Claude is allowed to use, or [] to add no restriction."""
+    raw = os.getenv("AWFULCLAW_ALLOWED_TOOLS", "Read,Write,Edit").strip()
+    if not raw:
+        return []
+    return [t.strip() for t in raw.split(",") if t.strip()]
+
+
+def get_sandbox_enabled() -> bool:
+    return os.getenv("AWFULCLAW_SANDBOX", "0").strip() == "1"
+
+
 def get_briefing_time() -> time | None:
     """Return configured briefing time in UTC, or None if not set."""
     raw = os.getenv("AWFULCLAW_BRIEFING_TIME", "").strip()

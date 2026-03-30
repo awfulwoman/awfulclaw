@@ -1,0 +1,41 @@
+; macOS sandbox profile for the awfulclaw Claude subprocess.
+; Usage: sandbox-exec -f sandbox.sb -D MEMORY_DIR=/abs/path/to/memory <cmd>
+;
+; Policy:
+;   - Read access to the entire filesystem (Claude CLI needs its own libs/config)
+;   - Write access only to memory/, /tmp, and /var/folders (temp files)
+;   - Full network access (Claude CLI needs to reach the Anthropic API)
+;   - Process/IPC operations needed by the Claude CLI runtime
+
+(version 1)
+(deny default)
+
+; Process and IPC operations needed by the runtime
+(allow process-exec*)
+(allow process-fork)
+(allow signal)
+(allow sysctl-read)
+(allow mach*)
+(allow ipc*)
+(allow iokit*)
+
+; Allow all file reads (Claude CLI binary, Python, Node, libs, config)
+(allow file-read*)
+
+; Allow writes only to the memory directory
+(allow file-write* (subpath (param "MEMORY_DIR")))
+
+; Temp directories needed by Claude CLI and subprocess plumbing
+(allow file-write* (subpath "/tmp"))
+(allow file-write* (subpath "/private/tmp"))
+(allow file-write* (regex #"^/var/folders/"))
+(allow file-write* (regex #"^/private/var/folders/"))
+
+; Allow writing to /dev (stdout/stderr/pipes)
+(allow file-write* (subpath "/dev"))
+(allow file-read-metadata (subpath "/dev"))
+
+; Network: allow outbound (Anthropic API) and UNIX sockets (node IPC)
+(allow network*)
+(allow network-outbound)
+(allow network-inbound (local))
