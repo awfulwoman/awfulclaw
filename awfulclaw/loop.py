@@ -320,10 +320,11 @@ def _should_wake(condition: str) -> bool:
     Returns True (fail open) on command error, timeout, or invalid JSON.
     Returns False only when the command succeeds and wakeAgent is False.
     """
+    import shlex
     try:
         result = subprocess.run(
-            condition,
-            shell=True,
+            shlex.split(condition),
+            shell=False,
             capture_output=True,
             text=True,
             timeout=10,
