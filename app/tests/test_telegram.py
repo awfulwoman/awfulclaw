@@ -6,7 +6,6 @@ from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from awfulclaw.telegram import TelegramConnector
 
 
@@ -21,7 +20,7 @@ def _make_connector() -> TelegramConnector:
 
 
 def _make_update(update_id: int, payload: dict) -> dict:
-    return {"update_id": update_id, "message": {"chat": {"id": 99}, "date": 1700000000, "from": {"id": 99}, **payload}}
+    return {"update_id": update_id, "message": {"chat": {"id": 99}, "date": 1700000000, "from": {"id": 99}, **payload}}  # noqa: E501
 
 
 def _mock_response(updates: list[dict]) -> MagicMock:

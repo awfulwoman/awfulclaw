@@ -6,7 +6,6 @@ from datetime import datetime, timezone
 from unittest.mock import patch
 
 import pytest
-
 from awfulclaw.mcp.schedule import schedule_create, schedule_delete, schedule_list
 from awfulclaw.scheduler import Schedule
 
@@ -23,7 +22,8 @@ def _patch_scheduler(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_create_cron_schedule() -> None:
     saved: list[list[Schedule]] = []
-    with patch("awfulclaw.mcp.schedule.scheduler.save_schedules", side_effect=lambda s: saved.append(list(s))):
+    _patch = "awfulclaw.mcp.schedule.scheduler.save_schedules"
+    with patch(_patch, side_effect=lambda s: saved.append(list(s))):
         result = schedule_create("daily", "Say hello", cron="0 8 * * *")
     assert "created" in result
     assert "daily" in result
@@ -33,7 +33,8 @@ def test_create_cron_schedule() -> None:
 
 def test_create_at_schedule() -> None:
     saved: list[list[Schedule]] = []
-    with patch("awfulclaw.mcp.schedule.scheduler.save_schedules", side_effect=lambda s: saved.append(list(s))):
+    _patch = "awfulclaw.mcp.schedule.scheduler.save_schedules"
+    with patch(_patch, side_effect=lambda s: saved.append(list(s))):
         result = schedule_create("reminder", "Check tasks", at="2026-12-31T09:00:00Z")
     assert "created" in result
     assert saved[0][0].fire_at is not None
@@ -43,9 +44,11 @@ def test_create_at_schedule() -> None:
 def test_create_updates_existing() -> None:
     existing = _make_schedule("daily")
     saved: list[list[Schedule]] = []
+    _patch_save = "awfulclaw.mcp.schedule.scheduler.save_schedules"
+    _patch_load = "awfulclaw.mcp.schedule.scheduler.load_schedules"
     with (
-        patch("awfulclaw.mcp.schedule.scheduler.load_schedules", return_value=[existing]),
-        patch("awfulclaw.mcp.schedule.scheduler.save_schedules", side_effect=lambda s: saved.append(list(s))),
+        patch(_patch_load, return_value=[existing]),
+        patch(_patch_save, side_effect=lambda s: saved.append(list(s))),
     ):
         result = schedule_create("daily", "New prompt", cron="0 9 * * *")
     assert "updated" in result
@@ -71,9 +74,11 @@ def test_create_no_cron_or_at() -> None:
 def test_delete_existing() -> None:
     existing = _make_schedule("daily")
     saved: list[list[Schedule]] = []
+    _patch_save = "awfulclaw.mcp.schedule.scheduler.save_schedules"
+    _patch_load = "awfulclaw.mcp.schedule.scheduler.load_schedules"
     with (
-        patch("awfulclaw.mcp.schedule.scheduler.load_schedules", return_value=[existing]),
-        patch("awfulclaw.mcp.schedule.scheduler.save_schedules", side_effect=lambda s: saved.append(list(s))),
+        patch(_patch_load, return_value=[existing]),
+        patch(_patch_save, side_effect=lambda s: saved.append(list(s))),
     ):
         result = schedule_delete("daily")
     assert "deleted" in result
@@ -113,7 +118,8 @@ def test_list_one_off_shows_fire_at() -> None:
 
 def test_create_with_condition() -> None:
     saved: list[list[Schedule]] = []
-    with patch("awfulclaw.mcp.schedule.scheduler.save_schedules", side_effect=lambda s: saved.append(list(s))):
+    _patch = "awfulclaw.mcp.schedule.scheduler.save_schedules"
+    with patch(_patch, side_effect=lambda s: saved.append(list(s))):
         result = schedule_create("cond", "Prompt", cron="*/5 * * * *", condition="check.sh")
     assert "created" in result
     assert saved[0][0].condition == "check.sh"

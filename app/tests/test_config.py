@@ -1,8 +1,7 @@
 """Tests for config module."""
 
-import pytest
-
 import awfulclaw.config as cfg
+import pytest
 from awfulclaw.telegram import TelegramConnector
 
 

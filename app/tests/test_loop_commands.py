@@ -6,7 +6,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-
 from awfulclaw.loop import handle_slash_command as _handle_slash_command
 from awfulclaw.scheduler import Schedule
 

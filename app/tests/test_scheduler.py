@@ -6,7 +6,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
-
 from awfulclaw.scheduler import Schedule, get_due, load_schedules, save_schedules
 
 

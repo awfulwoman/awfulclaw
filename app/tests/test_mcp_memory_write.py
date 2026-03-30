@@ -6,7 +6,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-
 from awfulclaw.mcp.memory_write import memory_write
 
 

@@ -7,7 +7,6 @@ from io import StringIO
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from awfulclaw.claude import ClaudeSession
 
 
