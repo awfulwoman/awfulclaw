@@ -10,8 +10,12 @@ from awfulclaw.connector import Connector
 load_dotenv()
 
 
+def get_channel() -> str:
+    return os.getenv("AWFULCLAW_CHANNEL", "telegram").lower()
+
+
 def get_connector() -> Connector:
-    channel = os.getenv("AWFULCLAW_CHANNEL", "telegram").lower()
+    channel = get_channel()
     if channel == "telegram":
         from awfulclaw.telegram import TelegramConnector
 
