@@ -1,0 +1,21 @@
+## Codebase Patterns
+- SQLite DB lives at `memory/awfulclaw.db`; always use `get_db()` from `awfulclaw/db.py` — it sets WAL mode and row_factory
+- `init_db()` creates tables if not exists; call before first DB access
+- Schedule tests use `monkeypatch.chdir(tmp_path)` to isolate the DB/files — `get_db()` uses relative `Path("memory/awfulclaw.db")` so this works transparently
+- Pre-existing ruff errors in `test_telegram.py` and `test_startup_briefing.py`; pre-existing pyright errors in `claude.py` and test files — don't count these as new failures
+
+# Ralph Progress Log
+Milestone: reliability
+Started: Mon 30 Mar 2026 12:44:26 CEST
+---
+
+## [2026-03-30] - #92 Migrate schedules to SQLite with WAL mode
+- Created `awfulclaw/db.py` with `get_db()` (WAL mode, row_factory) and `init_db()` (schedules table)
+- Updated `awfulclaw/scheduler.py`: `load_schedules()` reads from SQLite, `save_schedules()` upserts via `INSERT ... ON CONFLICT DO UPDATE` then deletes removed rows
+- One-time migration from `schedules.json` → SQLite on first `load_schedules()` call; JSON renamed to `.json.bak`
+- Removed `SCHEDULES_FILE`, `_to_dict`, `_from_dict` helpers
+- **Learnings for future iterations:**
+  - Tests use `monkeypatch.chdir(tmp_path)` — all relative paths work correctly in tests without patching
+  - `sqlite3.connect` returns a context manager; use `with get_db() as conn:` for auto-commit/rollback
+  - `ON CONFLICT(id) DO UPDATE SET ...` (SQLite upsert) is cleaner than delete-all + re-insert
+---
