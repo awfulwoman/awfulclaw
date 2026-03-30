@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from awfulclaw import claude, config, context, memory, scheduler
-from awfulclaw.connector import Connector
+from awfulclaw.gateway import Gateway
 from awfulclaw.modules import get_registry
 
 logger = logging.getLogger(__name__)
@@ -208,7 +208,7 @@ def _append_turn(session_file: str, role: str, content: str) -> None:
         logger.error("Failed to append conversation turn: %s", exc)
 
 
-def run(connector: Connector) -> None:
+def run(gateway: Gateway) -> None:
     """Run the agent loop indefinitely until Ctrl-C."""
     signal.signal(signal.SIGTERM, _sigterm_handler)
     logger.info("awfulclaw starting up")
@@ -217,14 +217,15 @@ def run(connector: Connector) -> None:
 
     poll_interval = config.get_poll_interval()
     idle_interval = config.get_idle_interval()
-    phone = connector.primary_recipient
+    phone = gateway.primary_recipient
 
     conversation_history: list[dict[str, str]] = _load_recent_history()
     if conversation_history:
         logger.info("Restored %d turns from previous session", len(conversation_history))
-    last_poll = datetime.now(timezone.utc)
     last_idle = time.monotonic()
     briefing_module = registry.get("briefing")
+
+    gateway.start()
 
     session_file = _session_path()
     try:
@@ -256,9 +257,7 @@ def run(connector: Connector) -> None:
 
     try:
         while True:
-            now = datetime.now(timezone.utc)
-            messages = connector.poll_new_messages(since=last_poll)
-            last_poll = now
+            messages = gateway.get_messages()
 
             for msg in messages:
                 logger.info("Incoming from %s: %s", msg.sender, msg.body[:80])
@@ -276,7 +275,8 @@ def run(connector: Connector) -> None:
 
                 slash_reply = handle_slash_command(msg.body)
                 if slash_reply is not None:
-                    connector.send_message(phone, slash_reply)
+                    recipient = gateway.primary_recipient_for(msg.channel)
+                    gateway.send(msg.channel, recipient, slash_reply)
                     logger.info("Slash command '%s' handled", msg.body.split()[0])
                     continue
 
@@ -299,12 +299,11 @@ def run(connector: Connector) -> None:
                 _append_turn(session_file, "User", msg.body)
                 _append_turn(session_file, "Assistant", reply)
                 if reply:
-                    connector.send_message(phone, reply)
+                    gateway.send(msg.channel, gateway.primary_recipient_for(msg.channel), reply)
                     logger.info("Sent reply: %s", reply[:80])
 
             if time.monotonic() - last_idle >= idle_interval:
                 last_idle = time.monotonic()
-                now = datetime.now(timezone.utc)
 
                 if registry.check_for_changes():
                     logger.info("Modules hot-reloaded")
@@ -327,7 +326,7 @@ def run(connector: Connector) -> None:
                                     sched_reply, sched_history, sched_system
                                 )
                                 if sched_reply:
-                                    connector.send_message(phone, sched_reply)
+                                    gateway.send(gateway.primary_channel, phone, sched_reply)
                                     logger.info("Schedule reply sent: %s", sched_reply[:80])
                             except Exception as exc:
                                 logger.error("Schedule prompt failed: %s", exc)
@@ -351,7 +350,7 @@ def run(connector: Connector) -> None:
                                     briefing_reply, briefing_history, briefing_system
                                 )
                                 if briefing_reply:
-                                    connector.send_message(phone, briefing_reply)
+                                    gateway.send(gateway.primary_channel, phone, briefing_reply)
                                     logger.info("Daily briefing sent: %s", briefing_reply[:80])
                             except Exception as exc:
                                 logger.error("Daily briefing failed: %s", exc)
@@ -363,10 +362,11 @@ def run(connector: Connector) -> None:
                 )
                 idle_reply = _parse_and_apply_memory_writes(idle_reply)
                 if idle_reply and not _is_idle_suppressed(idle_reply):
-                    connector.send_message(phone, idle_reply)
+                    gateway.send(gateway.primary_channel, phone, idle_reply)
                     logger.info("Idle message sent: %s", idle_reply[:80])
 
             time.sleep(poll_interval)
 
     except (KeyboardInterrupt, SystemExit):
+        gateway.stop()
         logger.info("awfulclaw exiting — goodbye")
