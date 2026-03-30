@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 
 from awfulclaw import memory, scheduler
@@ -58,13 +59,25 @@ Background: unknown
 """
 
 
-def _load_soul() -> str:
-    """Read memory/SOUL.md, creating it with defaults if absent."""
+def _load_soul(channel: str = "") -> str:
+    """Read memory/SOUL.md (or SOUL_<channel>.md if it exists), creating defaults if absent."""
+    if channel:
+        channel_soul = memory.read(f"SOUL_{channel}.md")
+        if channel_soul:
+            return channel_soul
     content = memory.read("SOUL.md")
     if not content:
         memory.write("SOUL.md", _DEFAULT_SOUL)
         content = _DEFAULT_SOUL
     return content
+
+
+def _extract_personality_section(content: str) -> str:
+    """Extract the ## Personality section from a person file, or return empty string."""
+    match = re.search(r"## Personality\s*\n(.*?)(?=\n## |\Z)", content, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    return ""
 
 
 def _load_user() -> str:
@@ -85,11 +98,23 @@ def _find_person_by_phone(phone: str) -> tuple[str, str] | None:
     return None
 
 
-def build_system_prompt(incoming_message: str, sender: str = "") -> str:
+def build_system_prompt(incoming_message: str, sender: str = "", channel: str = "") -> str:
     """Build the system prompt with memory context for the incoming message."""
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    soul = _load_soul()
+    soul = _load_soul(channel)
     user = _load_user()
+
+    # Resolve sender person file early so personality overlay can be applied to soul
+    included_people: set[str] = set()
+    sender_person: tuple[str, str] | None = None
+    if sender:
+        sender_person = _find_person_by_phone(sender)
+        if sender_person:
+            included_people.add(sender_person[0])
+            personality = _extract_personality_section(sender_person[1])
+            if personality:
+                soul = soul + "\n\n## Personality overlay for this sender\n" + personality
+
     memory_summary_instruction = """\
 ## Memory Summary Instruction
 When the user asks a variant of 'what do you know about me?', 'show me my tasks', \
@@ -134,15 +159,11 @@ Use the context already loaded in this prompt to assemble the answer — no tool
         if content:
             sections.append(f"## Fact: {filename}\n{content}")
 
-    # People: match by sender phone first, then by words in message
-    included_people: set[str] = set()
-
+    # People: sender match first, then by words in message
     if sender:
-        match = _find_person_by_phone(sender)
-        if match:
-            filename, content = match
+        if sender_person:
+            filename, content = sender_person
             sections.append(f"## Person: {filename}\n{content}")
-            included_people.add(filename)
         else:
             sections.append(
                 f"## Unknown sender: {sender}\n"
