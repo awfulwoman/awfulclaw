@@ -210,15 +210,17 @@ async def run(gateway: Gateway) -> None:
         if mcp_registry.reload_if_changed(_MCP_CONFIG_PATH):
             _mcp_config[0] = None if mcp_registry.is_empty() else mcp_registry.generate_config()
 
-        due_prompts = scheduler.run_due()
-        for prompt in due_prompts:
+        due_schedules = scheduler.run_due()
+        for sched in due_schedules:
             try:
-                sched_system = context.build_system_prompt(prompt)
-                sched_history: list[dict[str, str]] = [{"role": "user", "content": prompt}]
+                sched_system = context.build_system_prompt(sched.prompt)
+                sched_history: list[dict[str, str]] = [{"role": "user", "content": sched.prompt}]
                 sched_reply = await _chat_async(sched_history, sched_system)
-                if sched_reply:
+                if sched_reply and not sched.silent:
                     gateway.send(gateway.primary_channel, phone, sched_reply)
                     logger.info("Schedule reply sent: %s", sched_reply[:80])
+                elif sched_reply and sched.silent:
+                    logger.info("Silent schedule '%s' completed", sched.name)
             except Exception as exc:
                 logger.error("Schedule prompt failed: %s", exc)
 

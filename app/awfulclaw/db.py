@@ -112,9 +112,15 @@ def init_db() -> None:
                 created_at TEXT NOT NULL,
                 last_run TEXT,
                 fire_at TEXT,
-                condition TEXT
+                condition TEXT,
+                silent INTEGER NOT NULL DEFAULT 0
             )
         """)
+        # Migrate existing DBs that lack the silent column
+        try:
+            conn.execute("ALTER TABLE schedules ADD COLUMN silent INTEGER NOT NULL DEFAULT 0")
+        except Exception:
+            pass  # column already exists
         conn.execute("""
             CREATE TABLE IF NOT EXISTS conversations (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,

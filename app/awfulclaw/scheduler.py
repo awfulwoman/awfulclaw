@@ -26,6 +26,7 @@ class Schedule:
     last_run: datetime | None = field(default=None)
     fire_at: datetime | None = field(default=None)
     condition: str | None = field(default=None)
+    silent: bool = field(default=False)
 
     @classmethod
     def create(
@@ -35,6 +36,7 @@ class Schedule:
         cron: str = "",
         fire_at: datetime | None = None,
         condition: str | None = None,
+        silent: bool = False,
     ) -> "Schedule":
         return cls(
             id=uuid.uuid4().hex,
@@ -44,6 +46,7 @@ class Schedule:
             created_at=datetime.now(timezone.utc),
             fire_at=fire_at,
             condition=condition,
+            silent=silent,
         )
 
 
@@ -71,6 +74,7 @@ def _row_to_schedule(row: object) -> Schedule:
         last_run=_parse_dt(r["last_run"]),
         fire_at=_parse_dt(r["fire_at"]),
         condition=r["condition"],
+        silent=bool(r["silent"]),
     )
 
 
@@ -91,8 +95,8 @@ def save_schedules(schedules: list[Schedule]) -> None:
             conn.execute(
                 """
                 INSERT INTO schedules
-                    (id, name, cron, prompt, created_at, last_run, fire_at, condition)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    (id, name, cron, prompt, created_at, last_run, fire_at, condition, silent)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     name=excluded.name,
                     cron=excluded.cron,
@@ -100,7 +104,8 @@ def save_schedules(schedules: list[Schedule]) -> None:
                     created_at=excluded.created_at,
                     last_run=excluded.last_run,
                     fire_at=excluded.fire_at,
-                    condition=excluded.condition
+                    condition=excluded.condition,
+                    silent=excluded.silent
                 """,
                 (
                     s.id,
@@ -111,6 +116,7 @@ def save_schedules(schedules: list[Schedule]) -> None:
                     s.last_run.isoformat() if s.last_run else None,
                     s.fire_at.isoformat() if s.fire_at else None,
                     s.condition,
+                    int(s.silent),
                 ),
             )
         if ids:
@@ -154,17 +160,16 @@ def should_wake(condition: str) -> bool:
         return True
 
 
-def run_due() -> list[str]:
-    """Check for due schedules and return their prompts.
+def run_due() -> list[Schedule]:
+    """Check for due schedules and return those that fired.
 
-    Returns a list of prompt strings for due schedules. The caller is
-    responsible for invoking Claude and sending the replies.
-    One-off schedules are removed after being returned.
+    The caller is responsible for invoking Claude with sched.prompt and
+    respecting sched.silent. One-off schedules are removed after being returned.
     """
     now = datetime.now(timezone.utc)
     schedules = load_schedules()
     due = get_due(schedules, now)
-    prompts: list[str] = []
+    fired: list[Schedule] = []
     one_off_ids: set[str] = set()
 
     for sched in due:
@@ -173,7 +178,7 @@ def run_due() -> list[str]:
             if sched.fire_at is None:
                 sched.last_run = now
             continue
-        prompts.append(sched.prompt)
+        fired.append(sched)
         if sched.fire_at is not None:
             one_off_ids.add(sched.id)
         else:
@@ -184,7 +189,7 @@ def run_due() -> list[str]:
     if due:
         save_schedules(schedules)
 
-    return prompts
+    return fired
 
 
 def get_due(schedules: list[Schedule], now: datetime) -> list[Schedule]:

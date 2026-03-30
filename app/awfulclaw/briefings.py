@@ -21,10 +21,8 @@ _STARTUP_TEMPLATE = (
     "1. What you were last working on or discussing\n"
     "2. Any pending tasks or follow-ups\n"
     "3. Current state of affairs\n\n"
-    "Write this note using:\n"
-    '<memory:write path="progress.md">your note here</memory:write>\n\n'
-    "IMPORTANT: Do NOT send a message to the user. This is a silent internal review. "
-    "Your entire reply must consist of only the <memory:write> tag."
+    "Write this note by calling the memory_write tool with path='progress.md'. "
+    "Do not output any other text — just make the tool call."
 )
 
 
@@ -63,5 +61,5 @@ def ensure_startup_briefing() -> None:
     if any(s.name == "startup_briefing" for s in schedules):
         return
     now = datetime.now(timezone.utc)
-    s = Schedule.create(name="startup_briefing", prompt=get_startup_prompt(), fire_at=now)
+    s = Schedule.create(name="startup_briefing", prompt=get_startup_prompt(), fire_at=now, silent=True)
     save_schedules(schedules + [s])

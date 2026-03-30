@@ -163,6 +163,25 @@ def test_condition_none_round_trip() -> None:
     assert loaded[0].condition is None
 
 
+def test_silent_default_is_false() -> None:
+    s = Schedule.create(name="Loud", cron="0 9 * * *", prompt="Hello")
+    assert s.silent is False
+
+
+def test_silent_round_trip() -> None:
+    s = Schedule.create(name="Silent", cron="0 9 * * *", prompt="Shh", silent=True)
+    save_schedules([s])
+    loaded = load_schedules()
+    assert loaded[0].silent is True
+
+
+def test_non_silent_round_trip() -> None:
+    s = Schedule.create(name="Loud", cron="0 9 * * *", prompt="Hi", silent=False)
+    save_schedules([s])
+    loaded = load_schedules()
+    assert loaded[0].silent is False
+
+
 
 def test_get_due_fires_on_next_interval() -> None:
     """After last_run, fires again on the next cron interval."""
