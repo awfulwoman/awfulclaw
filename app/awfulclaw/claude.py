@@ -40,7 +40,8 @@ class ClaudeSession:
             "--print",
             "--system-prompt", augmented_system,
             "--model", config.get_model(),
-            "--allowedTools", ",".join(config.get_allowed_tools()),
+            "--tools", ",".join(config.get_builtin_tools()),
+            "--permission-mode", "bypassPermissions",
         ]
         cmd = _wrap_sandbox(cmd)
         self._process = subprocess.Popen(
@@ -150,7 +151,8 @@ def _chat_cli(
         "--no-session-persistence",
         "--system-prompt", system,
         "--model", config.get_model(),
-        "--allowedTools", ",".join(config.get_allowed_tools()),
+        "--tools", ",".join(config.get_builtin_tools()),
+        "--permission-mode", "bypassPermissions",
     ]
     if mcp_config_path is not None:
         cmd += ["--mcp-config", str(mcp_config_path)]

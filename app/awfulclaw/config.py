@@ -30,22 +30,18 @@ def get_model() -> str:
     return os.getenv("AWFULCLAW_MODEL", "claude-sonnet-4-6")
 
 
-def get_allowed_tools() -> list[str]:
-    """Return list of allowed Claude tools from env, or sensible default."""
+def get_builtin_tools() -> list[str]:
+    """Return the built-in tools made available to Claude.
+
+    Restricts to a safe subset (no Bash, no Task) so that bypassing
+    permission prompts doesn't expose dangerous capabilities.
+    MCP tools are controlled separately via --mcp-config and are
+    always auto-approved via --permission-mode bypassPermissions.
+    """
     raw = os.getenv("AWFULCLAW_ALLOWED_TOOLS", "").strip()
     if raw:
         return [t.strip() for t in raw.split(",") if t.strip()]
-    return [
-        # Built-in tools: scoped to safe paths only
-        "Read(memory/**)",
-        "Write(memory/**)",
-        "Edit(memory/**)",
-        "WebSearch",
-        "WebFetch",
-        # All MCP tools are purpose-built and safe — allow the whole namespace
-        # so new MCP servers don't require an allowlist update.
-        "mcp__*",
-    ]
+    return ["Read", "Write", "Edit", "WebSearch", "WebFetch"]
 
 
 def get_sandbox() -> bool:
