@@ -13,17 +13,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from awfulclaw import claude, config, context, memory, scheduler
-from awfulclaw.mcp.registry import MCPRegistry
-from awfulclaw.db import get_db, init_db, write_fact, write_person
+from awfulclaw.db import get_db, init_db, write_fact
 from awfulclaw.gateway import Gateway
+from awfulclaw.mcp.registry import MCPRegistry
 from awfulclaw.modules import get_registry
 
 logger = logging.getLogger(__name__)
-
-_MEMORY_WRITE_RE = re.compile(
-    r"<memory:write\s+path=\"([^\"]+)\">(.*?)</memory:write>",
-    re.DOTALL,
-)
 
 _LOCATION_RE = re.compile(r"^\[Location:\s*(-?\d+\.?\d*),\s*(-?\d+\.?\d*)\]$")
 
@@ -101,76 +96,6 @@ def _load_heartbeat() -> str:
     return content
 
 
-_PROTECTED_FILES = {"SOUL.md", "HEARTBEAT.md"}
-_PROTECTED_DIRS = ("skills/",)
-
-
-def _is_protected_path(path: str) -> bool:
-    if path in _PROTECTED_FILES:
-        return True
-    return any(path.startswith(d) for d in _PROTECTED_DIRS)
-
-
-def _parse_and_apply_memory_writes(text: str) -> str:
-    """Extract <memory:write> blocks, apply them, return cleaned text."""
-    for path, content in _MEMORY_WRITE_RE.findall(text):
-        path = path.strip()
-        if path.startswith("memory/"):
-            path = path[len("memory/") :]
-        if _is_protected_path(path):
-            logger.warning("Blocked write to protected path: %s", path)
-            continue
-        # Route facts/ and people/ writes to SQLite
-        if path.startswith("facts/"):
-            key = path[len("facts/"):].removesuffix(".md")
-            write_fact(key, content.strip())
-        elif path.startswith("people/"):
-            name = path[len("people/"):].removesuffix(".md")
-            write_person(name, content.strip())
-        else:
-            memory.write(path, content.strip())
-        logger.info("Memory write: %s", path)
-    return _MEMORY_WRITE_RE.sub("", text).strip()
-
-
-async def _dispatch_tools(
-    reply: str,
-    history: list[dict[str, str]],
-    system: str,
-    sem: asyncio.Semaphore,
-    ev_loop: asyncio.AbstractEventLoop,
-    mcp_config_path: Path | None = None,
-) -> str:
-    """Process all tool tags in reply using pluggable ToolMatcher instances.
-
-    Handles multiple tags by processing them one at a time, re-invoking
-    Claude after each. Strips leftover malformed tags at the end.
-    """
-    registry = get_registry()
-    matchers = registry.get_all_tool_matchers()
-    for _round in range(5):  # max 5 dispatch rounds
-        matched = False
-        for matcher in matchers:
-            m = matcher.match(reply)
-            if m:
-                reply = matcher.execute(m, reply, history, system)
-                hist_snapshot = list(history)
-                async with sem:
-                    reply = await ev_loop.run_in_executor(
-                        None,
-                        lambda: claude.chat(hist_snapshot, system=system, mcp_config_path=mcp_config_path),
-                    )
-                reply = _parse_and_apply_memory_writes(reply)
-                matched = True
-                break  # restart matching from the top
-        if not matched:
-            break
-    # Strip any leftover malformed skill tags
-    for _, skill_tag in registry.get_all_skill_tags():
-        reply = skill_tag.pattern.sub("", reply).strip()
-    return reply
-
-
 _MEMORY_ROOT = Path("memory")
 
 
@@ -239,11 +164,7 @@ async def run(gateway: Gateway) -> None:
         ["run", "python", "-m", "awfulclaw.mcp.schedule"],
     )
     # IMAP is optional — only register when env vars are configured
-    if (
-        os.getenv("IMAP_HOST")
-        and os.getenv("IMAP_USER")
-        and os.getenv("IMAP_PASSWORD")
-    ):
+    if os.getenv("IMAP_HOST") and os.getenv("IMAP_USER") and os.getenv("IMAP_PASSWORD"):
         mcp_registry.register(
             "imap",
             "uv",
@@ -302,8 +223,7 @@ async def run(gateway: Gateway) -> None:
                 startup_system = context.build_system_prompt(startup_prompt)
                 startup_history = list(conversation_history)
                 startup_history.append({"role": "user", "content": startup_prompt})
-                startup_reply = await _chat_async(startup_history, startup_system)
-                _parse_and_apply_memory_writes(startup_reply)
+                await _chat_async(startup_history, startup_system)
                 logger.info("Startup self-briefing completed")
             except Exception as exc:
                 logger.error("Startup self-briefing failed: %s", exc)
@@ -338,10 +258,6 @@ async def run(gateway: Gateway) -> None:
                     msg.image_data,
                     msg.image_mime,
                 )
-                reply = _parse_and_apply_memory_writes(reply)
-                reply = await _dispatch_tools(
-                    reply, conversation_history, system, _sem, ev_loop, mcp_config_path
-                )
                 conversation_history.append({"role": "assistant", "content": reply})
                 _MAX_HISTORY = 40
                 if len(conversation_history) > _MAX_HISTORY:
@@ -368,14 +284,8 @@ async def run(gateway: Gateway) -> None:
                 for prompt in due_prompts:
                     try:
                         sched_system = context.build_system_prompt(prompt)
-                        sched_history: list[dict[str, str]] = [
-                            {"role": "user", "content": prompt}
-                        ]
+                        sched_history: list[dict[str, str]] = [{"role": "user", "content": prompt}]
                         sched_reply = await _chat_async(sched_history, sched_system)
-                        sched_reply = _parse_and_apply_memory_writes(sched_reply)
-                        sched_reply = await _dispatch_tools(
-                            sched_reply, sched_history, sched_system, _sem, ev_loop, mcp_config_path
-                        )
                         if sched_reply:
                             gateway.send(gateway.primary_channel, phone, sched_reply)
                             logger.info("Schedule reply sent: %s", sched_reply[:80])
@@ -394,10 +304,6 @@ async def run(gateway: Gateway) -> None:
                             {"role": "user", "content": briefing_prompt}
                         ]
                         briefing_reply = await _chat_async(briefing_history, briefing_system)
-                        briefing_reply = _parse_and_apply_memory_writes(briefing_reply)
-                        briefing_reply = await _dispatch_tools(
-                            briefing_reply, briefing_history, briefing_system, _sem, ev_loop, mcp_config_path
-                        )
                         if briefing_reply:
                             gateway.send(gateway.primary_channel, phone, briefing_reply)
                             logger.info("Daily briefing sent: %s", briefing_reply[:80])
@@ -409,7 +315,6 @@ async def run(gateway: Gateway) -> None:
             [{"role": "user", "content": _load_heartbeat()}],
             system,
         )
-        idle_reply = _parse_and_apply_memory_writes(idle_reply)
         if idle_reply and not _is_idle_suppressed(idle_reply):
             gateway.send(gateway.primary_channel, phone, idle_reply)
             logger.info("Idle message sent: %s", idle_reply[:80])
