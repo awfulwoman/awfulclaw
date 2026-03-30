@@ -87,7 +87,8 @@ class TelegramConnector(Connector):
                 continue  # ignore edits, joins, etc.
 
             chat_id = str(msg.get("chat", {}).get("id", ""))
-            if chat_id != self._chat_id:
+            sender_id = str(msg.get("from", {}).get("id", ""))
+            if chat_id != self._chat_id or sender_id != self._chat_id:
                 continue
 
             text: str = msg.get("text") or ""

@@ -21,7 +21,7 @@ def _make_connector() -> TelegramConnector:
 
 
 def _make_update(update_id: int, payload: dict) -> dict:
-    return {"update_id": update_id, "message": {"chat": {"id": 99}, "date": 1700000000, "from": {"id": 1}, **payload}}
+    return {"update_id": update_id, "message": {"chat": {"id": 99}, "date": 1700000000, "from": {"id": 99}, **payload}}
 
 
 def _mock_response(updates: list[dict]) -> MagicMock:
