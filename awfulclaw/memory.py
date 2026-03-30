@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 _ROOT = Path("memory")
@@ -39,7 +40,9 @@ def write(path: str, content: str) -> None:
     _ensure_root()
     full = _resolve(path)
     full.parent.mkdir(parents=True, exist_ok=True)
-    full.write_text(content, encoding="utf-8")
+    tmp = full.with_suffix(".tmp")
+    tmp.write_text(content, encoding="utf-8")
+    os.replace(tmp, full)
 
 
 def list_files(subdir: str) -> list[str]:
