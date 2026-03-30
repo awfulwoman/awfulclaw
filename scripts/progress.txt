@@ -2,7 +2,9 @@
 - SQLite DB lives at `memory/awfulclaw.db`; always use `get_db()` from `awfulclaw/db.py` — it sets WAL mode and row_factory
 - `init_db()` creates tables if not exists; call before first DB access
 - Schedule tests use `monkeypatch.chdir(tmp_path)` to isolate the DB/files — `get_db()` uses relative `Path("memory/awfulclaw.db")` so this works transparently
-- Pre-existing ruff errors in `test_telegram.py` and `test_startup_briefing.py`; pre-existing pyright errors in `claude.py` and test files — don't count these as new failures
+- Pre-existing ruff errors in `test_telegram.py` and `test_startup_briefing.py`; pre-existing pyright errors in `claude.py`, `loop.py` (msg unknown type), and test files — don't count these as new failures
+- `loop.run()` is async; entry point uses `asyncio.run(loop.run(connector))`; Claude calls use `run_in_executor` + `asyncio.Semaphore`
+- `_dispatch_all_skills` is async; pass `sem` and `ev_loop` as params; closures inside `run()` can reference these directly
 
 # Ralph Progress Log
 Milestone: reliability
@@ -18,4 +20,30 @@ Started: Mon 30 Mar 2026 12:44:26 CEST
   - Tests use `monkeypatch.chdir(tmp_path)` — all relative paths work correctly in tests without patching
   - `sqlite3.connect` returns a context manager; use `with get_db() as conn:` for auto-commit/rollback
   - `ON CONFLICT(id) DO UPDATE SET ...` (SQLite upsert) is cleaner than delete-all + re-insert
+---
+
+## [2026-03-30] - #93 Migrate conversation history to SQLite
+- Added `conversations` table to `awfulclaw/db.py` (schema + 2 indexes)
+- Replaced file-based `_load_recent_history()`, `_append_turn()`, `_session_path()`, `_TURN_RE`, and markdown session file creation in `loop.py` with SQLite equivalents
+- Session ID is a UUID generated at loop start; `init_db()` called at loop startup
+- Search module queries conversations table via LIKE in addition to memory files
+- **Learnings for future iterations:**
+  - `_load_recent_history()` loads the last N turns globally (not per-session) — ORDER BY id DESC LIMIT N then reverse; this matches the old behavior of reading the most recent file
+  - `init_db()` is now called in `run()`, not in `__main__.py` — keep this pattern for any new tables
+  - ruff E501 (line > 100) is enforced; split long SQL strings with implicit concatenation
+---
+
+## [2026-03-30] - #91 Bounded concurrency for parallel message processing
+- Converted `run()` to `async def run()` and `__main__.py` to use `asyncio.run()`
+- Added `_chat_async()` closure wrapping `claude.chat()` in `run_in_executor` behind `asyncio.Semaphore(3)` (env: `AWFULCLAW_MAX_CONCURRENT`)
+- Converted `_dispatch_all_skills()` to async (module-level, takes `sem` + `ev_loop` params)
+- `_handle_messages()` nested coroutine processes user messages sequentially; `asyncio.Lock` protects `conversation_history` (including during `_dispatch_all_skills` which mutates it)
+- `_run_idle_tick()` nested coroutine handles schedules/briefing/heartbeat with isolated histories (no lock needed)
+- Main loop: `asyncio.gather(_handle_messages, _run_idle_tick)` when both are due; connector poll also in `run_in_executor`
+- Files changed: `awfulclaw/loop.py`, `awfulclaw/__main__.py`
+- **Learnings for future iterations:**
+  - `_dispatch_all_skills` appends to the `history` list in-place (multi-turn skill dispatch); must hold `_history_lock` when calling it with `conversation_history`
+  - Lambda closures in `run_in_executor` capture variables by reference — snapshot lists with `list(x)` before passing to avoid races
+  - Scheduled prompts use isolated `sched_history` lists — no lock needed, safe to run concurrently with user message processing
+  - `asyncio.gather` runs coroutines concurrently but Python asyncio is single-threaded; real parallelism only at `await` points (executor calls)
 ---
