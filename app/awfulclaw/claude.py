@@ -123,9 +123,9 @@ def _wrap_sandbox(cmd: list[str]) -> list[str]:
     """Wrap *cmd* with sandbox-exec if AWFULCLAW_SANDBOX=1."""
     if not config.get_sandbox():
         return cmd
-    sb_profile = pathlib.Path(__file__).parent.parent / "scripts" / "sandbox.sb"
-    project_path = str((pathlib.Path(__file__).parent.parent).resolve())
-    memory_path = str((pathlib.Path(__file__).parent.parent / "memory").resolve())
+    sb_profile = pathlib.Path(__file__).parent.parent.parent / "scripts" / "sandbox.sb"
+    project_path = str((pathlib.Path(__file__).parent.parent.parent).resolve())
+    memory_path = str((pathlib.Path(__file__).parent.parent.parent / "memory").resolve())
     home_path = str(pathlib.Path.home())
     return [
         "sandbox-exec",
