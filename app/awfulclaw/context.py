@@ -112,9 +112,30 @@ When the user asks a variant of 'what do you know about me?', 'what\'s on my pla
 Use the context already loaded in this prompt to assemble the answer — no tool calls needed.\
 """
 
+    capabilities = """\
+## App Capabilities
+
+You are running inside the awfulclaw agent app, not a raw chat interface. You have MCP tools \
+available beyond basic conversation. Use them proactively when the user's request maps to one:
+
+- **Memory** — read/write facts, people profiles, and task files via `memory_write` / \
+`memory_search`
+- **Schedules** — create, update, or delete recurring or one-off scheduled prompts via \
+`schedule_create` / `schedule_delete` / `schedule_list`
+- **MCP servers** — install, register, or remove MCP servers (including from GitHub URLs) via \
+`mcp_server_add_from_github` / `mcp_server_add` / `mcp_server_remove` / `mcp_server_list`
+- **Email** — read unread emails via `imap_fetch` (if configured)
+- **Web search** — search the web if needed
+
+When the user says something like "install this MCP server <url>", use `mcp_server_add_from_github`. \
+When they ask to be reminded of something, use `schedule_create`. \
+When they share a fact about themselves, use `memory_write` to persist it.\
+"""
+
     sections: list[str] = [
         f"Current date and time: {now}",
         soul,
+        capabilities,
         memory_instructions,
         f"## About You\n{user}",
     ]
@@ -198,10 +219,10 @@ Use the context already loaded in this prompt to assemble the answer — no tool
     if len(prompt) <= _MAX_CHARS:
         return prompt
 
-    # Truncate: keep soul + as many sections as fit, dropping oldest facts first
-    result = soul
-    non_fact = [s for s in sections[1:] if not s.startswith("## Fact:")]
-    fact = [s for s in sections[1:] if s.startswith("## Fact:")]
+    # Truncate: keep soul + capabilities + as many sections as fit, dropping oldest facts first
+    result = soul + "\n\n" + capabilities
+    non_fact = [s for s in sections[2:] if not s.startswith("## Fact:")]
+    fact = [s for s in sections[2:] if s.startswith("## Fact:")]
 
     for section in non_fact + list(reversed(fact)):
         candidate = result + "\n\n" + section

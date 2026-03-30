@@ -151,12 +151,14 @@ async def run(gateway: Gateway) -> None:
 
     poll_interval = config.get_poll_interval()
     idle_interval = config.get_idle_interval()
+    idle_nudge_cooldown = config.get_idle_nudge_cooldown()
     phone = gateway.primary_recipient
 
     conversation_history: list[dict[str, str]] = _load_recent_history()
     if conversation_history:
         logger.info("Restored %d turns from previous session", len(conversation_history))
     last_idle = time.monotonic()
+    last_idle_nudge: float = 0.0
 
     _max_concurrent = int(os.getenv("AWFULCLAW_MAX_CONCURRENT", "3"))
     _sem = asyncio.Semaphore(_max_concurrent)
@@ -257,14 +259,20 @@ async def run(gateway: Gateway) -> None:
             except Exception as exc:
                 logger.error("Schedule prompt failed: %s", exc)
 
-        system = context.build_system_prompt("")
-        idle_reply = await _chat_async(
-            [{"role": "user", "content": _load_heartbeat()}],
-            system,
-        )
-        if idle_reply and not _is_idle_suppressed(idle_reply):
-            gateway.send(gateway.primary_channel, phone, idle_reply)
-            logger.info("Idle message sent: %s", idle_reply[:80])
+        nudge_due = time.monotonic() - last_idle_nudge >= idle_nudge_cooldown
+        if nudge_due:
+            system = context.build_system_prompt("")
+            idle_reply = await _chat_async(
+                [{"role": "user", "content": _load_heartbeat()}],
+                system,
+            )
+            if idle_reply and not _is_idle_suppressed(idle_reply):
+                gateway.send(gateway.primary_channel, phone, idle_reply)
+                last_idle_nudge = time.monotonic()
+                logger.info("Idle message sent: %s", idle_reply[:80])
+            elif idle_reply:
+                last_idle_nudge = time.monotonic()
+                logger.debug("Idle check: nothing to send")
 
     try:
         while True:

@@ -47,6 +47,11 @@ def get_allowed_tools() -> list[str]:
         "mcp__schedule__schedule_delete",
         "mcp__schedule__schedule_list",
         "mcp__imap_read__imap_read",
+        "mcp__skills__skill_read",
+        "mcp__mcp_manager__mcp_server_list",
+        "mcp__mcp_manager__mcp_server_add",
+        "mcp__mcp_manager__mcp_server_add_from_github",
+        "mcp__mcp_manager__mcp_server_remove",
     ]
 
 
@@ -61,6 +66,11 @@ def get_poll_interval() -> int:
 
 def get_idle_interval() -> int:
     return int(os.getenv("AWFULCLAW_IDLE_INTERVAL", "60"))
+
+
+def get_idle_nudge_cooldown() -> int:
+    """Minimum seconds between unsolicited idle messages. Default: 24h."""
+    return int(os.getenv("AWFULCLAW_IDLE_NUDGE_COOLDOWN", str(60 * 60 * 24)))
 
 
 def get_briefing_time() -> time | None:

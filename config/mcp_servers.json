@@ -3,39 +3,88 @@
     {
       "name": "memory_write",
       "command": "uv",
-      "args": ["run", "python", "-m", "awfulclaw_mcp.memory_write"]
+      "args": [
+        "run",
+        "python",
+        "-m",
+        "awfulclaw_mcp.memory_write"
+      ]
     },
     {
       "name": "memory_search",
       "command": "uv",
-      "args": ["run", "python", "-m", "awfulclaw_mcp.search"]
+      "args": [
+        "run",
+        "python",
+        "-m",
+        "awfulclaw_mcp.search"
+      ]
     },
     {
       "name": "schedule",
       "command": "uv",
-      "args": ["run", "python", "-m", "awfulclaw_mcp.schedule"]
+      "args": [
+        "run",
+        "python",
+        "-m",
+        "awfulclaw_mcp.schedule"
+      ]
     },
     {
       "name": "skills",
       "command": "uv",
-      "args": ["run", "python", "-m", "awfulclaw_mcp.skills"]
+      "args": [
+        "run",
+        "python",
+        "-m",
+        "awfulclaw_mcp.skills"
+      ]
     },
     {
       "name": "mcp_manager",
       "command": "uv",
-      "args": ["run", "python", "-m", "awfulclaw_mcp.mcp_manager"]
+      "args": [
+        "run",
+        "python",
+        "-m",
+        "awfulclaw_mcp.mcp_manager"
+      ]
     },
     {
       "name": "imap",
       "command": "uv",
-      "args": ["run", "python", "-m", "awfulclaw_mcp.imap"],
+      "args": [
+        "run",
+        "python",
+        "-m",
+        "awfulclaw_mcp.imap"
+      ],
       "env": {
         "IMAP_HOST": "${IMAP_HOST}",
         "IMAP_PORT": "${IMAP_PORT}",
         "IMAP_USER": "${IMAP_USER}",
         "IMAP_PASSWORD": "${IMAP_PASSWORD}"
       },
-      "env_required": ["IMAP_HOST", "IMAP_USER", "IMAP_PASSWORD"]
+      "env_required": [
+        "IMAP_HOST",
+        "IMAP_USER",
+        "IMAP_PASSWORD"
+      ]
+    },
+    {
+      "name": "mcp-obsidian",
+      "command": "uv",
+      "args": [
+        "--project",
+        "/Users/charlie/Code/awfulclaw/mcp_servers/mcp-obsidian",
+        "run",
+        "mcp-obsidian"
+      ],
+      "source": {
+        "github_url": "https://github.com/MarkusPfundstein/mcp-obsidian",
+        "install_type": "python_clone",
+        "package": "mcp-obsidian"
+      }
     }
   ]
 }

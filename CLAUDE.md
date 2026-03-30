@@ -23,6 +23,7 @@ Optional:
 AWFULCLAW_MODEL=claude-sonnet-4-6   # default
 AWFULCLAW_POLL_INTERVAL=5           # seconds between polls
 AWFULCLAW_IDLE_INTERVAL=60          # seconds between idle checks
+AWFULCLAW_IDLE_NUDGE_COOLDOWN=86400 # min seconds between unsolicited idle messages (default 24h)
 AWFULCLAW_BRIEFING_TIME=08:00       # daily briefing in HH:MM UTC (omit to disable)
 IMAP_HOST=imap.example.com          # required to use the imap MCP server
 IMAP_PORT=993
