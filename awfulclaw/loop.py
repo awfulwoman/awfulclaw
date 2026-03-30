@@ -223,6 +223,11 @@ async def run(gateway: Gateway) -> None:
         "uv",
         ["run", "python", "-m", "awfulclaw.mcp.memory_write"],
     )
+    mcp_registry.register(
+        "web_search",
+        "uv",
+        ["run", "python", "-m", "awfulclaw.mcp.web"],
+    )
     mcp_config_path = None if mcp_registry.is_empty() else mcp_registry.generate_config()
 
     poll_interval = config.get_poll_interval()
