@@ -2,20 +2,16 @@
 
 from __future__ import annotations
 
-import json
 import logging
-import os
 import re
 import signal
-import subprocess
 import time
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from croniter import croniter  # type: ignore[import-untyped]
-
 from awfulclaw import claude, config, context, memory, scheduler
 from awfulclaw.connector import Connector
+from awfulclaw.modules import get_registry
 
 logger = logging.getLogger(__name__)
 
@@ -25,27 +21,6 @@ _MEMORY_WRITE_RE = re.compile(
 )
 
 _LOCATION_RE = re.compile(r"^\[Location:\s*(-?\d+\.?\d*),\s*(-?\d+\.?\d*)\]$")
-
-_SKILL_IMAP_RE = re.compile(r"<skill:imap\s*/>|<skill:imap\s*></skill:imap>")
-
-_SKILL_WEB_RE = re.compile(r'<skill:web\s+query="([^"]*?)"\s*/?>')
-_SKILL_WEB_FALLBACK_RE = re.compile(r"<skill:web\b[^>]*/?>")
-
-_SKILL_SEARCH_RE = re.compile(r'<skill:search\s+query="([^"]*?)"\s*/?>')
-_SKILL_SEARCH_FALLBACK_RE = re.compile(r"<skill:search\b[^>]*/?>")
-
-
-_SKILL_SCHEDULE_RE = re.compile(
-    r"<skill:schedule\s+([^>]*?)(?:/>|>(.*?)</skill:schedule>)",
-    re.DOTALL,
-)
-_ATTR_RE = re.compile(r'(\w+)="([^"]*)"')
-
-_imap_configured = bool(
-    os.getenv("IMAP_HOST") and os.getenv("IMAP_USER") and os.getenv("IMAP_PASSWORD")
-)
-if not _imap_configured:
-    logger.warning("IMAP not configured — <skill:imap/> will be unavailable")
 
 _HEARTBEAT_PATH = "HEARTBEAT.md"
 _DEFAULT_HEARTBEAT = (
@@ -80,7 +55,8 @@ def handle_slash_command(body: str) -> str | None:
         lines: list[str] = []
         for f in files:
             open_items = [
-                line for line in f.read_text(encoding="utf-8").splitlines()
+                line
+                for line in f.read_text(encoding="utf-8").splitlines()
                 if line.strip().startswith("- [ ]")
             ]
             if open_items:
@@ -110,6 +86,7 @@ def handle_slash_command(body: str) -> str | None:
 
     if cmd == "/restart":
         import subprocess as _sp
+
         _sp.Popen(["bash", str(Path("scripts/restart-service.sh").resolve())])
         return "Restarting…"
 
@@ -143,7 +120,7 @@ def _parse_and_apply_memory_writes(text: str) -> str:
     for path, content in _MEMORY_WRITE_RE.findall(text):
         path = path.strip()
         if path.startswith("memory/"):
-            path = path[len("memory/"):]
+            path = path[len("memory/") :]
         if _is_protected_path(path):
             logger.warning("Blocked write to protected path: %s", path)
             continue
@@ -152,169 +129,35 @@ def _parse_and_apply_memory_writes(text: str) -> str:
     return _MEMORY_WRITE_RE.sub("", text).strip()
 
 
-def _parse_and_apply_schedule_tags(
-    text: str, schedules: list[scheduler.Schedule]
-) -> tuple[str, list[str]]:
-    """Extract <skill:schedule> tags, apply create/delete, return (cleaned text, error notes)."""
-    errors: list[str] = []
-
-    def handle_match(m: re.Match[str]) -> str:
-        attrs_str = m.group(1) or ""
-        body = (m.group(2) or "").strip()
-        attrs = dict(_ATTR_RE.findall(attrs_str))
-        action = attrs.get("action", "")
-        name = attrs.get("name", "").strip()
-        cron = attrs.get("cron", "").strip()
-
-        if action == "create":
-            condition = attrs.get("condition", "").strip() or None
-            at_str = attrs.get("at", "").strip()
-            if at_str:
-                try:
-                    fire_at = datetime.fromisoformat(at_str)
-                    if fire_at.tzinfo is None:
-                        fire_at = fire_at.replace(tzinfo=timezone.utc)
-                except ValueError:
-                    errors.append(f"Invalid datetime '{at_str}' for schedule '{name}'.")
-                    return ""
-                new_sched = scheduler.Schedule.create(
-                    name=name, prompt=body, fire_at=fire_at, condition=condition
-                )
-            else:
-                if not croniter.is_valid(cron):
-                    errors.append(f"Invalid cron expression '{cron}' for schedule '{name}'.")
-                    return ""
-                new_sched = scheduler.Schedule.create(
-                    name=name, cron=cron, prompt=body, condition=condition
-                )
-            # Overwrite existing schedule with same name (case-insensitive)
-            idx = next(
-                (i for i, s in enumerate(schedules) if s.name.lower() == name.lower()),
-                None,
-            )
-            if idx is not None:
-                schedules[idx] = new_sched
-                logger.info("Schedule updated: '%s'", name)
-            else:
-                schedules.append(new_sched)
-                logger.info("Schedule created: '%s'", name)
-            scheduler.save_schedules(schedules)
-        elif action == "delete":
-            before = len(schedules)
-            schedules[:] = [s for s in schedules if s.name.lower() != name.lower()]
-            if len(schedules) < before:
-                scheduler.save_schedules(schedules)
-                logger.info("Schedule deleted: '%s'", name)
-            else:
-                logger.warning("Schedule delete: '%s' not found", name)
-        return ""
-
-    cleaned = _SKILL_SCHEDULE_RE.sub(handle_match, text).strip()
-    return cleaned, errors
-
-
-def _fetch_imap_results(last_imap_check: datetime | None) -> tuple[str, datetime]:
-    """Run the IMAP skill, return (formatted result text, new last_check timestamp)."""
-    now = datetime.now(timezone.utc)
-    try:
-        from awfulclaw.modules.imap import fetch_unread
-
-        emails = fetch_unread(since=last_imap_check)
-        if not emails:
-            result = "[No new emails]"
-        else:
-            lines = [f"[{len(emails)} new email(s):]"]
-            for e in emails:
-                lines.append(
-                    f"From: {e.from_addr}\nSubject: {e.subject}\n"
-                    f"Date: {e.timestamp.isoformat()}\n{e.body_preview}"
-                )
-            result = "\n\n".join(lines)
-        logger.info("IMAP skill: fetched %d email(s)", len(emails) if emails else 0)
-    except Exception as exc:
-        result = f"[IMAP unavailable: {exc}]"
-        logger.warning("IMAP skill error: %s", exc)
-    return result, now
-
-
-def _fetch_search_results(query: str) -> str:
-    """Search memory files for query, return formatted result text."""
-    results = memory.search_all(query)
-    if not results:
-        return f"[No matches found for: {query}]"
-    _MAX_RESULTS = 20
-    lines = [f"[Memory search results for: {query}]"]
-    current_file: str | None = None
-    count = 0
-    for path, line in results:
-        if count >= _MAX_RESULTS:
-            break
-        if path != current_file:
-            lines.append(f"\n{path}:")
-            current_file = path
-        lines.append(f"  {line}")
-        count += 1
-    return "\n".join(lines)
-
-
-def _fetch_web_results(query: str) -> str:
-    """Run the web search skill, return formatted result text."""
-    try:
-        from awfulclaw.web import search
-
-        results = search(query)
-        if not results:
-            return "[Web search returned no results]"
-        lines = [f"[Web search results for: {query}]"]
-        for r in results:
-            lines.append(f"- {r.title}\n  {r.url}\n  {r.snippet}")
-        return "\n\n".join(lines)
-    except Exception as exc:
-        logger.warning("Web search error: %s", exc)
-        return f"[Web search unavailable: {exc}]"
-
-
-def _dispatch_skills(
+def _dispatch_all_skills(
     reply: str,
     history: list[dict[str, str]],
     system: str,
 ) -> str:
-    """Process skill:web and skill:search tags in a reply, calling Claude for each.
+    """Process all skill tags in reply using the module registry.
 
-    Handles multiple tags by processing them one at a time, re-invoking Claude after each.
-    Strips malformed skill tags that don't match the expected format.
+    Handles multiple tags by processing them one at a time, re-invoking
+    Claude after each. Strips leftover malformed tags at the end.
     """
-    for _round in range(5):  # cap to prevent infinite loops
-        web_queries = _SKILL_WEB_RE.findall(reply)
-        search_queries = _SKILL_SEARCH_RE.findall(reply)
-        if not web_queries and not search_queries:
+    registry = get_registry()
+    for _round in range(5):  # max 5 dispatch rounds
+        matched = False
+        for module, skill_tag in registry.get_all_skill_tags():
+            match = skill_tag.pattern.search(reply)
+            if match:
+                reply = skill_tag.pattern.sub("", reply, count=1).strip()
+                result_text = module.dispatch(match, history, system)
+                history.append({"role": "assistant", "content": reply})
+                history.append({"role": "user", "content": result_text})
+                reply = claude.chat(history, system=system)
+                reply = _parse_and_apply_memory_writes(reply)
+                matched = True
+                break  # restart matching from the top
+        if not matched:
             break
-
-        if web_queries:
-            query = web_queries[0]
-            reply = _SKILL_WEB_RE.sub("", reply, count=1).strip()
-            result_text = _fetch_web_results(query)
-        else:
-            query = search_queries[0]
-            reply = _SKILL_SEARCH_RE.sub("", reply, count=1).strip()
-            result_text = _fetch_search_results(query)
-
-        # Strip any remaining tags before sending to Claude
-        reply = _SKILL_WEB_RE.sub("", reply).strip()
-        reply = _SKILL_SEARCH_RE.sub("", reply).strip()
-
-        history.append({"role": "assistant", "content": reply})
-        history.append({"role": "user", "content": result_text})
-        reply = claude.chat(history, system=system)
-        reply = _parse_and_apply_memory_writes(reply)
-
-    # Strip any malformed skill tags that didn't match the primary regex
-    leftover = _SKILL_WEB_FALLBACK_RE.sub("", reply)
-    leftover = _SKILL_SEARCH_FALLBACK_RE.sub("", leftover).strip()
-    if leftover != reply:
-        logger.warning("Stripped malformed skill tags from reply")
-        reply = leftover
-
+    # Strip any leftover malformed skill tags
+    for module, skill_tag in registry.get_all_skill_tags():
+        reply = skill_tag.pattern.sub("", reply).strip()
     return reply
 
 
@@ -330,6 +173,8 @@ _MEMORY_ROOT = Path("memory")
 
 def _sigterm_handler(signum: int, frame: object) -> None:
     raise SystemExit(0)
+
+
 _TURN_RE = re.compile(r"^## \S+ — (User|Assistant)\s*$", re.MULTILINE)
 
 
@@ -374,41 +219,12 @@ def _append_turn(session_file: str, role: str, content: str) -> None:
         logger.error("Failed to append conversation turn: %s", exc)
 
 
-def _should_wake(condition: str) -> bool:
-    """Run condition command; return True if Claude should be invoked.
-
-    Returns True (fail open) on command error, timeout, or invalid JSON.
-    Returns False only when the command succeeds and wakeAgent is False.
-    """
-    import shlex
-    try:
-        result = subprocess.run(
-            shlex.split(condition),
-            shell=False,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if result.returncode != 0:
-            logger.warning(
-                "Schedule condition exited %d — proceeding with Claude call", result.returncode
-            )
-            return True
-        data = json.loads(result.stdout)
-        wake = data.get("wakeAgent", True)
-        return bool(wake)
-    except subprocess.TimeoutExpired:
-        logger.warning("Schedule condition timed out — proceeding with Claude call")
-        return True
-    except (json.JSONDecodeError, Exception) as exc:
-        logger.warning("Schedule condition error: %s — proceeding with Claude call", exc)
-        return True
-
-
 def run(connector: Connector) -> None:
     """Run the agent loop indefinitely until Ctrl-C."""
     signal.signal(signal.SIGTERM, _sigterm_handler)
     logger.info("awfulclaw starting up")
+
+    registry = get_registry()
 
     poll_interval = config.get_poll_interval()
     idle_interval = config.get_idle_interval()
@@ -419,10 +235,8 @@ def run(connector: Connector) -> None:
         logger.info("Restored %d turns from previous session", len(conversation_history))
     last_poll = datetime.now(timezone.utc)
     last_idle = time.monotonic()
-    last_imap_check: datetime | None = None
     last_briefing_date: date | None = None
     briefing_time = config.get_briefing_time()
-    schedules = scheduler.load_schedules()
 
     session_file = _session_path()
     try:
@@ -469,25 +283,7 @@ def run(connector: Connector) -> None:
                     image_mime=msg.image_mime,
                 )
                 reply = _parse_and_apply_memory_writes(reply)
-
-                reply, sched_errors = _parse_and_apply_schedule_tags(reply, schedules)
-                if sched_errors:
-                    error_note = "[Schedule error: " + "; ".join(sched_errors) + "]"
-                    conversation_history.append({"role": "assistant", "content": reply})
-                    conversation_history.append({"role": "user", "content": error_note})
-                    reply = claude.chat(conversation_history, system=system)
-                    reply = _parse_and_apply_memory_writes(reply)
-                    reply, _ = _parse_and_apply_schedule_tags(reply, schedules)
-
-                if _SKILL_IMAP_RE.search(reply):
-                    reply = _SKILL_IMAP_RE.sub("", reply).strip()
-                    imap_text, last_imap_check = _fetch_imap_results(last_imap_check)
-                    conversation_history.append({"role": "assistant", "content": reply})
-                    conversation_history.append({"role": "user", "content": imap_text})
-                    reply = claude.chat(conversation_history, system=system)
-                    reply = _parse_and_apply_memory_writes(reply)
-
-                reply = _dispatch_skills(reply, conversation_history, system)
+                reply = _dispatch_all_skills(reply, conversation_history, system)
 
                 conversation_history.append({"role": "assistant", "content": reply})
                 _MAX_HISTORY = 40
@@ -503,46 +299,37 @@ def run(connector: Connector) -> None:
                 last_idle = time.monotonic()
                 now = datetime.now(timezone.utc)
 
-                due = scheduler.get_due(schedules, now)
-                one_off_ids: set[str] = set()
-                for sched in due:
-                    try:
-                        if sched.condition is not None and not _should_wake(sched.condition):
-                            logger.debug(
-                                "Schedule '%s' suppressed by condition", sched.name
-                            )
-                            if sched.fire_at is None:
-                                sched.last_run = now
-                            continue
-                        sched_system = context.build_system_prompt(sched.prompt)
-                        sched_history: list[dict[str, str]] = [
-                            {"role": "user", "content": sched.prompt}
-                        ]
-                        sched_reply = claude.chat(sched_history, system=sched_system)
-                        sched_reply = _parse_and_apply_memory_writes(sched_reply)
-                        sched_reply = _dispatch_skills(
-                            sched_reply, sched_history, sched_system
-                        )
+                schedule_module = registry.get("schedule")
+                if schedule_module is not None:
+                    from awfulclaw.modules.schedule._schedule import ScheduleModule as _SM
 
-                        if sched_reply:
-                            connector.send_message(phone, sched_reply)
-                            logger.info("Schedule '%s' sent: %s", sched.name, sched_reply[:80])
-                        if sched.fire_at is not None:
-                            one_off_ids.add(sched.id)
-                        else:
-                            sched.last_run = now
-                    except Exception as exc:
-                        logger.error("Schedule '%s' failed: %s", sched.name, exc)
-                if one_off_ids:
-                    schedules[:] = [s for s in schedules if s.id not in one_off_ids]
-                if due:
-                    scheduler.save_schedules(schedules)
+                    if isinstance(schedule_module, _SM):
+                        due_prompts = schedule_module.run_due()
+                        for prompt in due_prompts:
+                            try:
+                                sched_system = context.build_system_prompt(prompt)
+                                sched_history: list[dict[str, str]] = [
+                                    {"role": "user", "content": prompt}
+                                ]
+                                sched_reply = claude.chat(sched_history, system=sched_system)
+                                sched_reply = _parse_and_apply_memory_writes(sched_reply)
+                                sched_reply = _dispatch_all_skills(
+                                    sched_reply, sched_history, sched_system
+                                )
+                                if sched_reply:
+                                    connector.send_message(phone, sched_reply)
+                                    logger.info("Schedule reply sent: %s", sched_reply[:80])
+                            except Exception as exc:
+                                logger.error("Schedule prompt failed: %s", exc)
 
                 if briefing_time is not None:
                     today = now.date()
                     delta_secs = (
-                        now.hour * 3600 + now.minute * 60 + now.second
-                        - briefing_time.hour * 3600 - briefing_time.minute * 60
+                        now.hour * 3600
+                        + now.minute * 60
+                        + now.second
+                        - briefing_time.hour * 3600
+                        - briefing_time.minute * 60
                     )
                     if 0 <= delta_secs < poll_interval and last_briefing_date != today:
                         last_briefing_date = today
@@ -553,18 +340,7 @@ def run(connector: Connector) -> None:
                             ]
                             briefing_reply = claude.chat(briefing_history, system=briefing_system)
                             briefing_reply = _parse_and_apply_memory_writes(briefing_reply)
-                            if _SKILL_IMAP_RE.search(briefing_reply):
-                                briefing_reply = _SKILL_IMAP_RE.sub("", briefing_reply).strip()
-                                imap_text, last_imap_check = _fetch_imap_results(last_imap_check)
-                                briefing_history.append(
-                                    {"role": "assistant", "content": briefing_reply}
-                                )
-                                briefing_history.append({"role": "user", "content": imap_text})
-                                briefing_reply = claude.chat(
-                                    briefing_history, system=briefing_system
-                                )
-                                briefing_reply = _parse_and_apply_memory_writes(briefing_reply)
-                            briefing_reply = _dispatch_skills(
+                            briefing_reply = _dispatch_all_skills(
                                 briefing_reply, briefing_history, briefing_system
                             )
                             if briefing_reply:
