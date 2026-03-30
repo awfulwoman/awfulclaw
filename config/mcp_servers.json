@@ -90,6 +90,13 @@
         "run",
         "mcp-obsidian"
       ],
+      "env": {
+        "OBSIDIAN_API_KEY": "${OBSIDIAN_API_KEY}",
+        "OBSIDIAN_HOST": "${OBSIDIAN_HOST}"
+      },
+      "env_required": [
+        "OBSIDIAN_API_KEY"
+      ],
       "source": {
         "github_url": "https://github.com/MarkusPfundstein/mcp-obsidian",
         "install_type": "python_clone",
