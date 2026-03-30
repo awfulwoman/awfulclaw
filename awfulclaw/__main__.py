@@ -1,5 +1,6 @@
 """Entry point for `python -m awfulclaw`."""
 
+import asyncio
 import logging
 
 from awfulclaw import config, loop
@@ -15,7 +16,7 @@ def main() -> None:
         connector = config.get_connector()
         channel = config.get_channel()
         gateway = Gateway([(channel, connector)])
-        loop.run(gateway)
+        asyncio.run(loop.run(gateway))
     except RuntimeError as exc:
         logging.error("%s", exc)
         raise SystemExit(1)

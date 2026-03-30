@@ -106,6 +106,17 @@ def test_path_traversal_blocked() -> None:
         mem.read("../../etc/passwd")
 
 
+def test_write_atomic_result() -> None:
+    from pathlib import Path
+
+    import awfulclaw.memory as mem
+
+    mem.write("facts/atomic.md", "atomic content")
+    assert Path("memory/facts/atomic.md").exists()
+    assert Path("memory/facts/atomic.md").read_text() == "atomic content"
+    assert not Path("memory/facts/atomic.tmp").exists()
+
+
 def test_search_all_respects_subdirs_filter() -> None:
     import awfulclaw.memory as mem
 

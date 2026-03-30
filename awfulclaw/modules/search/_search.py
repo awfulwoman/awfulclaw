@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 
 import awfulclaw.memory as memory
+from awfulclaw.db import get_db
 from awfulclaw.modules.base import Module, SkillTag
 
 _SKILL_SEARCH_RE = re.compile(r'<skill:search\s+query="([^"]*?)"\s*/?>')
@@ -41,8 +42,6 @@ Returns matching lines grouped by file. Use when you need to recall facts, tasks
     def dispatch(self, tag_match: re.Match[str], history: list[dict[str, str]], system: str) -> str:
         query = tag_match.group(1)
         results = memory.search_all(query)
-        if not results:
-            return f"[No matches found for: {query}]"
         lines = [f"[Memory search results for: {query}]"]
         current_file: str | None = None
         count = 0
@@ -54,6 +53,26 @@ Returns matching lines grouped by file. Use when you need to recall facts, tasks
                 current_file = path
             lines.append(f"  {line}")
             count += 1
+
+        # Also search conversation history
+        try:
+            with get_db() as conn:
+                rows = conn.execute(
+                    "SELECT role, content, timestamp FROM conversations"
+                    " WHERE content LIKE ? LIMIT ?",
+                    (f"%{query}%", _MAX_RESULTS - count),
+                ).fetchall()
+            if rows:
+                lines.append("\nconversations:")
+                for row in rows:
+                    snippet = row["content"][:120].replace("\n", " ")
+                    lines.append(f"  [{row['timestamp']} {row['role']}] {snippet}")
+                    count += 1
+        except Exception:
+            pass
+
+        if count == 0:
+            return f"[No matches found for: {query}]"
         return "\n".join(lines)
 
     def is_available(self) -> bool:
