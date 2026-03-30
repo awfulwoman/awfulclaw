@@ -1,0 +1,30 @@
+## Codebase Patterns
+- context.py sections list: index 0 = datetime, index 1 = soul, index 2 = memory_summary_instruction, index 3 = user
+- Private functions in context.py (prefixed `_`) are not directly tested; public helpers can be tested directly
+- Pre-existing pyright errors: 67 (mostly in test_telegram.py) — don't worry about these
+- Pre-existing ruff errors: 2 (in test_telegram.py and startup_briefing test) — pre-existing, don't fix
+- ToolMatcher protocol in base.py: match()/execute()/strip() — execute() calls claude.chat() internally via lazy import to avoid circular deps; _parse_and_apply_memory_writes is still called by loop.py after execute() returns
+
+## [2026-03-30] - #97 Per-sender personality overlays in system prompt
+- Added `extract_personality_section()` to parse `## Personality` section from people/*.md files
+- Added `channel` param to `build_system_prompt()` for `SOUL_<channel>.md` override
+- When sender matches a person file with `## Personality`, overlay appended to soul (sections[1])
+- Files changed: `awfulclaw/context.py`, `tests/test_context.py`
+- **Learnings for future iterations:**
+  - `sections[1]` is always the soul — safe to mutate in-place for overlay injection
+  - `_find_person_by_phone()` returns `(filename, content)` tuple or None
+  - Making helpers public (no `_` prefix) avoids pyright `reportPrivateUsage` errors in tests
+  - The `build_system_prompt()` signature now includes `sender` and `channel` keyword args
+---
+
+## [2026-03-30] - #96 Generic tool dispatch loop with pluggable matchers
+- Added `ToolMatcher` protocol to `awfulclaw/modules/base.py` with `match()`, `execute()`, `strip()` methods
+- Added `SkillTagMatcher` class in `base.py` wrapping Module+SkillTag as a ToolMatcher
+- Added `get_all_tool_matchers()` to `ModuleRegistry` in `awfulclaw/modules/__init__.py`
+- Refactored `_dispatch_all_skills()` → `_dispatch_tools()` in `loop.py`
+- Files changed: `awfulclaw/modules/base.py`, `awfulclaw/modules/__init__.py`, `awfulclaw/loop.py`
+- **Learnings for future iterations:**
+  - `SkillTagMatcher.execute()` uses `from awfulclaw import claude` as a local import to avoid circular deps (base.py ← claude.py would be circular if done at module level)
+  - `_parse_and_apply_memory_writes` stays in loop.py; execute() returns raw claude reply, loop calls parse after
+  - `strip()` method needed for leftover malformed tag cleanup after dispatch rounds
+---
