@@ -52,6 +52,8 @@ def get_allowed_tools() -> list[str]:
         "mcp__mcp_manager__mcp_server_add",
         "mcp__mcp_manager__mcp_server_add_from_github",
         "mcp__mcp_manager__mcp_server_remove",
+        "mcp__env_manager__env_set",
+        "mcp__env_manager__env_keys",
     ]
 
 
