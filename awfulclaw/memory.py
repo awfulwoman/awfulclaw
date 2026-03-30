@@ -9,8 +9,14 @@ _SUBDIRS = ("people", "tasks", "facts", "conversations", "skills")
 
 
 def _resolve(path: str) -> Path:
-    """Resolve a relative path under the memory root, creating dirs if needed."""
-    full = _ROOT / path
+    """Resolve a relative path under the memory root.
+
+    Raises ValueError if the resolved path escapes the memory root.
+    """
+    full = (_ROOT / path).resolve()
+    root = _ROOT.resolve()
+    if not (full == root or str(full).startswith(str(root) + "/")):
+        raise ValueError(f"Path escapes memory root: {path!r}")
     return full
 
 

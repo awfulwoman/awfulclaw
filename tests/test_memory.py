@@ -96,6 +96,16 @@ def test_search_all_returns_empty_when_no_matches() -> None:
     assert mem.search_all("xyzzy") == []
 
 
+def test_path_traversal_blocked() -> None:
+    import awfulclaw.memory as mem
+
+    with pytest.raises(ValueError, match="escapes memory root"):
+        mem.write("../../etc/evil.txt", "bad")
+
+    with pytest.raises(ValueError, match="escapes memory root"):
+        mem.read("../../etc/passwd")
+
+
 def test_search_all_respects_subdirs_filter() -> None:
     import awfulclaw.memory as mem
 
