@@ -7,6 +7,7 @@ import logging
 import os
 import re
 import subprocess
+import time
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -237,8 +238,6 @@ def mcp_server_diagnose(name: str) -> str:
     Spawns the server process for up to 3 seconds and reports whether it
     started cleanly or crashed, including any stderr output.
     """
-    import time
-
     data = _load_config()
     entry = next((s for s in data.get("servers", []) if s["name"] == name), None)
     if entry is None:
