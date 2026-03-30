@@ -77,3 +77,29 @@ Started: Mon 30 Mar 2026 13:18:13 CEST
   - `_dispatch_tools` is a module-level async function so it does need the parameter threaded through explicitly
   - All 104 pre-existing pyright errors are in test_telegram.py and test_mcp_registry.py — baseline remains unchanged
 ---
+
+## [2026-03-30] - #105 Create MCP server for web search
+- Created `awfulclaw/mcp/web.py`: FastMCP stdio server with `web_search` tool
+- Imports `search()` from `awfulclaw/modules/web/_web.py` — no logic duplication
+- Registered in `MCPRegistry` at startup in `loop.py` (alongside `memory_write`)
+- Old web module untouched
+- 6 unit tests in `tests/test_mcp_web.py` with mocked search calls
+- Files changed: `awfulclaw/mcp/web.py` (new), `tests/test_mcp_web.py` (new), `awfulclaw/loop.py`
+- **Learnings for future iterations:**
+  - MCP server pattern: import logic from existing module, thin wrapper with `@mcp.tool()`, `mcp.run()` in `__main__`
+  - Register in `loop.py` `MCPRegistry` with `["run", "python", "-m", "awfulclaw.mcp.<name>"]` args
+  - Test pattern: mock the imported function (e.g. `awfulclaw.mcp.web.search`), call the tool handler directly
+  - Pre-existing baseline: 104 pyright errors in test_telegram.py — unchanged
+---
+
+## [2026-03-30] - #106 Create MCP server for memory search
+- Created `awfulclaw/mcp/search.py`: FastMCP stdio server with `memory_search` tool
+- Reuses `search_facts`, `search_people`, `memory.search_all`, and `get_db` directly — no logic duplication
+- Registered in `MCPRegistry` at startup in `loop.py`
+- Old search module untouched and still functional
+- Files changed: `awfulclaw/mcp/search.py` (new), `tests/test_mcp_search.py` (new), `awfulclaw/loop.py`
+- **Learnings for future iterations:**
+  - When a module's search logic is in a `dispatch()` method, import the underlying DB/memory functions directly instead of trying to call dispatch with a mock match object
+  - Test fixture `autouse=True` with `monkeypatch` lets you set safe defaults; individual tests override only what they need
+  - `lambda: (_ for _ in ()).throw(...)` is not valid syntax for raising in a lambda — use a named `_raise()` function instead
+---
