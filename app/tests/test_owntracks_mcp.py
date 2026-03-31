@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 from unittest.mock import patch
 
 import pytest
@@ -60,7 +61,6 @@ def test_get_location_nominatim_unreachable() -> None:
 def test_get_location_missing_url(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("OWNTRACKS_URL", raising=False)
     # Re-import to pick up missing env var
-    import importlib
     import awfulclaw_mcp.owntracks as mod
     importlib.reload(mod)
     result = mod.owntracks_get_location()
