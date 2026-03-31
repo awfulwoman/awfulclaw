@@ -82,6 +82,22 @@
       ]
     },
     {
+      "name": "gcal",
+      "command": "uv",
+      "args": [
+        "run",
+        "python",
+        "-m",
+        "awfulclaw_mcp.gcal"
+      ],
+      "env": {
+        "GOOGLE_CLIENT_SECRET_PATH": "${GOOGLE_CLIENT_SECRET_PATH}"
+      },
+      "env_required": [
+        "GOOGLE_CLIENT_SECRET_PATH"
+      ]
+    },
+    {
       "name": "mcp-obsidian",
       "command": "uv",
       "args": [

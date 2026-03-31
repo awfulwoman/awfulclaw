@@ -29,9 +29,22 @@ IMAP_HOST=imap.example.com          # required to use the imap MCP server
 IMAP_PORT=993
 IMAP_USER=you@example.com
 IMAP_PASSWORD=...
+GOOGLE_CLIENT_SECRET_PATH=/path/to/client_secret.json  # required for Google Calendar MCP server
 ```
 
 No API key needed — auth comes from the locally installed `claude` CLI.
+
+### Google Calendar setup
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/) → APIs & Services → Credentials
+2. Create an OAuth 2.0 Client ID (Desktop app), download the JSON
+3. Set `GOOGLE_CLIENT_SECRET_PATH=/path/to/downloaded.json` in `.env`
+4. Run the one-time auth flow:
+   ```bash
+   uv run python -m awfulclaw_mcp.gcal --auth
+   ```
+   This opens a browser, completes the OAuth consent, and saves the token to
+   `~/.config/awfulclaw/gcal_token.json`. The agent refreshes the token automatically.
 
 ## Running
 
