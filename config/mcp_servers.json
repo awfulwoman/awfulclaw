@@ -160,7 +160,7 @@
       "command": "npx",
       "args": [
         "mcp-remote",
-        "https://homeassistant.ewwww.eu/mcp_server/sse",
+        "https://homeassistant.ewwww.eu/api/mcp",
         "--header",
         "Authorization: Bearer ${HASS_TOKEN}"
       ],
