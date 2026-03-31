@@ -78,13 +78,36 @@ def _get_env_vars() -> tuple[str, int, str, str]:
     return host, port, user, password  # type: ignore[return-value]
 
 
-def fetch_unread(since: datetime | None = None) -> list[EmailSummary]:
-    """Fetch unread emails from INBOX, optionally filtered by date."""
+def list_folders() -> list[str]:
+    """Return all available IMAP folder names."""
     host, port, user, password = _get_env_vars()
 
     with imaplib.IMAP4_SSL(host, port) as imap:
         imap.login(user, password)
-        imap.select("INBOX")
+        _status, data = imap.list()
+        folders: list[str] = []
+        for item in data or []:
+            if not isinstance(item, bytes):
+                continue
+            # FORMAT: (\Flags) "delimiter" "Name" or (\Flags) NIL Name
+            decoded = item.decode("ascii", errors="replace")
+            # name is after the last space outside quotes, or quoted
+            if decoded.endswith('"'):
+                name = decoded.rsplit('"', 2)[-2]
+            else:
+                name = decoded.rsplit(" ", 1)[-1].strip()
+            if name:
+                folders.append(name)
+        return folders
+
+
+def fetch_unread(folder: str = "INBOX", since: datetime | None = None) -> list[EmailSummary]:
+    """Fetch unread emails from the given folder, optionally filtered by date."""
+    host, port, user, password = _get_env_vars()
+
+    with imaplib.IMAP4_SSL(host, port) as imap:
+        imap.login(user, password)
+        imap.select(folder)
 
         criteria = ["UNSEEN"]
         if since is not None:
@@ -130,17 +153,36 @@ def fetch_unread(since: datetime | None = None) -> list[EmailSummary]:
 
 
 @mcp.tool()
-def imap_read() -> str:
-    """Fetch unread emails from INBOX via IMAP.
+def imap_list_folders() -> str:
+    """List all available IMAP folders/mailboxes.
+
+    Use this to discover folder names before calling imap_read with a specific folder.
+    """
+    try:
+        folders = list_folders()
+        if not folders:
+            return "[No folders found]"
+        return "\n".join(folders)
+    except Exception as exc:
+        return f"[IMAP unavailable: {exc}]"
+
+
+@mcp.tool()
+def imap_read(folder: str = "INBOX") -> str:
+    """Fetch unread emails from an IMAP folder.
+
+    Args:
+        folder: Mailbox folder to read (default: INBOX). Use imap_list_folders to
+                discover available folder names.
 
     Returns a summary of unread messages. Only works when IMAP env vars are configured
     (IMAP_HOST, IMAP_USER, IMAP_PASSWORD).
     """
     try:
-        emails = fetch_unread()
+        emails = fetch_unread(folder)
         if not emails:
-            return "[No new emails]"
-        lines = [f"[{len(emails)} new email(s):]"]
+            return f"[No new emails in {folder}]"
+        lines = [f"[{len(emails)} new email(s) in {folder}:]"]
         for e in emails:
             lines.append(
                 f"From: {e.from_addr}\nSubject: {e.subject}\n"
