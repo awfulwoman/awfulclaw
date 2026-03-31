@@ -68,12 +68,13 @@ def test_get_location_missing_url(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_get_location_malformed_response() -> None:
-    from awfulclaw_mcp.owntracks import owntracks_get_location
+    import awfulclaw_mcp.owntracks as mod
+    importlib.reload(mod)
 
     with patch(
         "awfulclaw_mcp.owntracks.fetch_owntracks_position",
         return_value={"_type": "location"},  # missing lat/lon
     ):
-        result = owntracks_get_location()
+        result = mod.owntracks_get_location()
 
     assert "error" in result.lower()
