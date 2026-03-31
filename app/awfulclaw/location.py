@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from typing import Any
 
 import httpx
 
@@ -14,7 +15,7 @@ _USER_AGENT = "awfulclaw/1.0"
 _tf = None  # TimezoneFinder singleton
 
 
-def _get_tf() -> object:
+def _get_tf() -> Any:
     global _tf
     if _tf is None:
         from timezonefinder import TimezoneFinder
@@ -56,7 +57,7 @@ def _update_user_timezone(new_tz: str) -> None:
 
 def fetch_owntracks_position(
     url: str, user: str, device: str
-) -> dict[str, object] | None:
+) -> dict[str, Any] | None:
     """Fetch last position from OwnTracks Recorder. Returns None on error or empty response."""
     try:
         resp = httpx.get(
@@ -82,7 +83,7 @@ def fetch_owntracks_position(
 def resolve_timezone(lat: float, lon: float) -> str | None:
     """Return IANA timezone string for coordinates, or None on failure."""
     try:
-        result = _get_tf().timezone_at(lat=lat, lng=lon)  # type: ignore[union-attr]
+        result = _get_tf().timezone_at(lat=lat, lng=lon)
         return str(result) if result else None
     except Exception as exc:
         logger.warning("Timezone resolution failed: %s", exc)

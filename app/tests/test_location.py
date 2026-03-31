@@ -3,9 +3,16 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
-from awfulclaw.location import _update_user_timezone, _user_timezone
+from awfulclaw.location import (
+    _update_user_timezone,
+    _user_timezone,
+    check_and_update_timezone,
+    fetch_owntracks_position,
+    resolve_timezone,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -59,10 +66,6 @@ def test_update_user_timezone_appends_when_no_timezone_line() -> None:
     assert "Timezone: Europe/Berlin" in content
     assert "Name: Charlie" in content
 
-
-from unittest.mock import MagicMock, patch
-
-from awfulclaw.location import check_and_update_timezone, fetch_owntracks_position, resolve_timezone
 
 _POSITION = {"lat": 40.7128, "lon": -74.0060, "tst": 1743000000}
 
