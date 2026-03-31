@@ -121,7 +121,7 @@
       "args": [
         "run",
         "--project",
-        "/Users/charlie/Code/awfulclaw/mcp_servers/mcp-obsidian",
+        "/Users/charlie/Code/awfulwoman/awfulclaw/mcp_servers/mcp-obsidian",
         "--python",
         "3.12",
         "mcp-obsidian"
