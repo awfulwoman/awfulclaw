@@ -50,8 +50,10 @@ def _get_service() -> object:
 
 def _run_auth() -> None:
     """Run the OAuth consent flow and save the resulting token."""
+    from dotenv import load_dotenv
     from google_auth_oauthlib.flow import InstalledAppFlow
 
+    load_dotenv()
     secret_path = os.getenv("GOOGLE_CLIENT_SECRET_PATH")
     if not secret_path:
         print("Error: GOOGLE_CLIENT_SECRET_PATH is not set in .env", file=sys.stderr)
