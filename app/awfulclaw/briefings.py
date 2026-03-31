@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import time
 
+from awfulclaw.location import _user_timezone
+
 BRIEFING_PROMPT = (
     "Good morning! Please give me a concise daily briefing. Include:\n"
     "1. Any open tasks from memory\n"
@@ -39,9 +41,6 @@ def get_startup_prompt() -> str:
     else:
         previous = ""
     return _STARTUP_TEMPLATE.format(previous_progress=previous)
-
-
-from awfulclaw.location import _user_timezone
 
 
 def ensure_daily_briefing(briefing_time: time) -> None:
