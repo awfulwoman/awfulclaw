@@ -160,11 +160,12 @@
       "command": "npx",
       "args": [
         "mcp-remote",
-        "https://homeassistant.ewwww.eu/api/mcp",
+        "${HASS_URL}",
         "--header",
         "Authorization: Bearer ${HASS_TOKEN}"
       ],
       "env_required": [
+        "HASS_URL",
         "HASS_TOKEN"
       ]
     }
