@@ -33,10 +33,20 @@ def _decode_header(value: str | None) -> str:
     decoded: list[str] = []
     for part, charset in parts:
         if isinstance(part, bytes):
-            decoded.append(part.decode(charset or "utf-8", errors="replace"))
+            try:
+                decoded.append(part.decode(charset or "utf-8", errors="replace"))
+            except (LookupError, ValueError):
+                decoded.append(part.decode("utf-8", errors="replace"))
         else:
             decoded.append(str(part))
     return "".join(decoded)
+
+
+def _decode_bytes(payload: bytes, charset: str | None) -> str:
+    try:
+        return payload.decode(charset or "utf-8", errors="replace")
+    except (LookupError, ValueError):
+        return payload.decode("utf-8", errors="replace")
 
 
 def _get_plain_body(msg: Message) -> str:
@@ -45,11 +55,11 @@ def _get_plain_body(msg: Message) -> str:
             if part.get_content_type() == "text/plain":
                 payload = part.get_payload(decode=True)
                 if isinstance(payload, bytes):
-                    return payload.decode(part.get_content_charset() or "utf-8", errors="replace")
+                    return _decode_bytes(payload, part.get_content_charset())
     else:
         payload = msg.get_payload(decode=True)
         if isinstance(payload, bytes):
-            return payload.decode(msg.get_content_charset() or "utf-8", errors="replace")
+            return _decode_bytes(payload, msg.get_content_charset())
     return ""
 
 
