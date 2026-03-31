@@ -101,15 +101,20 @@ def list_folders() -> list[str]:
         return folders
 
 
-def fetch_unread(folder: str = "INBOX", since: datetime | None = None) -> list[EmailSummary]:
-    """Fetch unread emails from the given folder, optionally filtered by date."""
+def fetch_emails(
+    folder: str = "INBOX",
+    unread_only: bool = True,
+    since: datetime | None = None,
+    limit: int = 20,
+) -> list[EmailSummary]:
+    """Fetch emails from the given folder."""
     host, port, user, password = _get_env_vars()
 
     with imaplib.IMAP4_SSL(host, port) as imap:
         imap.login(user, password)
-        imap.select(folder)
+        imap.select(folder, readonly=True)
 
-        criteria = ["UNSEEN"]
+        criteria: list[str] = ["UNSEEN"] if unread_only else ["ALL"]
         if since is not None:
             date_str = since.strftime("%d-%b-%Y")
             criteria += ["SINCE", date_str]
@@ -118,8 +123,9 @@ def fetch_unread(folder: str = "INBOX", since: datetime | None = None) -> list[E
         if not data or not data[0]:
             return []
 
+        uids = data[0].split()[-limit:]  # most recent N
         summaries: list[EmailSummary] = []
-        for uid in data[0].split():
+        for uid in uids:
             _status, msg_data = imap.fetch(uid, "(RFC822)")
             if not msg_data or not msg_data[0]:
                 continue
@@ -168,21 +174,25 @@ def imap_list_folders() -> str:
 
 
 @mcp.tool()
-def imap_read(folder: str = "INBOX") -> str:
-    """Fetch unread emails from an IMAP folder.
+def imap_read(folder: str = "INBOX", unread_only: bool = True, limit: int = 20) -> str:
+    """Fetch emails from an IMAP folder.
 
     Args:
         folder: Mailbox folder to read (default: INBOX). Use imap_list_folders to
                 discover available folder names.
+        unread_only: If True (default), only return unread messages. Set to False
+                     to read all recent messages — useful for Sent and other folders
+                     where messages are always marked read.
+        limit: Maximum number of messages to return, most recent first (default: 20).
 
-    Returns a summary of unread messages. Only works when IMAP env vars are configured
-    (IMAP_HOST, IMAP_USER, IMAP_PASSWORD).
+    Only works when IMAP env vars are configured (IMAP_HOST, IMAP_USER, IMAP_PASSWORD).
     """
     try:
-        emails = fetch_unread(folder)
+        emails = fetch_emails(folder, unread_only=unread_only, limit=limit)
         if not emails:
-            return f"[No new emails in {folder}]"
-        lines = [f"[{len(emails)} new email(s) in {folder}:]"]
+            label = "unread " if unread_only else ""
+            return f"[No {label}emails in {folder}]"
+        lines = [f"[{len(emails)} email(s) in {folder}:]"]
         for e in emails:
             lines.append(
                 f"From: {e.from_addr}\nSubject: {e.subject}\n"
