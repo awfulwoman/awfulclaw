@@ -142,6 +142,7 @@ def gcal_update(
     start: str = "",
     end: str = "",
     description: str = "",
+    location: str = "",
     calendar_id: str = "primary",
 ) -> str:
     """Update an existing Google Calendar event. Only provided fields are changed.
@@ -152,6 +153,7 @@ def gcal_update(
         start: New ISO 8601 start datetime (omit to keep existing)
         end: New ISO 8601 end datetime (omit to keep existing)
         description: New description (omit to keep existing)
+        location: New location (omit to keep existing)
         calendar_id: Calendar containing the event (default: "primary")
     """
     try:
@@ -165,6 +167,8 @@ def gcal_update(
             event["end"] = {"dateTime": end}
         if description:
             event["description"] = description
+        if location:
+            event["location"] = location
         service.events().update(calendarId=calendar_id, eventId=event_id, body=event).execute()
         return f"[Updated event: id={event_id}]"
     except Exception as exc:
