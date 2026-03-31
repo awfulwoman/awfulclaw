@@ -98,6 +98,24 @@
       ]
     },
     {
+      "name": "owntracks",
+      "command": "uv",
+      "args": [
+        "run",
+        "python",
+        "-m",
+        "awfulclaw_mcp.owntracks"
+      ],
+      "env": {
+        "OWNTRACKS_URL": "${OWNTRACKS_URL}",
+        "OWNTRACKS_USER": "${OWNTRACKS_USER}",
+        "OWNTRACKS_DEVICE": "${OWNTRACKS_DEVICE}"
+      },
+      "env_required": [
+        "OWNTRACKS_URL"
+      ]
+    },
+    {
       "name": "mcp-obsidian",
       "command": "uv",
       "args": [
