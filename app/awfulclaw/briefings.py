@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from datetime import time
 
 BRIEFING_PROMPT = (
@@ -42,16 +41,7 @@ def get_startup_prompt() -> str:
     return _STARTUP_TEMPLATE.format(previous_progress=previous)
 
 
-def _user_timezone() -> str:
-    """Extract timezone from memory/USER.md, or return '' if not set/unknown."""
-    from awfulclaw import memory
-
-    content = memory.read("USER.md")
-    m = re.search(r"(?i)^Timezone:\s*(.+)$", content, re.MULTILINE)
-    if not m:
-        return ""
-    tz_name = m.group(1).strip().split()[0]
-    return "" if tz_name.lower() in ("unknown", "") else tz_name
+from awfulclaw.location import _user_timezone
 
 
 def ensure_daily_briefing(briefing_time: time) -> None:
