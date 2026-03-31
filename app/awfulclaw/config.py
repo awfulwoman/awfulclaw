@@ -20,9 +20,13 @@ def get_connector() -> Connector:
         from awfulclaw.telegram import TelegramConnector
 
         return TelegramConnector()
+    if channel == "stdio":
+        from awfulclaw.stdio import StdioConnector
+
+        return StdioConnector()
     raise RuntimeError(
         f"Unrecognised AWFULCLAW_CHANNEL value: {channel!r}. "
-        "Valid options: telegram"
+        "Valid options: telegram, stdio"
     )
 
 
