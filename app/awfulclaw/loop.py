@@ -207,6 +207,26 @@ async def run(gateway: Gateway) -> None:
                 lambda: claude.chat(msgs, system, image_data, image_mime, _mcp_config[0]),
             )
 
+    async def _chat_with_typing(
+        channel: str,
+        recipient: str,
+        messages: list[dict[str, str]],
+        system: str,
+        image_data: bytes | None = None,
+        image_mime: str | None = None,
+    ) -> str:
+        """Run _chat_async while sending periodic typing indicators every 4s."""
+        async def _keep_typing() -> None:
+            while True:
+                gateway.send_typing(channel, recipient)
+                await asyncio.sleep(4)
+
+        typing_task = asyncio.create_task(_keep_typing())
+        try:
+            return await _chat_async(messages, system, image_data, image_mime)
+        finally:
+            typing_task.cancel()
+
     async def _handle_messages(messages: list) -> None:  # type: ignore[type-arg]
         """Process a batch of user messages sequentially, in order."""
         _MAX_HISTORY = 40
@@ -226,10 +246,9 @@ async def run(gateway: Gateway) -> None:
                 except ValueError as exc:
                     confirmation = f"[Secret storage failed for {key}: {exc}]"
                 system = context.build_system_prompt(confirmation, sender=msg.sender, skipped_mcp_servers=_skipped_mcp[0])
-                gateway.send_typing(msg.channel, recipient)
                 async with _history_lock:
                     conversation_history.append({"role": "user", "content": confirmation})
-                    reply = await _chat_async(conversation_history, system)
+                    reply = await _chat_with_typing(msg.channel, recipient, conversation_history, system)
                     conversation_history.append({"role": "assistant", "content": reply})
                     if len(conversation_history) > _MAX_HISTORY:
                         conversation_history[:] = conversation_history[-_MAX_HISTORY:]
@@ -258,11 +277,11 @@ async def run(gateway: Gateway) -> None:
 
             system = context.build_system_prompt(msg.body, sender=msg.sender, skipped_mcp_servers=_skipped_mcp[0])
 
-            gateway.send_typing(msg.channel, recipient)
-
             async with _history_lock:
                 conversation_history.append({"role": "user", "content": msg.body})
-                reply = await _chat_async(
+                reply = await _chat_with_typing(
+                    msg.channel,
+                    recipient,
                     conversation_history,
                     system,
                     msg.image_data,
