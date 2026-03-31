@@ -56,3 +56,46 @@ def test_gcal_list_handles_error() -> None:
         result = gcal_list(start="2026-04-01T00:00:00Z", end="2026-04-02T00:00:00Z")
     assert "[gcal error:" in result
     assert "Not authenticated" in result
+
+
+def test_gcal_create_returns_event_id() -> None:
+    from awfulclaw_mcp.gcal import gcal_create
+
+    service = MagicMock()
+    service.events.return_value.insert.return_value.execute.return_value = {"id": "evt001"}
+
+    with patch("awfulclaw_mcp.gcal._get_service", return_value=service):
+        result = gcal_create(
+            title="Dentist",
+            start="2026-04-01T10:00:00Z",
+            end="2026-04-01T11:00:00Z",
+        )
+    assert "evt001" in result
+    assert "Created" in result
+
+
+def test_gcal_create_passes_description() -> None:
+    from awfulclaw_mcp.gcal import gcal_create
+
+    service = MagicMock()
+    service.events.return_value.insert.return_value.execute.return_value = {"id": "evt002"}
+
+    with patch("awfulclaw_mcp.gcal._get_service", return_value=service):
+        gcal_create(
+            title="Meeting",
+            start="2026-04-01T14:00:00Z",
+            end="2026-04-01T15:00:00Z",
+            description="Quarterly review",
+        )
+
+    call_kwargs = service.events.return_value.insert.call_args.kwargs
+    assert call_kwargs["body"]["description"] == "Quarterly review"
+
+
+def test_gcal_create_handles_error() -> None:
+    from awfulclaw_mcp.gcal import gcal_create
+
+    with patch("awfulclaw_mcp.gcal._get_service", side_effect=RuntimeError("API down")):
+        result = gcal_create(title="X", start="2026-04-01T10:00:00Z", end="2026-04-01T11:00:00Z")
+    assert "[gcal error:" in result
+    assert "API down" in result

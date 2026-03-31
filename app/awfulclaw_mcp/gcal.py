@@ -101,6 +101,38 @@ def gcal_list(start: str, end: str, calendar_id: str = "primary") -> str:
         return f"[gcal error: {exc}]"
 
 
+@mcp.tool()
+def gcal_create(
+    title: str,
+    start: str,
+    end: str,
+    description: str = "",
+    calendar_id: str = "primary",
+) -> str:
+    """Create a Google Calendar event.
+
+    Args:
+        title: Event title
+        start: ISO 8601 start datetime (e.g. "2026-04-01T10:00:00Z")
+        end: ISO 8601 end datetime (e.g. "2026-04-01T11:00:00Z")
+        description: Optional event description
+        calendar_id: Calendar to create in (default: "primary")
+    """
+    try:
+        service = _get_service()
+        body: dict[str, object] = {
+            "summary": title,
+            "start": {"dateTime": start},
+            "end": {"dateTime": end},
+        }
+        if description:
+            body["description"] = description
+        event = service.events().insert(calendarId=calendar_id, body=body).execute()
+        return f"[Created event: id={event['id']}]"
+    except Exception as exc:
+        return f"[gcal error: {exc}]"
+
+
 if __name__ == "__main__":
     if "--auth" in sys.argv:
         _run_auth()
