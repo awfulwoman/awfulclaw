@@ -169,6 +169,22 @@ def gcal_update(
         return f"[gcal error: {exc}]"
 
 
+@mcp.tool()
+def gcal_delete(event_id: str, calendar_id: str = "primary") -> str:
+    """Delete a Google Calendar event.
+
+    Args:
+        event_id: ID of the event to delete
+        calendar_id: Calendar containing the event (default: "primary")
+    """
+    try:
+        service = _get_service()
+        service.events().delete(calendarId=calendar_id, eventId=event_id).execute()
+        return f"[Deleted event: id={event_id}]"
+    except Exception as exc:
+        return f"[gcal error: {exc}]"
+
+
 if __name__ == "__main__":
     if "--auth" in sys.argv:
         _run_auth()

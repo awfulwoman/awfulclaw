@@ -154,3 +154,42 @@ def test_gcal_update_handles_error() -> None:
         result = gcal_update(event_id="bad_id", title="X")
     assert "[gcal error:" in result
     assert "not found" in result
+
+
+def test_gcal_delete_success() -> None:
+    from awfulclaw_mcp.gcal import gcal_delete
+
+    service = MagicMock()
+    service.events.return_value.delete.return_value.execute.return_value = None
+
+    with patch("awfulclaw_mcp.gcal._get_service", return_value=service):
+        result = gcal_delete(event_id="evt005")
+
+    assert "Deleted" in result
+    assert "evt005" in result
+    service.events.return_value.delete.assert_called_once_with(
+        calendarId="primary", eventId="evt005"
+    )
+
+
+def test_gcal_delete_custom_calendar() -> None:
+    from awfulclaw_mcp.gcal import gcal_delete
+
+    service = MagicMock()
+    service.events.return_value.delete.return_value.execute.return_value = None
+
+    with patch("awfulclaw_mcp.gcal._get_service", return_value=service):
+        gcal_delete(event_id="evt006", calendar_id="work@example.com")
+
+    service.events.return_value.delete.assert_called_once_with(
+        calendarId="work@example.com", eventId="evt006"
+    )
+
+
+def test_gcal_delete_handles_error() -> None:
+    from awfulclaw_mcp.gcal import gcal_delete
+
+    with patch("awfulclaw_mcp.gcal._get_service", side_effect=RuntimeError("event not found")):
+        result = gcal_delete(event_id="bad_id")
+    assert "[gcal error:" in result
+    assert "event not found" in result
