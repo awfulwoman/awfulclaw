@@ -197,3 +197,54 @@ def test_get_due_fires_on_next_interval() -> None:
     now = datetime(2026, 3, 30, 9, 5, tzinfo=timezone.utc)
     due = get_due([s], now)
     assert s in due
+
+
+def test_get_due_tz_aware_cron_fires_at_local_time() -> None:
+    """A cron '0 9 * * *' with tz='Europe/Berlin' fires at 9am Berlin = 8am UTC (in winter, CET=UTC+1)."""
+    # Schedule created on the same day, already ran once, so only today's firing is pending
+    created = datetime(2026, 1, 2, 0, 0, tzinfo=timezone.utc)
+    s = Schedule(
+        id="tz1",
+        name="BerlinDaily",
+        cron="0 9 * * *",
+        prompt="guten morgen",
+        created_at=created,
+        last_run=datetime(2026, 1, 1, 8, 5, tzinfo=timezone.utc),  # fired yesterday at 9am Berlin
+        tz="Europe/Berlin",
+    )
+    # 7:00 UTC = 8:00 Berlin (not yet 9am local) — should NOT fire
+    now_before = datetime(2026, 1, 2, 7, 0, tzinfo=timezone.utc)
+    assert get_due([s], now_before) == []
+
+    # 8:05 UTC = 9:05 Berlin — should fire
+    now_after = datetime(2026, 1, 2, 8, 5, tzinfo=timezone.utc)
+    assert s in get_due([s], now_after)
+
+
+def test_get_due_tz_aware_cron_summer_time() -> None:
+    """In summer (CEST = UTC+2), '0 9 * * *' fires at 9am Berlin = 7am UTC."""
+    created = datetime(2026, 6, 2, 0, 0, tzinfo=timezone.utc)
+    s = Schedule(
+        id="tz2",
+        name="SummerDaily",
+        cron="0 9 * * *",
+        prompt="guten morgen",
+        created_at=created,
+        last_run=datetime(2026, 6, 1, 7, 5, tzinfo=timezone.utc),  # fired yesterday at 9am Berlin
+        tz="Europe/Berlin",
+    )
+    # 6:55 UTC = 8:55 Berlin — should NOT fire
+    now_before = datetime(2026, 6, 2, 6, 55, tzinfo=timezone.utc)
+    assert get_due([s], now_before) == []
+
+    # 7:05 UTC = 9:05 Berlin — should fire
+    now_after = datetime(2026, 6, 2, 7, 5, tzinfo=timezone.utc)
+    assert s in get_due([s], now_after)
+
+
+def test_tz_round_trip() -> None:
+    """tz field survives a save/load cycle."""
+    s = Schedule.create(name="TzTest", cron="0 9 * * *", prompt="hi", tz="Europe/Berlin")
+    save_schedules([s])
+    loaded = load_schedules()
+    assert loaded[0].tz == "Europe/Berlin"

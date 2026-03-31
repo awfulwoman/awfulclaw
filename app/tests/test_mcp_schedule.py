@@ -123,3 +123,25 @@ def test_create_with_condition() -> None:
         result = schedule_create("cond", "Prompt", cron="*/5 * * * *", condition="check.sh")
     assert "created" in result
     assert saved[0][0].condition == "check.sh"
+
+
+def test_create_with_timezone() -> None:
+    saved: list[list[Schedule]] = []
+    _patch = "awfulclaw_mcp.schedule.scheduler.save_schedules"
+    with patch(_patch, side_effect=lambda s: saved.append(list(s))):
+        result = schedule_create("tz_sched", "Morning", cron="0 9 * * *", timezone="Europe/Berlin")
+    assert "created" in result
+    assert saved[0][0].tz == "Europe/Berlin"
+
+
+def test_create_invalid_timezone() -> None:
+    result = schedule_create("bad", "Prompt", cron="0 9 * * *", timezone="Not/ATimezone")
+    assert "unknown timezone" in result.lower()
+
+
+def test_list_shows_timezone() -> None:
+    s = _make_schedule("morning", cron="0 9 * * *")
+    s.tz = "Europe/Berlin"
+    with patch("awfulclaw_mcp.schedule.scheduler.load_schedules", return_value=[s]):
+        result = schedule_list()
+    assert "Europe/Berlin" in result

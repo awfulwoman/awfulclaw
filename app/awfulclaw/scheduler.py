@@ -9,6 +9,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from croniter import croniter  # type: ignore[import-untyped]
 
@@ -28,6 +29,7 @@ class Schedule:
     fire_at: datetime | None = field(default=None)
     condition: str | None = field(default=None)
     silent: bool = field(default=False)
+    tz: str = field(default="")
 
     @classmethod
     def create(
@@ -38,6 +40,7 @@ class Schedule:
         fire_at: datetime | None = None,
         condition: str | None = None,
         silent: bool = False,
+        tz: str = "",
     ) -> "Schedule":
         return cls(
             id=uuid.uuid4().hex,
@@ -48,6 +51,7 @@ class Schedule:
             fire_at=fire_at,
             condition=condition,
             silent=silent,
+            tz=tz,
         )
 
 
@@ -72,6 +76,7 @@ def _schedule_to_dict(s: Schedule) -> dict[str, object]:
         "fire_at": s.fire_at.isoformat() if s.fire_at else None,
         "condition": s.condition,
         "silent": s.silent,
+        "tz": s.tz,
     }
 
 
@@ -86,6 +91,7 @@ def _dict_to_schedule(d: dict[str, object]) -> Schedule:
         fire_at=_parse_dt(str(d["fire_at"])) if d.get("fire_at") else None,
         condition=str(d["condition"]) if d.get("condition") else None,
         silent=bool(d.get("silent", False)),
+        tz=str(d.get("tz", "")),
     )
 
 
@@ -197,10 +203,17 @@ def get_due(schedules: list[Schedule], now: datetime) -> list[Schedule]:
         if last_run is not None and last_run.tzinfo is None:
             last_run = last_run.replace(tzinfo=timezone.utc)
         threshold = last_run if last_run is not None else epoch
-        # Iterate cron from created_at anchor to find next fire after last_run
+        # Iterate cron from created_at anchor to find next fire after last_run.
+        # If the schedule has a timezone, evaluate cron in that local time so
+        # expressions like "0 9 * * *" mean 9am local, not 9am UTC.
         created = s.created_at
         if created.tzinfo is None:
             created = created.replace(tzinfo=timezone.utc)
+        if s.tz:
+            try:
+                created = created.astimezone(ZoneInfo(s.tz))
+            except (ZoneInfoNotFoundError, KeyError):
+                logger.warning("Unknown timezone '%s' on schedule '%s', falling back to UTC", s.tz, s.name)
         cron = croniter(s.cron, created)
         next_due: datetime | None = None
         for _ in range(10000):  # safety bound
