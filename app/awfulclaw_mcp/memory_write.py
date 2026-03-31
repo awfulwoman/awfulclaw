@@ -9,7 +9,7 @@ from mcp.server.fastmcp import FastMCP
 mcp = FastMCP("memory_write")
 
 _PROTECTED_FILES = {"SOUL.md", "HEARTBEAT.md"}
-_PROTECTED_DIRS = ("skills/",)
+_PROTECTED_DIRS = ("skills/", "conversations/")
 
 
 def _is_protected(path: str) -> bool:
