@@ -140,6 +140,33 @@
         "install_type": "python_clone",
         "package": "mcp-obsidian"
       }
+    },
+    {
+      "name": "github",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-github"
+      ],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}"
+      },
+      "env_required": [
+        "GITHUB_PERSONAL_ACCESS_TOKEN"
+      ]
+    },
+    {
+      "name": "homeassistant",
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "https://homeassistant.ewwww.eu/mcp_server/sse",
+        "--header",
+        "Authorization: Bearer ${HASS_TOKEN}"
+      ],
+      "env_required": [
+        "HASS_TOKEN"
+      ]
     }
   ]
 }

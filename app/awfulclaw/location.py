@@ -141,3 +141,24 @@ def check_and_update_timezone(
     if tz != current:
         logger.info("Timezone changed %r → %r, updating USER.md", current, tz)
         _update_user_timezone(tz)
+
+
+def check_and_update_location(
+    url: str, user: str = "charlie", device: str = "iphone"
+) -> None:
+    """Fetch current location from OwnTracks and update the location fact."""
+    from datetime import datetime, timezone
+
+    from awfulclaw.db import write_fact
+
+    position = fetch_owntracks_position(url, user, device)
+    if position is None:
+        return
+    lat = position.get("lat")
+    lon = position.get("lon")
+    if lat is None or lon is None:
+        logger.warning("OwnTracks response missing lat/lon")
+        return
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    write_fact("location", f"Last known location: {float(lat)}, {float(lon)}\nUpdated: {ts}")
+    logger.info("Location updated from OwnTracks: %s, %s", lat, lon)

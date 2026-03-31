@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-import logging
 import os
 import sys
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
-
-logger = logging.getLogger(__name__)
 
 mcp = FastMCP("gcal")
 
@@ -93,11 +90,14 @@ def gcal_list(start: str, end: str, calendar_id: str = "primary") -> str:
         events = result.get("items", [])
         if not events:
             return "[No events]"
+
+        def _dt(e: dict, key: str) -> str:  # type: ignore[type-arg]
+            slot = e.get(key, {})
+            return slot.get("dateTime", slot.get("date", ""))
+
         lines: list[str] = []
         for e in events:
-            start_dt = e.get("start", {}).get("dateTime", e.get("start", {}).get("date", ""))
-            end_dt = e.get("end", {}).get("dateTime", e.get("end", {}).get("date", ""))
-            lines.append(f"id={e['id']} | {e.get('summary', '(no title)')} | {start_dt} → {end_dt}")
+            lines.append(f"id={e['id']} | {e.get('summary', '(no title)')} | {_dt(e, 'start')} → {_dt(e, 'end')}")
         return "\n".join(lines)
     except Exception as exc:
         return f"[gcal error: {exc}]"

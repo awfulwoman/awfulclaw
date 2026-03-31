@@ -142,14 +142,13 @@ async def run(gateway: Gateway) -> None:
     init_db()
 
     owntracks_url = config.get_owntracks_url()
+    owntracks_user = config.get_owntracks_user()
+    owntracks_device = config.get_owntracks_device()
     if owntracks_url:
-        from awfulclaw.location import check_and_update_timezone
+        from awfulclaw.location import check_and_update_location, check_and_update_timezone
 
-        check_and_update_timezone(
-            owntracks_url,
-            config.get_owntracks_user(),
-            config.get_owntracks_device(),
-        )
+        check_and_update_timezone(owntracks_url, owntracks_user, owntracks_device)
+        check_and_update_location(owntracks_url, owntracks_user, owntracks_device)
 
     briefing_time = config.get_briefing_time()
     if briefing_time is not None:
@@ -317,6 +316,12 @@ async def run(gateway: Gateway) -> None:
     async def _run_idle_tick() -> None:
         """Run scheduled prompts and heartbeat check."""
         nonlocal last_idle_nudge
+        if owntracks_url:
+            from awfulclaw.location import check_and_update_location, check_and_update_timezone
+
+            check_and_update_timezone(owntracks_url, owntracks_user, owntracks_device)
+            check_and_update_location(owntracks_url, owntracks_user, owntracks_device)
+
         if mcp_registry.reload_if_changed(_MCP_CONFIG_PATH):
             _mcp_config[0] = None if mcp_registry.is_empty() else mcp_registry.generate_config()
             _skipped_mcp[0] = mcp_registry.skipped_servers()
