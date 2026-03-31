@@ -60,3 +60,15 @@ def get_briefing_time() -> time | None:
         return time(int(parts[0]), int(parts[1]))
     except (ValueError, IndexError):
         return None
+
+
+def get_owntracks_url() -> str:
+    return os.getenv("OWNTRACKS_URL", "").strip()
+
+
+def get_owntracks_user() -> str:
+    return os.getenv("OWNTRACKS_USER", "charlie").strip()
+
+
+def get_owntracks_device() -> str:
+    return os.getenv("OWNTRACKS_DEVICE", "iphone").strip()

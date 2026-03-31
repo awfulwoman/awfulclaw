@@ -141,6 +141,16 @@ async def run(gateway: Gateway) -> None:
 
     init_db()
 
+    owntracks_url = config.get_owntracks_url()
+    if owntracks_url:
+        from awfulclaw.location import check_and_update_timezone
+
+        check_and_update_timezone(
+            owntracks_url,
+            config.get_owntracks_user(),
+            config.get_owntracks_device(),
+        )
+
     briefing_time = config.get_briefing_time()
     if briefing_time is not None:
         briefings.ensure_daily_briefing(briefing_time)
