@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from awfulclaw import memory
-from awfulclaw.db import write_fact, write_person
 from mcp.server.fastmcp import FastMCP
 
 mcp = FastMCP("memory_write")
@@ -20,9 +19,12 @@ def _is_protected(path: str) -> bool:
 
 @mcp.tool()
 def memory_write(path: str, content: str) -> str:
-    """Write content to a memory file at memory/{path}.
+    """Write content to an internal memory file at memory/{path}.
 
-    Facts (facts/*.md) and people (people/*.md) are stored in SQLite.
+    Use this for internal agent files only (e.g. USER.md, tasks/*.md).
+    Facts and people profiles should be stored in Obsidian at
+    awfulclaw/facts/<topic>.md and awfulclaw/people/<name>.md instead —
+    use the obsidian_create / obsidian_append tools for those.
     Writes to SOUL.md, HEARTBEAT.md, or skills/ are blocked.
     """
     # Strip leading memory/ prefix if present
@@ -32,15 +34,15 @@ def memory_write(path: str, content: str) -> str:
     if _is_protected(path):
         return f"Error: writes to {path!r} are not allowed"
 
+    if path.startswith("facts/") or path.startswith("people/"):
+        return (
+            f"Error: facts and people are now stored in Obsidian. "
+            f"Use obsidian_create or obsidian_append with path "
+            f"awfulclaw/{path} instead."
+        )
+
     try:
-        if path.startswith("facts/"):
-            key = path[len("facts/"):].removesuffix(".md")
-            write_fact(key, content.strip())
-        elif path.startswith("people/"):
-            name = path[len("people/"):].removesuffix(".md")
-            write_person(name, content.strip())
-        else:
-            memory.write(path, content.strip())
+        memory.write(path, content.strip())
     except ValueError as exc:
         return f"Error: {exc}"
 
