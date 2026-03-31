@@ -25,16 +25,16 @@ def _make_email(
 
 
 def test_imap_read_no_emails() -> None:
-    with patch("awfulclaw_mcp.imap.fetch_unread", return_value=[]):
+    with patch("awfulclaw_mcp.imap.fetch_emails", return_value=[]):
         output = imap_read()
-    assert "No new emails" in output
+    assert "No" in output and "email" in output
 
 
 def test_imap_read_single_email() -> None:
     email = _make_email(subject="Hello", from_addr="alice@example.com", body_preview="Hi!")
-    with patch("awfulclaw_mcp.imap.fetch_unread", return_value=[email]):
+    with patch("awfulclaw_mcp.imap.fetch_emails", return_value=[email]):
         output = imap_read()
-    assert "1 new email" in output
+    assert "1 email" in output
     assert "alice@example.com" in output
     assert "Hello" in output
     assert "Hi!" in output
@@ -46,9 +46,9 @@ def test_imap_read_multiple_emails() -> None:
         _make_email(subject="Second"),
         _make_email(subject="Third"),
     ]
-    with patch("awfulclaw_mcp.imap.fetch_unread", return_value=emails):
+    with patch("awfulclaw_mcp.imap.fetch_emails", return_value=emails):
         output = imap_read()
-    assert "3 new email" in output
+    assert "3 email" in output
     assert "First" in output
     assert "Second" in output
     assert "Third" in output
@@ -57,14 +57,14 @@ def test_imap_read_multiple_emails() -> None:
 def test_imap_read_includes_timestamp() -> None:
     ts = datetime(2026, 1, 15, 9, 30, 0, tzinfo=timezone.utc)
     email = _make_email(timestamp=ts)
-    with patch("awfulclaw_mcp.imap.fetch_unread", return_value=[email]):
+    with patch("awfulclaw_mcp.imap.fetch_emails", return_value=[email]):
         output = imap_read()
     assert "2026-01-15" in output
 
 
 def test_imap_read_handles_exception() -> None:
     with patch(
-        "awfulclaw_mcp.imap.fetch_unread",
+        "awfulclaw_mcp.imap.fetch_emails",
         side_effect=RuntimeError("Connection refused"),
     ):
         output = imap_read()
@@ -72,7 +72,7 @@ def test_imap_read_handles_exception() -> None:
     assert "Connection refused" in output
 
 
-def test_imap_read_calls_fetch_unread() -> None:
-    with patch("awfulclaw_mcp.imap.fetch_unread", return_value=[]) as mock_fetch:
+def test_imap_read_calls_fetch_emails() -> None:
+    with patch("awfulclaw_mcp.imap.fetch_emails", return_value=[]) as mock_fetch:
         imap_read()
-        mock_fetch.assert_called_once_with()
+        mock_fetch.assert_called_once()

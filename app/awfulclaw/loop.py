@@ -74,9 +74,34 @@ def _load_heartbeat() -> str:
     return content
 
 
+def _load_last_email_check() -> datetime:
+    """Return the timestamp of the last email check, initialising to now on first call."""
+    try:
+        return datetime.fromisoformat(_IMAP_LAST_CHECK_PATH.read_text().strip())
+    except Exception:
+        ts = datetime.now(timezone.utc)
+        _save_last_email_check(ts)
+        return ts
+
+
+def _save_last_email_check(ts: datetime) -> None:
+    try:
+        _IMAP_LAST_CHECK_PATH.write_text(ts.isoformat())
+    except OSError as exc:
+        logger.warning("Failed to save IMAP last check time: %s", exc)
+
+
+_EMAIL_TRIAGE_PROMPT = (
+    "New email(s) have arrived:\n\n{emails}\n\n"
+    "Decide whether any are important or time-sensitive enough to alert the user. "
+    "If yes, send a brief notification. If nothing needs immediate attention, reply NOTHING."
+)
+
+
 _MEMORY_ROOT = Path("memory")
 _CONVERSATIONS_DIR = _MEMORY_ROOT / "conversations"
 _RESTART_FLAG = _MEMORY_ROOT / ".restart_requested"
+_IMAP_LAST_CHECK_PATH = _MEMORY_ROOT / ".imap_last_check"
 
 
 def _sigterm_handler(signum: int, frame: object) -> None:
@@ -165,6 +190,7 @@ async def run(gateway: Gateway) -> None:
     poll_interval = config.get_poll_interval()
     idle_interval = config.get_idle_interval()
     idle_nudge_cooldown = config.get_idle_nudge_cooldown()
+    email_check_interval = config.get_email_check_interval()
     phone = gateway.primary_recipient
 
     conversation_history: list[dict[str, str]] = _load_recent_history()
@@ -172,6 +198,7 @@ async def run(gateway: Gateway) -> None:
         logger.info("Restored %d turns from previous session", len(conversation_history))
     last_idle = time.monotonic()
     last_idle_nudge: float = 0.0
+    last_email_check: float = 0.0
 
     _max_concurrent = int(os.getenv("AWFULCLAW_MAX_CONCURRENT", "3"))
     _sem = asyncio.Semaphore(_max_concurrent)
@@ -355,6 +382,34 @@ async def run(gateway: Gateway) -> None:
                 last_idle_nudge = time.monotonic()
                 logger.debug("Idle check: nothing to send")
 
+    async def _check_new_emails() -> None:
+        """Fetch unread emails newer than last check and alert if any are important."""
+        nonlocal last_email_check
+        last_email_check = time.monotonic()
+        try:
+            from awfulclaw_mcp.imap import fetch_emails
+
+            last_check_ts = _load_last_email_check()
+            new_last_check_ts = datetime.now(timezone.utc)
+            emails = fetch_emails(unread_only=True)
+            new_emails = [e for e in emails if e.timestamp > last_check_ts]
+            _save_last_email_check(new_last_check_ts)
+            if not new_emails:
+                return
+            lines = [
+                f"From: {e.from_addr}\nSubject: {e.subject}\n"
+                f"Date: {e.timestamp.isoformat()}\n{e.body_preview}"
+                for e in new_emails
+            ]
+            prompt = _EMAIL_TRIAGE_PROMPT.format(emails="\n\n".join(lines))
+            system = context.build_system_prompt(prompt, skipped_mcp_servers=_skipped_mcp[0])
+            reply = await _chat_async([{"role": "user", "content": prompt}], system)
+            if reply and not _is_idle_suppressed(reply):
+                gateway.send(gateway.primary_channel, phone, reply)
+                logger.info("Email alert sent: %s", reply[:80])
+        except Exception as exc:
+            logger.warning("Email check failed: %s", exc)
+
     try:
         while True:
             messages = gateway.get_messages()
@@ -366,6 +421,10 @@ async def run(gateway: Gateway) -> None:
             if time.monotonic() - last_idle >= idle_interval:
                 last_idle = time.monotonic()
                 coroutines.append(_run_idle_tick())
+
+            email_due = time.monotonic() - last_email_check >= email_check_interval
+            if os.getenv("IMAP_HOST") and email_due:
+                coroutines.append(_check_new_emails())
 
             if coroutines:
                 await asyncio.gather(*coroutines)

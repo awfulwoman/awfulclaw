@@ -45,6 +45,11 @@ def get_idle_interval() -> int:
     return int(os.getenv("AWFULCLAW_IDLE_INTERVAL", "60"))
 
 
+def get_email_check_interval() -> int:
+    """Seconds between proactive email checks. Default: 5 minutes."""
+    return int(os.getenv("AWFULCLAW_EMAIL_CHECK_INTERVAL", "300"))
+
+
 def get_idle_nudge_cooldown() -> int:
     """Minimum seconds between unsolicited idle messages. Default: 24h."""
     return int(os.getenv("AWFULCLAW_IDLE_NUDGE_COOLDOWN", str(60 * 60 * 24)))
