@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import time
 
 BRIEFING_PROMPT = (
@@ -41,13 +42,32 @@ def get_startup_prompt() -> str:
     return _STARTUP_TEMPLATE.format(previous_progress=previous)
 
 
+def _user_timezone() -> str:
+    """Extract timezone from memory/USER.md, or return '' if not set/unknown."""
+    from awfulclaw import memory
+
+    content = memory.read("USER.md")
+    m = re.search(r"(?i)^Timezone:\s*(.+)$", content, re.MULTILINE)
+    if not m:
+        return ""
+    tz_name = m.group(1).strip().split()[0]
+    return "" if tz_name.lower() in ("unknown", "") else tz_name
+
+
 def ensure_daily_briefing(briefing_time: time) -> None:
-    """Create a daily_briefing cron schedule if none already exists."""
+    """Create a daily_briefing cron schedule if none exists, or update its timezone if changed."""
     from awfulclaw.scheduler import Schedule, load_schedules, save_schedules
 
+    tz = _user_timezone()
     schedules = load_schedules()
-    if any(s.name == "daily_briefing" for s in schedules):
+    existing = next((s for s in schedules if s.name == "daily_briefing"), None)
+
+    if existing is not None:
+        if existing.tz != tz:
+            existing.tz = tz
+            save_schedules(schedules)
         return
+
     cron = f"{briefing_time.minute} {briefing_time.hour} * * *"
-    s = Schedule.create(name="daily_briefing", cron=cron, prompt=BRIEFING_PROMPT)
+    s = Schedule.create(name="daily_briefing", cron=cron, prompt=BRIEFING_PROMPT, tz=tz)
     save_schedules(schedules + [s])

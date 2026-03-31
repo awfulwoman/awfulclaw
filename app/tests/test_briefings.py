@@ -32,6 +32,30 @@ def test_daily_briefing_created_with_correct_cron() -> None:
     assert daily[0].fire_at is None
 
 
+def test_daily_briefing_uses_user_timezone(tmp_path: Path) -> None:
+    (tmp_path / "memory").mkdir()
+    (tmp_path / "memory" / "USER.md").write_text("# User\nTimezone: Europe/Berlin\n")
+    ensure_daily_briefing(time(8, 0))
+    daily = [s for s in load_schedules() if s.name == "daily_briefing"]
+    assert daily[0].tz == "Europe/Berlin"
+
+
+def test_daily_briefing_updates_tz_when_user_travels(tmp_path: Path) -> None:
+    """If USER.md timezone changes (e.g. travel), ensure_daily_briefing updates the schedule."""
+    (tmp_path / "memory").mkdir()
+    (tmp_path / "memory" / "USER.md").write_text("# User\nTimezone: Europe/Berlin\n")
+    ensure_daily_briefing(time(8, 0))
+
+    # User travels to New York — USER.md updated
+    (tmp_path / "memory" / "USER.md").write_text("# User\nTimezone: America/New_York\n")
+    ensure_daily_briefing(time(8, 0))
+
+    daily = [s for s in load_schedules() if s.name == "daily_briefing"]
+    assert len(daily) == 1  # still only one
+    assert daily[0].tz == "America/New_York"
+    assert daily[0].cron == "0 8 * * *"  # cron unchanged
+
+
 def test_daily_briefing_custom_time() -> None:
     ensure_daily_briefing(time(7, 30))
     schedules = load_schedules()
