@@ -102,6 +102,12 @@ def reverse_geocode(lat: float, lon: float) -> str | None:
         resp.raise_for_status()
         data = resp.json()
         address = data.get("address", {})
+        suburb = (
+            address.get("suburb")
+            or address.get("neighbourhood")
+            or address.get("quarter")
+            or address.get("city_district", "")
+        )
         city = (
             address.get("city")
             or address.get("town")
@@ -109,7 +115,7 @@ def reverse_geocode(lat: float, lon: float) -> str | None:
             or address.get("hamlet", "")
         )
         country = address.get("country", "")
-        parts = [p for p in (city, country) if p]
+        parts = [p for p in (suburb, city, country) if p]
         return ", ".join(parts) if parts else None
     except Exception as exc:
         logger.warning("Nominatim reverse geocode failed: %s", exc)
