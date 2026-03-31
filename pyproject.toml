@@ -14,6 +14,7 @@ dependencies = [
     "httpx",
     "mcp>=1.26.0",
     "python-dotenv",
+    "timezonefinder",
 ]
 
 [project.optional-dependencies]
