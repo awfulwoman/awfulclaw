@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-import re as _re
 from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -70,7 +69,7 @@ def _find_person_by_phone(phone: str) -> tuple[str, str] | None:
 
 def _local_now(user_content: str) -> str:
     """Return current datetime string in the user's timezone if known, else UTC."""
-    m = _re.search(r"(?i)^Timezone:\s*(.+)$", user_content, _re.MULTILINE)
+    m = re.search(r"(?i)^Timezone:\s*(.+)$", user_content, re.MULTILINE)
     if m:
         tz_name = m.group(1).strip().split()[0]  # take first word, ignore "(Germany)" etc.
         if tz_name.lower() not in ("unknown", ""):

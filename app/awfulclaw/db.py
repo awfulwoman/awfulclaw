@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 
 DB_PATH = Path("memory/awfulclaw.db")
@@ -27,7 +28,6 @@ def read_fact(key: str) -> str:
 
 def write_fact(key: str, content: str) -> None:
     """Upsert a fact by key."""
-    from datetime import datetime, timezone
     ts = datetime.now(timezone.utc).isoformat()
     with get_db() as conn:
         conn.execute(
@@ -68,7 +68,6 @@ def read_person(name: str) -> str:
 
 def write_person(name: str, content: str) -> None:
     """Upsert a person record by name."""
-    from datetime import datetime, timezone
     ts = datetime.now(timezone.utc).isoformat()
     with get_db() as conn:
         conn.execute(

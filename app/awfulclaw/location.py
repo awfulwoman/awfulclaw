@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -147,8 +148,6 @@ def check_and_update_location(
     url: str, user: str = "charlie", device: str = "iphone"
 ) -> None:
     """Fetch current location from OwnTracks and update the location fact."""
-    from datetime import datetime, timezone
-
     from awfulclaw.db import write_fact
 
     position = fetch_owntracks_position(url, user, device)

@@ -7,6 +7,7 @@ import logging
 import os
 import re
 import signal
+import subprocess
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -33,6 +34,7 @@ _DEFAULT_HEARTBEAT = (
 _IDLE_SUPPRESS = {"nothing", "nothing.", "nothing needs attention", "nothing right now"}
 
 _SLASH_COMMANDS = "/schedules, /restart"
+_MAX_HISTORY = 40
 
 
 def handle_slash_command(body: str) -> str | None:
@@ -45,18 +47,16 @@ def handle_slash_command(body: str) -> str | None:
         schedules = scheduler.load_schedules()
         if not schedules:
             return "No schedules."
-        parts2: list[str] = []
+        lines: list[str] = []
         for s in schedules:
             when = s.fire_at.isoformat() if s.fire_at else s.cron
             preview = s.prompt[:60] + ("…" if len(s.prompt) > 60 else "")
-            parts2.append(f"**{s.name}** ({when}): {preview}")
-        return "\n".join(parts2)
+            lines.append(f"**{s.name}** ({when}): {preview}")
+        return "\n".join(lines)
 
     if cmd == "/restart":
-        import subprocess as _sp
-
         _RESTART_FLAG.touch()
-        _sp.Popen(["bash", str(Path("scripts/restart-service.sh").resolve())])
+        subprocess.Popen(["bash", str(Path("scripts/restart-service.sh").resolve())])
         return "Restarting…"
 
     return f"Unknown command: {cmd}\nAvailable: {_SLASH_COMMANDS}"
@@ -214,20 +214,22 @@ async def run(gateway: Gateway) -> None:
         gateway.send(gateway.primary_channel, phone, "Restarted successfully.")
         logger.info("Sent restart notification")
 
-    # Run startup briefing synchronously before entering the loop
-    try:
-        startup_prompt = briefings.get_startup_prompt()
-        startup_system = context.build_system_prompt(startup_prompt, skipped_mcp_servers=_skipped_mcp[0])
-        startup_reply = await ev_loop.run_in_executor(
-            None,
-            lambda: claude.chat([{"role": "user", "content": startup_prompt}], startup_system, None, None, _mcp_config[0]),
-        )
-        logger.info("Startup self-briefing completed")
-        if startup_reply:
-            _append_turn("user", startup_prompt)
-            _append_turn("assistant", startup_reply)
-    except Exception as exc:
-        logger.warning("Startup self-briefing failed: %s", exc)
+    async def _run_startup_briefing() -> None:
+        try:
+            startup_prompt = briefings.get_startup_prompt()
+            startup_system = context.build_system_prompt(startup_prompt, skipped_mcp_servers=_skipped_mcp[0])
+            startup_reply = await ev_loop.run_in_executor(
+                None,
+                lambda: claude.chat([{"role": "user", "content": startup_prompt}], startup_system, None, None, _mcp_config[0]),
+            )
+            logger.info("Startup self-briefing completed")
+            if startup_reply:
+                _append_turn("user", startup_prompt)
+                _append_turn("assistant", startup_reply)
+        except Exception as exc:
+            logger.warning("Startup self-briefing failed: %s", exc)
+
+    asyncio.create_task(_run_startup_briefing())
 
     async def _chat_async(
         messages: list[dict[str, str]],
@@ -265,8 +267,6 @@ async def run(gateway: Gateway) -> None:
 
     async def _handle_messages(messages: list) -> None:  # type: ignore[type-arg]
         """Process a batch of user messages sequentially, in order."""
-        _MAX_HISTORY = 40
-
         for msg in messages:
             recipient = gateway.primary_recipient_for(msg.channel)
 
