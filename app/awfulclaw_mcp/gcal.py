@@ -133,6 +133,42 @@ def gcal_create(
         return f"[gcal error: {exc}]"
 
 
+@mcp.tool()
+def gcal_update(
+    event_id: str,
+    title: str = "",
+    start: str = "",
+    end: str = "",
+    description: str = "",
+    calendar_id: str = "primary",
+) -> str:
+    """Update an existing Google Calendar event. Only provided fields are changed.
+
+    Args:
+        event_id: ID of the event to update
+        title: New title (omit to keep existing)
+        start: New ISO 8601 start datetime (omit to keep existing)
+        end: New ISO 8601 end datetime (omit to keep existing)
+        description: New description (omit to keep existing)
+        calendar_id: Calendar containing the event (default: "primary")
+    """
+    try:
+        service = _get_service()
+        event = service.events().get(calendarId=calendar_id, eventId=event_id).execute()
+        if title:
+            event["summary"] = title
+        if start:
+            event["start"] = {"dateTime": start}
+        if end:
+            event["end"] = {"dateTime": end}
+        if description:
+            event["description"] = description
+        service.events().update(calendarId=calendar_id, eventId=event_id, body=event).execute()
+        return f"[Updated event: id={event_id}]"
+    except Exception as exc:
+        return f"[gcal error: {exc}]"
+
+
 if __name__ == "__main__":
     if "--auth" in sys.argv:
         _run_auth()

@@ -99,3 +99,58 @@ def test_gcal_create_handles_error() -> None:
         result = gcal_create(title="X", start="2026-04-01T10:00:00Z", end="2026-04-01T11:00:00Z")
     assert "[gcal error:" in result
     assert "API down" in result
+
+
+def _make_update_service(existing_event: dict) -> MagicMock:  # type: ignore[type-arg]
+    """Build a mock service for update — get() returns existing_event."""
+    service = MagicMock()
+    service.events.return_value.get.return_value.execute.return_value = dict(existing_event)
+    service.events.return_value.update.return_value.execute.return_value = existing_event
+    return service
+
+
+def test_gcal_update_title() -> None:
+    from awfulclaw_mcp.gcal import gcal_update
+
+    existing = {
+        "id": "evt003",
+        "summary": "Old title",
+        "start": {"dateTime": "2026-04-01T10:00:00Z"},
+        "end": {"dateTime": "2026-04-01T11:00:00Z"},
+    }
+    service = _make_update_service(existing)
+
+    with patch("awfulclaw_mcp.gcal._get_service", return_value=service):
+        result = gcal_update(event_id="evt003", title="New title")
+
+    assert "Updated" in result
+    assert "evt003" in result
+    call_kwargs = service.events.return_value.update.call_args.kwargs
+    assert call_kwargs["body"]["summary"] == "New title"
+
+
+def test_gcal_update_skips_empty_fields() -> None:
+    from awfulclaw_mcp.gcal import gcal_update
+
+    existing = {
+        "id": "evt004",
+        "summary": "Keep me",
+        "start": {"dateTime": "2026-04-01T10:00:00Z"},
+        "end": {"dateTime": "2026-04-01T11:00:00Z"},
+    }
+    service = _make_update_service(existing)
+
+    with patch("awfulclaw_mcp.gcal._get_service", return_value=service):
+        gcal_update(event_id="evt004", title="")  # empty title — should not overwrite
+
+    call_kwargs = service.events.return_value.update.call_args.kwargs
+    assert call_kwargs["body"]["summary"] == "Keep me"
+
+
+def test_gcal_update_handles_error() -> None:
+    from awfulclaw_mcp.gcal import gcal_update
+
+    with patch("awfulclaw_mcp.gcal._get_service", side_effect=RuntimeError("not found")):
+        result = gcal_update(event_id="bad_id", title="X")
+    assert "[gcal error:" in result
+    assert "not found" in result
