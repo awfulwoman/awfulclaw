@@ -66,6 +66,41 @@ def _run_auth() -> None:
     print(f"Credentials saved to {token_path}")
 
 
+@mcp.tool()
+def gcal_list(start: str, end: str, calendar_id: str = "primary") -> str:
+    """List Google Calendar events between two ISO 8601 datetimes.
+
+    Args:
+        start: ISO 8601 start datetime (e.g. "2026-04-01T00:00:00Z")
+        end: ISO 8601 end datetime (e.g. "2026-04-02T00:00:00Z")
+        calendar_id: Calendar to query (default: "primary")
+    """
+    try:
+        service = _get_service()
+        result = (
+            service.events()
+            .list(
+                calendarId=calendar_id,
+                timeMin=start,
+                timeMax=end,
+                singleEvents=True,
+                orderBy="startTime",
+            )
+            .execute()
+        )
+        events = result.get("items", [])
+        if not events:
+            return "[No events]"
+        lines: list[str] = []
+        for e in events:
+            start_dt = e.get("start", {}).get("dateTime", e.get("start", {}).get("date", ""))
+            end_dt = e.get("end", {}).get("dateTime", e.get("end", {}).get("date", ""))
+            lines.append(f"id={e['id']} | {e.get('summary', '(no title)')} | {start_dt} → {end_dt}")
+        return "\n".join(lines)
+    except Exception as exc:
+        return f"[gcal error: {exc}]"
+
+
 if __name__ == "__main__":
     if "--auth" in sys.argv:
         _run_auth()
