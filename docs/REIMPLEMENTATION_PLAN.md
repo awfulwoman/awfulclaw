@@ -11,6 +11,20 @@ This document describes a clean-room reimplementation of awfulclaw in Python, in
 - **Relevance-aware context** — ranked context assembly, semantic search via `sqlite-vec`
 - **Composable event pipeline** — middleware stack replaces baked-in interceptors; new behaviours added without touching core
 
+## File Naming Convention
+
+All modules use a `{category}_{name}.py` prefix so the role of every file is obvious at a glance. No more guessing whether `telegram.py` is a connector, a utility, or a model.
+
+| Prefix | Category | Examples |
+|--------|----------|---------|
+| `connector_` | Transport adapters (Connector ABC impls) | `connector_telegram.py`, `connector_tui.py` |
+| `middleware_` | Pipeline middleware | `middleware_rate_limit.py`, `middleware_location.py`, `middleware_slash.py` |
+| `mcp_` | MCP server implementations | `mcp_memory.py`, `mcp_schedule.py`, `mcp_imap.py`, `mcp_gcal.py` |
+| `handler_` | Event handlers (schedule, heartbeat) | `handler_schedule.py`, `handler_heartbeat.py` |
+| (no prefix) | Core infrastructure, one file per concept | `agent.py`, `bus.py`, `store.py`, `pipeline.py`, `scheduler.py`, `context.py`, `config.py`, `main.py` |
+
+This keeps the flat package structure (no deep subdirectories) while making every file's purpose immediately clear.
+
 ## Design Principles
 
 1. **Events flow through a pipeline, not a monolith.** Inbound messages enter a middleware chain. Each middleware can transform, intercept, or pass through. New behaviours are new middleware.
@@ -195,7 +209,7 @@ async def search_facts(query: str, limit: int = 10) -> list[Fact]:
 
 ---
 
-### Transport / Connector (`transport/`)
+### Transport / Connector (`connector_telegram.py`, `connector_tui.py`)
 
 **Responsibility:** Adapter between a messaging platform and the event bus.
 
@@ -270,7 +284,7 @@ class ScheduleEvent:
 
 ---
 
-### Message Pipeline (`pipeline.py`)
+### Message Pipeline (`pipeline.py`, `middleware_*.py`)
 
 **Responsibility:** Process inbound events through a middleware stack before they reach the agent.
 
@@ -282,14 +296,14 @@ class Middleware(Protocol):
 ```
 
 **Built-in middleware (in order):**
-1. `RateLimitMiddleware` — per-sender rate limiting
-2. `SecretCaptureMiddleware` — watches for pending secret keys; intercepts the next message as the value
-3. `LocationMiddleware` — detects `[Location: lat, lon]` format; writes to store; stops chain
-4. `SlashCommandMiddleware` — handles `/schedules`, `/restart`; stops chain
-5. `TypingMiddleware` — sends typing indicator before passing through
-6. `AgentMiddleware` — invokes the agent; attaches reply to event
+1. `middleware_rate_limit.py` — per-sender rate limiting
+2. `middleware_secret.py` — watches for pending secret keys; intercepts the next message as the value
+3. `middleware_location.py` — detects `[Location: lat, lon]` format; writes to store; stops chain
+4. `middleware_slash.py` — handles `/schedules`, `/restart`; stops chain
+5. `middleware_typing.py` — sends typing indicator before passing through
+6. `middleware_agent.py` — invokes the agent; attaches reply to event
 
-New behaviours (e.g. a `/remind` command) are new middleware — `loop.py` is never touched.
+New behaviours (e.g. a `/remind` command) are new `middleware_*.py` files — `pipeline.py` and `main.py` are never touched.
 
 **Differs from original:** Interceptors extracted from `loop.py`. No shared mutable closure state between interceptors.
 
@@ -402,7 +416,7 @@ class Scheduler:
                 await asyncio.sleep(60)
 ```
 
-Schedule events are handled by `ScheduleHandler` (not in the message pipeline) which invokes `agent.invoke(schedule.prompt)` and optionally posts the reply as an `OutboundEvent`.
+Schedule events are handled by `handler_schedule.py` (not in the message pipeline) which invokes `agent.invoke(schedule.prompt)` and optionally posts the reply as an `OutboundEvent`. Heartbeat logic lives in `handler_heartbeat.py`.
 
 **Differs from original:** Scheduler is event-driven, not polled. No coupling to the idle tick. Schedule storage in SQLite (consistent with everything else).
 
@@ -476,10 +490,10 @@ These are read at runtime but never written by the agent (the agent uses `set_fa
 - Smoke test: single-turn invoke from a script
 
 ### Phase 2: Connectors and bus
-- `Bus` with typed events
-- `TelegramConnector` (async, offset in store.kv)
-- `TUIConnector` (Textual-based, for local dev without Telegram)
-- Basic `Pipeline` with `AgentMiddleware` only
+- `bus.py` with typed events
+- `connector_telegram.py` (async, offset in store.kv)
+- `connector_tui.py` (Textual-based, for local dev without Telegram)
+- Basic `pipeline.py` with `middleware_agent.py` only
 - End-to-end: receive message → Claude reply → send (works with both connectors)
 
 ### Phase 3: Context and memory
@@ -488,16 +502,16 @@ These are read at runtime but never written by the agent (the agent uses `set_fa
 - Full system prompt with SOUL, USER, facts, people, tasks, schedules
 
 ### Phase 4: Middleware
-- `SecretCaptureMiddleware`
-- `LocationMiddleware`
-- `SlashCommandMiddleware`
-- `RateLimitMiddleware`
-- `TypingMiddleware`
+- `middleware_secret.py`
+- `middleware_location.py`
+- `middleware_slash.py`
+- `middleware_rate_limit.py`
+- `middleware_typing.py`
 
 ### Phase 5: Scheduler
 - `schedules` table + cron evaluation
-- `Scheduler` async task
-- `ScheduleHandler`
+- `scheduler.py` async task
+- `handler_schedule.py`, `handler_heartbeat.py`
 - Daily briefing
 
 ### Phase 6: Idle and heartbeat
@@ -523,11 +537,11 @@ These are read at runtime but never written by the agent (the agent uses `set_fa
 
 | Component | Verdict | Notes |
 |-----------|---------|-------|
-| `connector.py` Connector ABC | Reuse, adapt | Make async |
-| `telegram.py` | Reuse, adapt | Replace `requests` with `httpx.AsyncClient` |
+| `connector.py` Connector ABC | Reuse, adapt | Make async; rename to `connector.py` (base) |
+| `telegram.py` | Reuse, adapt | Rename to `connector_telegram.py`; replace `requests` with `httpx.AsyncClient` |
 | `scheduler.py` cron logic | Reuse | Extract `get_due` / `should_wake` |
 | `context.py` prompt sections | Reuse text | Replace assembly logic |
-| MCP server implementations | Reuse as-is | They're standalone; no changes needed |
+| MCP server implementations | Reuse, rename | Rename to `mcp_memory.py`, `mcp_schedule.py`, `mcp_imap.py`, etc. |
 | `config/mcp_servers.json` | Reuse as-is | Format unchanged |
 | `memory/SOUL.md`, `USER.md` | Reuse as-is | |
 | `env_utils.py` | Reuse as-is | |
