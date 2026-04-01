@@ -47,25 +47,19 @@ Soft policy and hard constraint should agree. If they conflict, the hard constra
 
 The agent should have full visibility of its own working state and architecture. An agent that understands why it can't do something is more cooperative and more useful than one that simply hits a wall. Self-knowledge is desirable. Self-modification is not uniformly desirable — it depends on what is being modified.
 
-Files and configuration are graded by sensitivity:
+Files and configuration are graded by what the agent can do with them:
 
-| Sensitivity | Examples | Agent can read? | Agent can write? |
-|-------------|----------|----------------|-----------------|
-| **Protected** | `middleware/policy.py`, credential mechanism | Yes | No — ever |
-| **Propose-only** | `PERSONALITY.md`, `PROTOCOLS.md`, `mcp_servers.json` | Yes | Via PR + human approval only |
-| **Working state** | facts, people, schedules, `USER.md` | Yes | Yes |
-| **Blind write** | `.env` credential values | No | Yes (write-only, value never readable) |
+| Category | Examples | Agent can read? | Agent can write? | Enforced by |
+|----------|----------|----------------|-----------------|-------------|
+| **Code** | all `.py` files, `mcp_servers.json` | Yes | No | Container read-only filesystem |
+| **Propose-only config** | `PERSONALITY.md`, `PROTOCOLS.md` | Yes | Via PR + human approval only | YAML frontmatter + agent behaviour |
+| **Working state** | facts, people, schedules, `USER.md` | Yes | Yes | Memory bind mount |
+| **Blind write** | `.env` credential values | No | Yes (write-only, value never readable) | Never mounted into container |
 
-This grading is made explicit in the files themselves — a header block in each file states its sensitivity level and the reason. This serves two purposes: it is legible to developers reading the code, and legible to the agent reading its own files, so it can explain constraints to the user rather than simply failing.
+Code files carry no sensitivity headers. The container's read-only root filesystem makes them physically immutable at runtime — enforcement does not depend on the agent's cooperation or on conventions in docstrings. A header saying "do not modify" on a file the agent cannot write to is redundant.
 
-**Python files** use a module-level docstring:
-```python
-# SENSITIVITY: protected
-# Defines hard policy constraints. Not modifiable by the agent under any circumstances.
-# Changes require explicit human review of security implications.
-```
+`PERSONALITY.md` and `PROTOCOLS.md` are different: they live in the writable memory bind mount so the agent can propose changes. The constraint here is behavioural, not physical, so it is communicated explicitly via YAML frontmatter:
 
-**Markdown files** use YAML frontmatter:
 ```markdown
 ---
 sensitivity: propose-only
@@ -73,6 +67,8 @@ modification: pull-request, human approval required
 reason: Defines agent identity and behaviour. Unilateral modification would allow the agent to rewrite its own values and constraints.
 ---
 ```
+
+The README documents what immutability means and why, so the agent can explain constraints to the user rather than simply failing.
 
 ### PERSONALITY.md and PROTOCOLS.md
 
@@ -95,7 +91,7 @@ Every proposed write to `personality_log` passes through a **governance layer** 
 - **Reject** — discard the entry, optionally notify the agent why
 - **Escalate** — notify the user, propose a PR to update `PERSONALITY.md`
 
-The invariants are hardcoded in `handlers/governance.py` — a protected file, not readable or modifiable by the agent. They are not a runtime configuration; they are part of the codebase. Examples of invariants:
+The invariants are hardcoded in `handlers/governance.py` — part of the codebase, immutable at runtime via the read-only container filesystem. They are not a runtime configuration. Examples of invariants:
 
 - Reject any entry that references an external URL or filesystem path (prompt injection signal)
 - Escalate any entry that represents a radical shift in core values or tone
@@ -109,7 +105,7 @@ The agent *writing* code and the agent *running* code are different things. The 
 
 OpenClaw's community has explored the alternative — agents that crystallize new tool code automatically when patterns repeat (openclaw-foundry, the self-improving-agent skill). This is powerful but removes the human from the loop entirely. Our model is deliberately more conservative: the agent can participate in its own development but cannot ship itself.
 
-The `protected` layer (hard policy constraints, the credential mechanism) is outside even this path. It cannot be proposed for modification by the agent. Changes to it require a human acting entirely outside the agent's awareness.
+Hard policy constraints and the governance layer are outside this path entirely. The read-only container filesystem means no running process — including the agent — can modify them. Changes require a human editing the source, opening a PR, and triggering a CI rebuild.
 
 ## The agent proposes; the user approves
 

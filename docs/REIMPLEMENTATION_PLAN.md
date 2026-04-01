@@ -15,7 +15,7 @@ This document describes a clean-room reimplementation of awfulclaw in Python, in
 
 The package uses subdirectories to group files by role. Each directory is a Python package with an `__init__.py` that exports its public interface.
 
-Every file carries a **sensitivity header** — a module docstring (`.py`) or YAML frontmatter (`.md`) — stating whether the file is `protected`, `propose-only`, or freely writable. This makes the grading legible to developers and to the agent itself. See `PHILOSOPHY.md` for the full model.
+Code files carry no sensitivity headers — the container's read-only root filesystem makes them physically immutable at runtime, so headers would be redundant. `PERSONALITY.md` and `PROTOCOLS.md` live in the writable memory bind mount and carry YAML frontmatter marking them `propose-only`; the constraint there is behavioural, not physical, so it needs to be communicated explicitly. See `PHILOSOPHY.md` for the full model.
 
 ```
 agent/
@@ -622,7 +622,7 @@ On first run or after a database reset, the agent can rebuild its working knowle
 - Every service runs as a **non-root user**. Docker's default of running as root is not acceptable. The core agent and every MCP server container specifies a named non-root user (`agent`, UID 1000) via the `USER` Dockerfile directive.
 - **All Linux capabilities dropped.** `cap_drop: ALL` in compose.yaml. No capabilities are added back — this app needs none.
 - **`no-new-privileges`** — processes inside containers cannot escalate privileges even if a vulnerability exists.
-- **Read-only root filesystem** on the core agent container. Everything writable is an explicit volume mount. This gives the sensitivity grading hard technical enforcement: `handlers/governance.py` on a read-only filesystem is physically immutable, not just conventionally protected.
+- **Read-only root filesystem** on the core agent container. Everything writable is an explicit bind mount. Code immutability is physically enforced — `handlers/governance.py` cannot be modified by any running process, including the agent itself.
 
 ### Service layout
 
