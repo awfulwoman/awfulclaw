@@ -628,6 +628,18 @@ On first run or after a database reset, the agent can rebuild its working knowle
 
 Each MCP server runs as its own container. Overhead is low; isolation is high.
 
+All mutable state uses **bind mounts** (explicit host paths) rather than named volumes. Bind mounts are transparent — the host directory is visible, easily backed up with any standard tool (rsync, Time Machine, restic), and the path is unambiguous.
+
+**File permissions:** The container runs as UID/GID 1000. The host directories must be owned by the same UID, or the container will fail to write. Create them explicitly before first run:
+
+```bash
+# Run once on the host before starting containers
+mkdir -p ${MEMORY_PATH} ${CLAUDE_AUTH_PATH}
+chown -R 1000:1000 ${MEMORY_PATH} ${CLAUDE_AUTH_PATH}
+```
+
+If the host user's UID differs from 1000, set `user: "${UID}:${GID}"` in compose and pass those values via `.env` or shell export. Avoid running as root — this negates the security benefit.
+
 ```yaml
 # compose.yaml (outline)
 services:
@@ -639,10 +651,10 @@ services:
     security_opt: [no-new-privileges:true]
     tmpfs: [/tmp]
     volumes:
-      - memory:/app/memory          # mutable working state
-      - ./config:/app/config:ro     # mcp_servers.json etc. (read-only)
-      - claude-auth:/root/.claude   # OAuth token, refreshed automatically
-    env_file: .env                  # injected at runtime, never in image
+      - ${MEMORY_PATH}:/app/memory          # bind mount — back up this directory
+      - ./config:/app/config:ro             # mcp_servers.json etc. (read-only)
+      - ${CLAUDE_AUTH_PATH}:/root/.claude   # OAuth token — bind mount, writable for refresh
+    env_file: .env                          # injected at runtime, never in image
     restart: unless-stopped
 
   mcp-memory:
@@ -652,7 +664,7 @@ services:
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     volumes:
-      - memory:/app/memory
+      - ${MEMORY_PATH}:/app/memory          # same host path, same UID
 
   mcp-imap:
     image: ghcr.io/owner/mcp-imap:latest
@@ -665,20 +677,13 @@ services:
 
   # mcp-gcal, mcp-github, mcp-homeassistant etc. follow the same pattern
   # Third-party MCP servers are added here as new services via PR
+```
 
-volumes:
-  memory:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${MEMORY_PATH}   # host path, outside the repo
-  claude-auth:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${CLAUDE_AUTH_PATH}  # ~/.claude on the host; never in repo
+No `volumes:` top-level block — bind mounts need none. `MEMORY_PATH` and `CLAUDE_AUTH_PATH` are set in `.env` (gitignored), e.g.:
+
+```
+MEMORY_PATH=/home/charlie/awfulclaw-memory
+CLAUDE_AUTH_PATH=/home/charlie/.claude
 ```
 
 ### What lives in the repo vs. outside it
@@ -688,28 +693,136 @@ The repo is public. Nothing personal or secret ever touches it.
 | Location | Contents |
 |----------|----------|
 | **Repo** | Application code, `compose.yaml`, `config/mcp_servers.json` template, `Dockerfile`s, GitHub Actions workflows |
-| **Host volume (`MEMORY_PATH`)** | `memory/` — SQLite DB, `PERSONALITY.md`, `PROTOCOLS.md`, `USER.md`, `HEARTBEAT.md` |
-| **`.env` file** (gitignored) | Runtime secrets — Telegram token, IMAP credentials, API keys |
-| **`claude-auth` volume** (`~/.claude/`) | OAuth token for Claude subscription — never in repo, writable for token refresh |
-| **GitHub Actions secrets** | Deploy credentials — SSH key, registry token |
+| **`MEMORY_PATH` (bind mount)** | `memory/` — SQLite DB, `PERSONALITY.md`, `PROTOCOLS.md`, `USER.md`, `HEARTBEAT.md`. Back this up. |
+| **`.env` file** (gitignored) | Runtime secrets — Telegram token, IMAP credentials, API keys. Also sets `MEMORY_PATH`, `CLAUDE_AUTH_PATH`. |
+| **`CLAUDE_AUTH_PATH` (bind mount)** | `~/.claude/` — OAuth token for Claude subscription. Writable for token refresh; never in repo. |
+| **GitHub Actions secrets** | `GHCR_TOKEN` for pushing images — no host credentials needed |
 
 `PERSONALITY.md`, `PROTOCOLS.md`, and `USER.md` are personal configuration. They live in the memory volume on the host, not in the repo.
 
 ### CI/CD and graceful redeploy
 
+Deploys are handled by **Watchtower**, which polls GHCR for image digest changes and restarts containers automatically. No inbound ports, no SSH, no webhook listener — GitHub Actions just builds and pushes; the host takes care of the rest.
+
 ```
 PR merged to main
   → GitHub Actions builds images, pushes to GHCR
-  → Actions SSHs to host
-  → host runs: docker compose pull && docker compose up -d
-  → Compose sends SIGTERM to running containers
+  → Watchtower detects digest change on next poll
+  → Watchtower pulls new image, sends SIGTERM to running container
   → agent: finishes in-flight message, writes pending state to DB, exits
-  → new containers start, resume from volume state (Telegram offset, DB intact)
+  → new container starts, resumes from bind-mount state (Telegram offset, DB intact)
+```
+
+Watchtower runs as part of the same compose project:
+
+```yaml
+  watchtower:
+    image: containrrr/watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_POLL_INTERVAL=300        # check every 5 minutes
+      - WATCHTOWER_CLEANUP=true             # remove old images after update
+      - WATCHTOWER_SCOPE=awfulclaw          # only watch containers in this project
+    restart: unless-stopped
+```
+
+Label containers that Watchtower should manage:
+
+```yaml
+  agent:
+    ...
+    labels:
+      - com.centurylinklabs.watchtower.scope=awfulclaw
 ```
 
 The agent handles `SIGTERM` gracefully — no new Claude invocations are started after the signal, the current one completes, and the process exits cleanly. `stop_grace_period: 30s` in compose.yaml gives it a window. No messages are dropped; the Telegram offset in the `kv` table ensures the new container resumes exactly where the old one left off.
 
-Adding a new MCP server means adding a service to `compose.yaml` via PR. The agent proposes the diff; a human approves; CI redeploys. The agent never runs `docker` commands directly.
+Adding a new MCP server means adding a service to `compose.yaml` via PR. The agent proposes the diff; a human approves; CI pushes the new image; Watchtower deploys it. The agent never runs `docker` commands directly.
+
+### Multi-architecture support
+
+The agent runs on `linux/amd64` (standard Intel/AMD server) and `linux/arm64` (Raspberry Pi 4/5, Apple Silicon). Older 32-bit Pi models are not supported — Node.js (required by the `claude` CLI) dropped `linux/arm/v7` support.
+
+GitHub Actions builds a multi-arch manifest with a single tag. Watchtower and Docker pull the correct layer automatically:
+
+```yaml
+# .github/workflows/build.yaml (relevant step)
+- name: Build and push
+  uses: docker/build-push-action@v5
+  with:
+    platforms: linux/amd64,linux/arm64
+    push: true
+    tags: ghcr.io/owner/agent:latest
+```
+
+QEMU emulation (`docker/setup-qemu-action`) handles cross-compilation in Actions without needing native ARM runners. Build times are longer but images are identical in behaviour.
+
+**Raspberry Pi notes:**
+- Use a 64-bit OS (Raspberry Pi OS Lite 64-bit or Ubuntu Server arm64)
+- Ensure `CLAUDE_AUTH_PATH` is pre-populated on the Pi before first run — the OAuth flow must be completed on a machine with a browser, then the `~/.claude/` directory copied across
+- The Pi is a good always-on host: low power (~5W), no sleep, no automatic reboots
+
+### Shared host hardening
+
+When running alongside other containers on the same host, two extra measures apply.
+
+**Docker socket proxy.** Watchtower needs the Docker socket, which grants effective root over the entire host. On a shared host, replace the direct socket mount with [`tecnativa/docker-socket-proxy`](https://github.com/Tecnativa/docker-socket-proxy), which exposes only the API endpoints Watchtower actually requires:
+
+```yaml
+  socket-proxy:
+    image: tecnativa/docker-socket-proxy
+    environment:
+      - CONTAINERS=1   # allow container list/inspect
+      - POST=1         # allow restart/pull
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - socket-proxy
+    restart: unless-stopped
+
+  watchtower:
+    image: containrrr/watchtower
+    environment:
+      - DOCKER_HOST=tcp://socket-proxy:2375
+      - WATCHTOWER_POLL_INTERVAL=300
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_SCOPE=awfulclaw
+    networks:
+      - socket-proxy
+    restart: unless-stopped
+```
+
+Watchtower never touches the raw socket — the proxy enforces what it can and cannot do.
+
+**Network isolation.** Define an explicit network so awfulclaw containers cannot reach neighbours on the default bridge:
+
+```yaml
+networks:
+  awfulclaw:
+    driver: bridge
+
+services:
+  agent:
+    networks: [awfulclaw]
+  mcp-memory:
+    networks: [awfulclaw]
+  # etc.
+```
+
+**Resource limits.** Prevent a stuck agent from starving other services:
+
+```yaml
+  agent:
+    mem_limit: 512m
+    cpus: "1.0"
+```
+
+**`.env` permissions.** On a shared host, tighten the env file so other users cannot read secrets:
+
+```bash
+chmod 600 .env
+```
 
 ## What to Reuse
 
