@@ -550,9 +550,10 @@ On first run or after a database reset, the agent can rebuild its working knowle
 | `.telegram_offset` file | `kv` table |
 
 **What stays as markdown files** (human-edited config, not program state):
-- `memory/SOUL.md` — personality
-- `memory/USER.md` — user profile
-- `memory/HEARTBEAT.md` — idle nudge prompt
+- `memory/SOUL.md` — identity, personality, tone, values (*who the agent is*; `protected`)
+- `memory/AGENTS.md` — operating rules, priorities, procedures (*how the agent behaves*; `propose-only`)
+- `memory/USER.md` — user profile (`propose-only`)
+- `memory/HEARTBEAT.md` — idle nudge prompt (`propose-only`)
 
 ---
 

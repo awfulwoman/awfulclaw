@@ -74,15 +74,24 @@ reason: Defines agent identity and behaviour. Unilateral modification would allo
 ---
 ```
 
-### SOUL.md
+### SOUL.md and AGENTS.md
 
-`SOUL.md` is the agent's identity — its personality, values, and behavioural instructions. It sits at `propose-only` sensitivity. The agent reads it on every turn and can reason about it, but cannot modify it directly.
+OpenClaw — the most actively developed agent harness of this type — uses the same `SOUL.md` name and makes a useful distinction between two files:
 
-When the agent identifies a genuine gap or problem in its own instructions — a constraint that's causing unnecessary friction, a missing capability description — it can open a PR proposing a change, with an explanation of the reasoning. A human reviews and approves. This keeps the agent's identity stable while allowing it to participate in its own evolution.
+- **`SOUL.md`** — identity, personality, tone, values. *Who the agent is.*
+- **`AGENTS.md`** — operating rules, priorities, procedures. *How the agent behaves.*
+
+This split is worth adopting. It keeps stable identity separate from procedural rules that may legitimately evolve. In practice, `SOUL.md` should almost never change; `AGENTS.md` is where refinements to operating behaviour belong.
+
+Both sit at `propose-only` sensitivity. The agent reads them on every turn and can reason about them, but cannot modify either directly. When the agent identifies a gap — a constraint causing unnecessary friction, a missing procedure — it opens a PR with an explanation. A human reviews and approves.
+
+**Why this matters:** In OpenClaw's default configuration, agents *can* modify `SOUL.md` at runtime. The security community considers this the primary attack surface — a compromised `SOUL.md` means a permanently hijacked agent. Protection is left to the user (file permissions, third-party tooling). File integrity protection is an open feature request in OpenClaw's core (issue #19640). We treat this as a first-class design constraint, not an afterthought.
 
 ### Code and self-development
 
 The agent *writing* code and the agent *running* code are different things. The agent may identify capability gaps, write new tools or middleware, add tests, and propose a pull request. A human reviews and merges. The file watcher picks up the change and restarts. The agent never becomes the new code unilaterally — a human always stands in the merge path.
+
+OpenClaw's community has explored the alternative — agents that crystallize new tool code automatically when patterns repeat (openclaw-foundry, the self-improving-agent skill). This is powerful but removes the human from the loop entirely. Our model is deliberately more conservative: the agent can participate in its own development but cannot ship itself.
 
 The `protected` layer (hard policy constraints, the credential mechanism) is outside even this path. It cannot be proposed for modification by the agent. Changes to it require a human acting entirely outside the agent's awareness.
 
