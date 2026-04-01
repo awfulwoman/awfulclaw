@@ -620,6 +620,94 @@ On first run or after a database reset, the agent can rebuild its working knowle
 
 ---
 
+## Containerisation
+
+### Principles
+
+- Every service runs as a **non-root user**. Docker's default of running as root is not acceptable. The core agent and every MCP server container specifies a named non-root user (`agent`, UID 1000) via the `USER` Dockerfile directive.
+- **All Linux capabilities dropped.** `cap_drop: ALL` in compose.yaml. No capabilities are added back — this app needs none.
+- **`no-new-privileges`** — processes inside containers cannot escalate privileges even if a vulnerability exists.
+- **Read-only root filesystem** on the core agent container. Everything writable is an explicit volume mount. This gives the sensitivity grading hard technical enforcement: `handlers/governance.py` on a read-only filesystem is physically immutable, not just conventionally protected.
+
+### Service layout
+
+Each MCP server runs as its own container. Overhead is low; isolation is high.
+
+```yaml
+# compose.yaml (outline)
+services:
+  agent:
+    image: ghcr.io/owner/agent:latest
+    user: "1000:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: [/tmp]
+    volumes:
+      - memory:/app/memory          # mutable working state
+      - ./config:/app/config:ro     # mcp_servers.json etc. (read-only)
+    env_file: .env                  # injected at runtime, never in image
+    restart: unless-stopped
+
+  mcp-memory:
+    image: ghcr.io/owner/mcp-memory:latest
+    user: "1000:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    volumes:
+      - memory:/app/memory
+
+  mcp-imap:
+    image: ghcr.io/owner/mcp-imap:latest
+    user: "1000:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    env_file: .env
+    profiles: [imap]   # only started if IMAP is configured
+
+  # mcp-gcal, mcp-github, mcp-homeassistant etc. follow the same pattern
+  # Third-party MCP servers are added here as new services via PR
+
+volumes:
+  memory:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${MEMORY_PATH}   # host path, outside the repo
+```
+
+### What lives in the repo vs. outside it
+
+The repo is public. Nothing personal or secret ever touches it.
+
+| Location | Contents |
+|----------|----------|
+| **Repo** | Application code, `compose.yaml`, `config/mcp_servers.json` template, `Dockerfile`s, GitHub Actions workflows |
+| **Host volume (`MEMORY_PATH`)** | `memory/` — SQLite DB, `PERSONALITY.md`, `PROTOCOLS.md`, `USER.md`, `HEARTBEAT.md` |
+| **`.env` file** (gitignored) | Runtime secrets — Telegram token, IMAP credentials, API keys |
+| **GitHub Actions secrets** | Deploy credentials — SSH key, registry token |
+
+`PERSONALITY.md`, `PROTOCOLS.md`, and `USER.md` are personal configuration. They live in the memory volume on the host, not in the repo.
+
+### CI/CD and graceful redeploy
+
+```
+PR merged to main
+  → GitHub Actions builds images, pushes to GHCR
+  → Actions SSHs to host
+  → host runs: docker compose pull && docker compose up -d
+  → Compose sends SIGTERM to running containers
+  → agent: finishes in-flight message, writes pending state to DB, exits
+  → new containers start, resume from volume state (Telegram offset, DB intact)
+```
+
+The agent handles `SIGTERM` gracefully — no new Claude invocations are started after the signal, the current one completes, and the process exits cleanly. `stop_grace_period: 30s` in compose.yaml gives it a window. No messages are dropped; the Telegram offset in the `kv` table ensures the new container resumes exactly where the old one left off.
+
+Adding a new MCP server means adding a service to `compose.yaml` via PR. The agent proposes the diff; a human approves; CI redeploys. The agent never runs `docker` commands directly.
+
 ## What to Reuse
 
 | Component | Verdict | Notes |

@@ -117,6 +117,17 @@ The agent can identify capability gaps and suggest solutions — including new M
 
 This applies especially to third-party MCP servers. The agent may identify a suitable server (from a known registry or by searching), explain what it does and why it's needed, and request approval. Only after confirmation does it install and register the server. This keeps the user in control of what code runs on their machine.
 
+## Containers enforce what code merely requests
+
+Containerisation is not just a deployment convenience — it is a security layer that gives hard technical backing to constraints that would otherwise be conventions. Key principles:
+
+- **No root.** Every container runs as a named non-root user. Docker's default of running as root is not acceptable for an autonomous agent.
+- **Minimal capabilities.** All Linux capabilities are dropped at the compose level. None are added back.
+- **Read-only root filesystem.** The core agent container's filesystem is read-only except for explicit volume mounts. This means `handlers/governance.py` and the policy middleware are physically immutable at runtime — not just instructed to be.
+- **Secrets never in the image.** Credentials are injected at runtime via environment variables. The repo is public; nothing personal or secret ever touches it.
+
+Adding a new MCP server means a new service in `compose.yaml`, proposed via PR and approved by a human. The agent proposes; the pipeline deploys. The agent never runs `docker` commands directly.
+
 ## The agent earns trust through transparency
 
 The agent should never take consequential actions silently. Sending a message, creating a calendar event, modifying a file — these should be surfaced to the user, not assumed. When in doubt, draft rather than send. Propose rather than act. Ask rather than guess.
