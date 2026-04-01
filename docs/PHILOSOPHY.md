@@ -25,7 +25,7 @@ SQLite is acceptable for transient working state precisely because it is *not* l
 
 The agent builds up knowledge about preferences and habits passively — by observing patterns in conversation, noticing corrections, and consolidating what it learns into facts and user profile entries. No explicit teaching interface is required.
 
-The quality of this learning depends on *policy*: the instructions in `CHARACTER.md` that tell the agent when and what to capture. Good policy means capturing signal (recurring preferences, important context) without over-noting noise. This is a tuning problem, not a mechanism problem — the mechanism (writing facts to SQLite, flushing to Obsidian daily) is sufficient.
+The quality of this learning depends on *policy*: the instructions in `PERSONALITY.md` that tell the agent when and what to capture. Good policy means capturing signal (recurring preferences, important context) without over-noting noise. This is a tuning problem, not a mechanism problem — the mechanism (writing facts to SQLite, flushing to Obsidian daily) is sufficient.
 
 ## Policy has layers; absolute constraints belong at the capability boundary
 
@@ -33,15 +33,15 @@ Agent behaviour can be constrained at different levels, with different guarantee
 
 | Layer | Mechanism | Strength |
 |-------|-----------|---------|
-| **CHARACTER.md** | Natural language instruction | Soft — Claude is told what not to do |
+| **PERSONALITY.md** | Natural language instruction | Soft — Claude is told what not to do |
 | **Middleware** | Code that intercepts tool calls | Hard — enforced regardless of Claude's reasoning |
 | **MCP server** | Tool implementation that refuses or omits | Hard — the capability does not exist |
 
-For preferences and style ("prefer concise replies"), CHARACTER.md is the right place.
+For preferences and style ("prefer concise replies"), PERSONALITY.md is the right place.
 
-For absolute constraints ("never send an email on my behalf — only draft"), the right approach is to remove the capability entirely (don't expose a send tool in `mcp/imap.py`) *and* document the reasoning in CHARACTER.md so the agent understands the intent rather than looking for workarounds.
+For absolute constraints ("never send an email on my behalf — only draft"), the right approach is to remove the capability entirely (don't expose a send tool in `mcp/imap.py`) *and* document the reasoning in PERSONALITY.md so the agent understands the intent rather than looking for workarounds.
 
-Soft policy and hard constraint should agree. If they conflict, the hard constraint wins — but the disagreement is a signal that CHARACTER.md needs updating.
+Soft policy and hard constraint should agree. If they conflict, the hard constraint wins — but the disagreement is a signal that PERSONALITY.md needs updating.
 
 ## Agent self-knowledge and the limits of self-modification
 
@@ -52,7 +52,7 @@ Files and configuration are graded by sensitivity:
 | Sensitivity | Examples | Agent can read? | Agent can write? |
 |-------------|----------|----------------|-----------------|
 | **Protected** | `middleware/policy.py`, credential mechanism | Yes | No — ever |
-| **Propose-only** | `CHARACTER.md`, `mcp_servers.json` | Yes | Via PR + human approval only |
+| **Propose-only** | `PERSONALITY.md`, `PROTOCOLS.md`, `mcp_servers.json` | Yes | Via PR + human approval only |
 | **Working state** | facts, people, schedules, `USER.md` | Yes | Yes |
 | **Blind write** | `.env` credential values | No | Yes (write-only, value never readable) |
 
@@ -74,16 +74,16 @@ reason: Defines agent identity and behaviour. Unilateral modification would allo
 ---
 ```
 
-### CHARACTER.md and PROTOCOLS.md
+### PERSONALITY.md and PROTOCOLS.md
 
 OpenClaw — the most actively developed agent harness of this type — uses a `SOUL.md` / `AGENTS.md` split that makes a useful distinction between two files:
 
-- **`CHARACTER.md`** — identity, personality, tone, values. *Who the agent is.*
+- **`PERSONALITY.md`** — identity, personality, tone, values. *Who the agent is.*
 - **`PROTOCOLS.md`** — operating rules, priorities, procedures. *How the agent behaves.*
 
-This split is worth adopting. It keeps stable identity separate from procedural rules that may legitimately evolve. In practice, `CHARACTER.md` should almost never change; `PROTOCOLS.md` is where refinements to operating behaviour belong.
+This split is worth adopting. Both files can evolve — personality through experience, protocols through refinement — but neither changes unilaterally.
 
-Both sit at `propose-only` sensitivity. The agent reads them on every turn and can reason about them, but cannot modify either directly. When the agent identifies a gap — a constraint causing unnecessary friction, a missing procedure — it opens a PR with an explanation. A human reviews and approves.
+Both sit at `propose-only` sensitivity. The agent reads them on every turn and can reason about them. When it identifies a meaningful shift in its own character, or a gap in its operating procedures, it opens a PR with an explanation. A human reviews and approves. This keeps evolution deliberate rather than accidental.
 
 **Why this matters:** In OpenClaw's default configuration, agents *can* modify their identity files at runtime. The security community considers this the primary attack surface — a compromised identity file means a permanently hijacked agent. Protection is left to the user (file permissions, third-party tooling). File integrity protection is an open feature request in OpenClaw's core (issue #19640). We treat this as a first-class design constraint, not an afterthought.
 
@@ -105,4 +105,4 @@ This applies especially to third-party MCP servers. The agent may identify a sui
 
 The agent should never take consequential actions silently. Sending a message, creating a calendar event, modifying a file — these should be surfaced to the user, not assumed. When in doubt, draft rather than send. Propose rather than act. Ask rather than guess.
 
-This is not a technical constraint but a behavioural one, and it belongs in CHARACTER.md — where it shapes every response rather than being enforced case by case.
+This is not a technical constraint but a behavioural one, and it belongs in PERSONALITY.md — where it shapes every response rather than being enforced case by case.
