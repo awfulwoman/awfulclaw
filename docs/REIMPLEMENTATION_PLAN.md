@@ -26,10 +26,12 @@ agent/
   store.py             # Store: unified SQLite layer
   config.py            # Settings via pydantic-settings
   connectors/
+    README.md          # What a Connector is, how to implement one, available connectors
     __init__.py        # Connector ABC, Message, InboundEvent, OutboundEvent
     telegram.py        # TelegramConnector
     tui.py             # TUIConnector (Textual)
   middleware/
+    README.md          # What middleware is, execution order, how to add a new one
     __init__.py
     rate_limit.py
     secret.py
@@ -38,10 +40,12 @@ agent/
     typing.py
     agent.py           # AgentMiddleware (terminal middleware)
   handlers/
+    README.md          # What handlers are, difference from middleware, how to add one
     __init__.py
     schedule.py        # ScheduleHandler
     heartbeat.py       # HeartbeatHandler
   mcp/
+    README.md          # What MCP servers are, how to add a new one, config/mcp_servers.json format
     __init__.py        # MCPClient
     memory.py          # memory_write + memory_search tools
     schedule.py        # schedule tools
