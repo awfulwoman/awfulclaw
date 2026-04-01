@@ -496,7 +496,11 @@ async def main():
 
 ## Data Philosophy
 
-The app is a **coordination layer**, not a data store. External systems are the canonical source of truth for their respective domains:
+The app is a **coordination layer**, not a data store. External systems are the canonical source of truth for their respective domains.
+
+**Long-term storage must use open, widely-supported formats.** Markdown for text. CSV for tabular data. Standard image formats (JPEG, PNG, etc.) for images. Open protocols (IMAP, CalDAV) for services. Data should never be locked inside an application or a proprietary format — it should be readable by any text editor, transferable to any tool, and survivable beyond the lifetime of this app.
+
+SQLite is acceptable for working state precisely because it is not long-term storage. Anything that matters long-term lives in flat files.
 
 | Domain | Canonical source |
 |--------|-----------------|
