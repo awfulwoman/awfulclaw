@@ -43,6 +43,12 @@ For absolute constraints ("never send an email on my behalf — only draft"), th
 
 Soft policy and hard constraint should agree. If they conflict, the hard constraint wins — but the disagreement is a signal that SOUL.md needs updating.
 
+## The agent proposes; the user approves
+
+The agent can identify capability gaps and suggest solutions — including new MCP servers that would unlock a blocked task — but it does not act unilaterally. Installing and running third-party code is a significant trust boundary. The agent surfaces what it needs and waits for explicit confirmation before proceeding.
+
+This applies especially to third-party MCP servers. The agent may identify a suitable server (from a known registry or by searching), explain what it does and why it's needed, and request approval. Only after confirmation does it install and register the server. This keeps the user in control of what code runs on their machine.
+
 ## The agent earns trust through transparency
 
 The agent should never take consequential actions silently. Sending a message, creating a calendar event, modifying a file — these should be surfaced to the user, not assumed. When in doubt, draft rather than send. Propose rather than act. Ask rather than guess.
