@@ -47,6 +47,7 @@ agent/
     schedule.py        # ScheduleHandler
     heartbeat.py       # HeartbeatHandler
     knowledge_flush.py # Daily flush of facts/people/summaries to Obsidian
+    governance.py      # PROTECTED: invariant checks for personality_log writes
   mcp/
     README.md          # What MCP servers are, how to add a new one, config/mcp_servers.json format
     __init__.py        # MCPClient
@@ -191,6 +192,14 @@ CREATE TABLE tasks (
 CREATE TABLE kv (
     key TEXT PRIMARY KEY,    -- general-purpose key-value (telegram offset, etc.)
     value TEXT NOT NULL
+);
+
+CREATE TABLE personality_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entry TEXT NOT NULL,     -- the adaptation (e.g. "user mentioned bereavement — soften tone")
+    verdict TEXT NOT NULL,   -- 'approved' | 'rejected' | 'escalated'
+    timestamp TEXT NOT NULL,
+    expires_at TEXT          -- NULL = indefinite; set for temporary adaptations
 );
 ```
 
