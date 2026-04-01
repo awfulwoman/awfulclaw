@@ -120,6 +120,7 @@ The key change from the current design: **the loop no longer owns logic**. It on
 ```python
 class Settings(BaseSettings):
     model: str = "claude-sonnet-4-6"
+    governance_model: str = "claude-haiku-4-5-20251001"  # classification only — no need for full model
     telegram: TelegramSettings
     imap: ImapSettings | None = None
     gcal: GCalSettings | None = None

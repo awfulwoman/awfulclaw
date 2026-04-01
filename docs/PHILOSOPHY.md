@@ -89,7 +89,7 @@ Both are human-authored and read-only in the container. The agent reads them on 
 
 `PERSONALITY.md` is the stable baseline. Day-to-day contextual adaptations — "user mentioned a bereavement, soften tone", "user seems back to normal, humour welcomed again" — are written to a `personality_log` table in SQLite. Both are injected into the system prompt, giving the agent a stable identity that can flex in response to lived experience without the baseline being rewritten on every turn.
 
-Every proposed write to `personality_log` passes through a **governance layer** before being committed. The governance layer is a second, lightweight Claude invocation with a fixed system prompt containing the **invariants** — rules that can never be overridden by any experience or input. It returns one of three verdicts:
+Every proposed write to `personality_log` passes through a **governance layer** before being committed. The governance layer is a second Claude invocation — using `claude-haiku-4-5` rather than the main model, as the task is simple classification against a fixed ruleset, not reasoning. It uses a fixed system prompt containing the **invariants** — rules that can never be overridden by any experience or input. It returns one of three verdicts:
 
 - **Approve** — write the entry silently
 - **Reject** — discard the entry, optionally notify the agent why
