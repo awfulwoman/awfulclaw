@@ -56,19 +56,23 @@ Files and configuration are graded by what the agent can do with them:
 | **Working state** | facts, people, schedules, `USER.md` | Yes | Yes | Memory bind mount |
 | **Blind write** | `.env` credential values | No | Yes (write-only, value never readable) | Never mounted into container |
 
-Code files carry no sensitivity headers. The container's read-only root filesystem makes them physically immutable at runtime — enforcement does not depend on the agent's cooperation or on conventions in docstrings. A header saying "do not modify" on a file the agent cannot write to is redundant.
+No file carries sensitivity headers or classification metadata. Immutability is enforced at the mount level, not by convention:
 
-`PERSONALITY.md` and `PROTOCOLS.md` are different: they live in a separate host directory (`AGENT_CONFIG_PATH`) mounted read-only into the container. The agent cannot write to them even if it tries — the constraint is physical. The YAML frontmatter communicates the intent to humans and to the agent itself:
+- **Code files** — read-only root filesystem; no running process can write to them
+- **`PERSONALITY.md`, `PROTOCOLS.md`, `USER.md`** — separate host directory (`AGENT_CONFIG_PATH`) mounted `:ro`; the agent cannot write to them even if it tries
+- **Working state** (DB, conversation history) — `MEMORY_PATH`, read-write
+- **`.env` credentials** — never mounted into the container at all
+
+`PERSONALITY.md` and `PROTOCOLS.md` carry a brief YAML frontmatter comment for human readers, explaining what the file is and that it should be edited on the host:
 
 ```markdown
 ---
-sensitivity: propose-only
-modification: pull-request, human approval required
-reason: Defines agent identity and behaviour. Unilateral modification would allow the agent to rewrite its own values and constraints.
+managed-by: human
+reason: Identity and behaviour baseline. Edit on the host; the container mount is read-only.
 ---
 ```
 
-The README documents what immutability means and why, so the agent can explain constraints to the user rather than simply failing.
+The README documents the mount layout so the agent can explain constraints to the user rather than simply failing.
 
 ### PERSONALITY.md and PROTOCOLS.md
 
@@ -77,7 +81,7 @@ OpenClaw — the most actively developed agent harness of this type — uses a `
 - **`PERSONALITY.md`** — identity, personality, tone, values. *Who the agent is.*
 - **`PROTOCOLS.md`** — operating rules, priorities, procedures. *How the agent behaves.*
 
-Both sit at `propose-only` sensitivity. The agent reads them on every turn and can reason about them. They are the stable, human-authored baseline — the agent never writes to them directly. Day-to-day personality adaptations go through `personality_log` and the governance layer; structural changes to identity or operating procedures are made by the user directly editing the files.
+Both are human-authored and read-only in the container. The agent reads them on every turn and can reason about them, but cannot write to them. Day-to-day personality adaptations go through `personality_log` and the governance layer; structural changes to identity or operating procedures are made by the user directly editing the files on the host.
 
 **Why this matters:** In OpenClaw's default configuration, agents *can* modify their identity files at runtime. The security community considers this the primary attack surface — a compromised identity file means a permanently hijacked agent. Protection is left to the user (file permissions, third-party tooling). File integrity protection is an open feature request in OpenClaw's core (issue #19640). We treat this as a first-class design constraint, not an afterthought.
 

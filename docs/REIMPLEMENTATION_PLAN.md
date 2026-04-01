@@ -15,7 +15,7 @@ This document describes a clean-room reimplementation of awfulclaw in Python, in
 
 The package uses subdirectories to group files by role. Each directory is a Python package with an `__init__.py` that exports its public interface.
 
-Code files carry no sensitivity headers — the container's read-only root filesystem makes them physically immutable at runtime, so headers would be redundant. `PERSONALITY.md` and `PROTOCOLS.md` are mounted read-only into the container from a separate host directory (`AGENT_CONFIG_PATH`); the constraint is physical, not just behavioural. They carry YAML frontmatter for legibility. See `PHILOSOPHY.md` for the full model.
+No file carries sensitivity headers or classification metadata — immutability is enforced at the mount level. See `PHILOSOPHY.md` for the full model.
 
 ```
 agent/
@@ -557,8 +557,8 @@ On first run or after a database reset, the agent can rebuild its working knowle
 | `.telegram_offset` file | `kv` table |
 
 **What stays as markdown files** (human-edited config, not program state):
-- `agent_config/PERSONALITY.md` — identity, personality, tone, values (*who the agent is*; `propose-only`)
-- `agent_config/PROTOCOLS.md` — operating rules, priorities, procedures (*how the agent behaves*; `propose-only`)
+- `agent_config/PERSONALITY.md` — identity, personality, tone, values (*who the agent is*)
+- `agent_config/PROTOCOLS.md` — operating rules, priorities, procedures (*how the agent behaves*)
 - `agent_config/USER.md` — user profile
 
 These live in `AGENT_CONFIG_PATH` on the host, mounted read-only into the container. The agent reads them; it cannot write to them. The user edits them directly on the host.
