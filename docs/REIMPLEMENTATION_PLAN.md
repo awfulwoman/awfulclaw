@@ -7,7 +7,7 @@ This document describes a clean-room reimplementation of awfulclaw in Python, in
 - **Separation of concerns** — no more 437-line monolith loop; each responsibility lives in its own module with a clear interface
 - **Structured data end-to-end** — typed message objects, JSON-lines conversation storage, no regex parsing of markdown files
 - **Unified storage** — single SQLite database for all persistent state; markdown files only for human-editable config (PERSONALITY.md, USER.md)
-- **Reliable Claude invocation** — Anthropic SDK directly (no subprocess), persistent session, retry logic
+- **Reliable Claude invocation** — `claude` CLI subprocess, structured JSON output, retry logic
 - **Relevance-aware context** — ranked context assembly, semantic search via `sqlite-vec`
 - **Composable event pipeline** — middleware stack replaces baked-in interceptors; new behaviours added without touching core
 
@@ -127,7 +127,6 @@ class Settings(BaseSettings):
     owntracks: OwnTracksSettings | None = None
     poll_interval: int = 5
     idle_interval: int = 60
-    briefing_time: time | None = None
     nudge_cooldown: int = 86400
 ```
 
@@ -175,7 +174,6 @@ CREATE TABLE schedules (
     cron TEXT,
     fire_at TEXT,
     prompt TEXT NOT NULL,
-    condition TEXT,
     silent INTEGER NOT NULL DEFAULT 0,
     tz TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
@@ -597,9 +595,8 @@ These live in `AGENT_CONFIG_PATH` on the host, mounted read-only into the contai
 ### Phase 5: Scheduler
 - `schedules` table + cron evaluation
 - `scheduler.py` async task
-- `handlers/schedule.py`, `handlers/heartbeat.py`
+- `handlers/schedule.py`
 - `handlers/knowledge_flush.py` — daily Obsidian export of facts, people, conversation summary
-- Daily briefing
 
 ### Phase 6: Idle and heartbeat
 - Heartbeat as a schedule (not special-cased)
@@ -610,7 +607,7 @@ These live in `AGENT_CONFIG_PATH` on the host, mounted read-only into the contai
 - Email triage
 - MCP config hot-reload
 - `/restart` slash command
-- Startup briefing
+- Orientation briefing — on first startup, the agent sends a brief message summarising its current state (known schedules, recent context, available tools) so it can pick up coherently rather than starting cold
 
 ### Phase 8: Migration
 - Import script: read `schedules.json` → insert into new DB
@@ -660,7 +657,7 @@ services:
       - ${MEMORY_PATH}:/app/memory                    # read-write working state
       - ${AGENT_CONFIG_PATH}:/app/agent_config:ro     # PERSONALITY.md, PROTOCOLS.md, USER.md
       - ./config:/app/config:ro                       # mcp_servers.json (in repo)
-      - ${CLAUDE_AUTH_PATH}:/root/.claude             # OAuth token, writable for refresh
+      - ${CLAUDE_AUTH_PATH}:/home/agent/.claude         # OAuth token, writable for refresh
     env_file: .env                                    # injected at runtime, never in image
     restart: unless-stopped
 
@@ -840,4 +837,4 @@ chmod 600 .env
 | `claude.py` | Discard | Replaced by SDK-based ClaudeClient |
 | `memory.py` | Discard | Replaced by Store |
 | `db.py` | Discard | Replaced by Store |
-| `briefings.py` | Discard | Daily briefing becomes a regular schedule |
+| `briefings.py` | Discard | Orientation briefing handled in `main.py` startup; daily briefing is user-configured via the schedule MCP tool |
