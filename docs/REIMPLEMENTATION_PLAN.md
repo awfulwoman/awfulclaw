@@ -45,7 +45,7 @@ agent/
     README.md          # What handlers are, difference from middleware, how to add one
     __init__.py
     schedule.py        # ScheduleHandler
-    heartbeat.py       # HeartbeatHandler
+    checkin.py         # CheckinHandler
     knowledge_flush.py # Daily flush of facts/people/summaries to Obsidian
     governance.py      # Invariant checks for all autonomous instruction writes (personality_log + schedule prompts)
   mcp/
@@ -127,7 +127,7 @@ class Settings(BaseSettings):
     owntracks: OwnTracksSettings | None = None
     poll_interval: int = 5
     idle_interval: int = 60
-    nudge_cooldown: int = 86400
+    checkin_interval: int = 86400  # seconds between ambient check-ins (default 24h)
 ```
 
 **Differs from original:** No 10+ loose `get_*()` functions. One settings object passed through DI.
@@ -460,7 +460,7 @@ class Scheduler:
                 await asyncio.sleep(60)
 ```
 
-Schedule events are handled by `handlers/schedule.py` (not in the message pipeline) which invokes `agent.invoke(schedule.prompt)` and optionally posts the reply as an `OutboundEvent`. Heartbeat logic lives in `handlers/heartbeat.py`.
+Schedule events are handled by `handlers/schedule.py` (not in the message pipeline) which invokes `agent.invoke(schedule.prompt)` and optionally posts the reply as an `OutboundEvent`. Periodic ambient check-ins are handled by `handlers/checkin.py` — distinct from schedules, which fire blindly at a set time. The check-in reads `agent_config/CHECKIN.md` (a short patrol checklist maintained by the user), invokes Claude, and sends a reply only if Claude determines something warrants attention. If nothing does, it stays silent. `checkin_interval` in Settings controls frequency.
 
 **Differs from original:** Scheduler is event-driven, not polled. No coupling to the idle tick. Schedule storage in SQLite (consistent with everything else).
 
@@ -559,6 +559,7 @@ On first run or after a database reset, the agent can rebuild its working knowle
 - `agent_config/PERSONALITY.md` — identity, personality, tone, values (*who the agent is*)
 - `agent_config/PROTOCOLS.md` — operating rules, priorities, procedures (*how the agent behaves*)
 - `agent_config/USER.md` — user profile
+- `agent_config/CHECKIN.md` — ambient check-in checklist; short, human-maintained patrol prompt
 
 These live in `AGENT_CONFIG_PATH` on the host, mounted read-only into the container. The agent reads them; it cannot write to them. The user edits them directly on the host.
 
@@ -598,9 +599,9 @@ These live in `AGENT_CONFIG_PATH` on the host, mounted read-only into the contai
 - `handlers/schedule.py`
 - `handlers/knowledge_flush.py` — daily Obsidian export of facts, people, conversation summary
 
-### Phase 6: Idle and heartbeat
-- Heartbeat as a schedule (not special-cased)
-- Idle nudge cooldown via `kv` table
+### Phase 6: Idle and check-in
+- `handlers/checkin.py` — reads `CHECKIN.md`, invokes Claude, sends only if warranted
+- `checkin_interval` cooldown via `kv` table (last fired timestamp)
 
 ### Phase 7: Feature parity
 - Location/timezone updates (OwnTracks)
