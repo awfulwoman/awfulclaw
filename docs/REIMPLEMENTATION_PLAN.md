@@ -119,7 +119,7 @@ The key change from the current design: **the loop no longer owns logic**. It on
 
 ```python
 class Settings(BaseSettings):
-    model: str = "claude-opus-4-5"
+    model: str = "claude-sonnet-4-6"
     telegram: TelegramSettings
     imap: ImapSettings | None = None
     gcal: GCalSettings | None = None
