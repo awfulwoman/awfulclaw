@@ -58,7 +58,7 @@ Files and configuration are graded by what the agent can do with them:
 
 Code files carry no sensitivity headers. The container's read-only root filesystem makes them physically immutable at runtime — enforcement does not depend on the agent's cooperation or on conventions in docstrings. A header saying "do not modify" on a file the agent cannot write to is redundant.
 
-`PERSONALITY.md` and `PROTOCOLS.md` are different: they live in the writable memory bind mount so the agent can propose changes. The constraint here is behavioural, not physical, so it is communicated explicitly via YAML frontmatter:
+`PERSONALITY.md` and `PROTOCOLS.md` are different: they live in a separate host directory (`AGENT_CONFIG_PATH`) mounted read-only into the container. The agent cannot write to them even if it tries — the constraint is physical. The YAML frontmatter communicates the intent to humans and to the agent itself:
 
 ```markdown
 ---

@@ -15,7 +15,7 @@ This document describes a clean-room reimplementation of awfulclaw in Python, in
 
 The package uses subdirectories to group files by role. Each directory is a Python package with an `__init__.py` that exports its public interface.
 
-Code files carry no sensitivity headers — the container's read-only root filesystem makes them physically immutable at runtime, so headers would be redundant. `PERSONALITY.md` and `PROTOCOLS.md` live in the writable memory bind mount and carry YAML frontmatter marking them `propose-only`; the constraint there is behavioural, not physical, so it needs to be communicated explicitly. See `PHILOSOPHY.md` for the full model.
+Code files carry no sensitivity headers — the container's read-only root filesystem makes them physically immutable at runtime, so headers would be redundant. `PERSONALITY.md` and `PROTOCOLS.md` are mounted read-only into the container from a separate host directory (`AGENT_CONFIG_PATH`); the constraint is physical, not just behavioural. They carry YAML frontmatter for legibility. See `PHILOSOPHY.md` for the full model.
 
 ```
 agent/
@@ -557,10 +557,11 @@ On first run or after a database reset, the agent can rebuild its working knowle
 | `.telegram_offset` file | `kv` table |
 
 **What stays as markdown files** (human-edited config, not program state):
-- `memory/PERSONALITY.md` — identity, personality, tone, values (*who the agent is; `propose-only`)
-- `memory/PROTOCOLS.md` — operating rules, priorities, procedures (*how the agent behaves*; `propose-only`)
-- `memory/USER.md` — user profile (`propose-only`)
-- `memory/HEARTBEAT.md` — idle nudge prompt (`propose-only`)
+- `agent_config/PERSONALITY.md` — identity, personality, tone, values (*who the agent is*; `propose-only`)
+- `agent_config/PROTOCOLS.md` — operating rules, priorities, procedures (*how the agent behaves*; `propose-only`)
+- `agent_config/USER.md` — user profile
+
+These live in `AGENT_CONFIG_PATH` on the host, mounted read-only into the container. The agent reads them; it cannot write to them. The user edits them directly on the host.
 
 ---
 
@@ -613,7 +614,7 @@ On first run or after a database reset, the agent can rebuild its working knowle
 ### Phase 8: Migration
 - Import script: read `schedules.json` → insert into new DB
 - Import script: read `conversations/YYYY-MM-DD.md` → insert turns into new DB
-- PERSONALITY.md and USER.md copied as-is
+- PERSONALITY.md, PROTOCOLS.md, and USER.md copied into `AGENT_CONFIG_PATH` on the host
 - facts/people DB migrated via SQL
 
 ---
@@ -637,8 +638,9 @@ All mutable state uses **bind mounts** (explicit host paths) rather than named v
 
 ```bash
 # Run once on the host before starting containers
-mkdir -p ${MEMORY_PATH} ${CLAUDE_AUTH_PATH}
+mkdir -p ${MEMORY_PATH} ${AGENT_CONFIG_PATH} ${CLAUDE_AUTH_PATH}
 chown -R 1000:1000 ${MEMORY_PATH} ${CLAUDE_AUTH_PATH}
+# AGENT_CONFIG_PATH is read-only in the container — owned by the host user, not 1000
 ```
 
 If the host user's UID differs from 1000, set `user: "${UID}:${GID}"` in compose and pass those values via `.env` or shell export. Avoid running as root — this negates the security benefit.
@@ -654,10 +656,11 @@ services:
     security_opt: [no-new-privileges:true]
     tmpfs: [/tmp]
     volumes:
-      - ${MEMORY_PATH}:/app/memory          # bind mount — back up this directory
-      - ./config:/app/config:ro             # mcp_servers.json etc. (read-only)
-      - ${CLAUDE_AUTH_PATH}:/root/.claude   # OAuth token — bind mount, writable for refresh
-    env_file: .env                          # injected at runtime, never in image
+      - ${MEMORY_PATH}:/app/memory                    # read-write working state
+      - ${AGENT_CONFIG_PATH}:/app/agent_config:ro     # PERSONALITY.md, PROTOCOLS.md, USER.md
+      - ./config:/app/config:ro                       # mcp_servers.json (in repo)
+      - ${CLAUDE_AUTH_PATH}:/root/.claude             # OAuth token, writable for refresh
+    env_file: .env                                    # injected at runtime, never in image
     restart: unless-stopped
 
   mcp-memory:
@@ -667,7 +670,8 @@ services:
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     volumes:
-      - ${MEMORY_PATH}:/app/memory          # same host path, same UID
+      - ${MEMORY_PATH}:/app/memory                    # read-write working state
+      - ${AGENT_CONFIG_PATH}:/app/agent_config:ro     # reads PERSONALITY.md etc. for context
 
   mcp-imap:
     image: ghcr.io/owner/mcp-imap:latest
@@ -682,10 +686,11 @@ services:
   # Third-party MCP servers are added here as new services via PR
 ```
 
-No `volumes:` top-level block — bind mounts need none. `MEMORY_PATH` and `CLAUDE_AUTH_PATH` are set in `.env` (gitignored), e.g.:
+No `volumes:` top-level block — bind mounts need none. All paths are set in `.env` (gitignored), e.g.:
 
 ```
 MEMORY_PATH=/home/charlie/awfulclaw-memory
+AGENT_CONFIG_PATH=/home/charlie/awfulclaw-config
 CLAUDE_AUTH_PATH=/home/charlie/.claude
 ```
 
@@ -696,12 +701,11 @@ The repo is public. Nothing personal or secret ever touches it.
 | Location | Contents |
 |----------|----------|
 | **Repo** | Application code, `compose.yaml`, `config/mcp_servers.json` template, `Dockerfile`s, GitHub Actions workflows |
-| **`MEMORY_PATH` (bind mount)** | `memory/` — SQLite DB, `PERSONALITY.md`, `PROTOCOLS.md`, `USER.md`, `HEARTBEAT.md`. Back this up. |
-| **`.env` file** (gitignored) | Runtime secrets — Telegram token, IMAP credentials, API keys. Also sets `MEMORY_PATH`, `CLAUDE_AUTH_PATH`. |
-| **`CLAUDE_AUTH_PATH` (bind mount)** | `~/.claude/` — OAuth token for Claude subscription. Writable for token refresh; never in repo. |
+| **`MEMORY_PATH` (read-write bind mount)** | SQLite DB, conversation history, facts, schedules. Back this up. |
+| **`AGENT_CONFIG_PATH` (read-only bind mount)** | `PERSONALITY.md`, `PROTOCOLS.md`, `USER.md` — human-authored config, not writable by the container. Back this up. |
+| **`.env` file** (gitignored) | Runtime secrets — Telegram token, IMAP credentials, API keys. Also sets `MEMORY_PATH`, `AGENT_CONFIG_PATH`, `CLAUDE_AUTH_PATH`. |
+| **`CLAUDE_AUTH_PATH` (read-write bind mount)** | `~/.claude/` — OAuth token, writable for refresh; never in repo. |
 | **GitHub Actions secrets** | `GHCR_TOKEN` for pushing images — no host credentials needed |
-
-`PERSONALITY.md`, `PROTOCOLS.md`, and `USER.md` are personal configuration. They live in the memory volume on the host, not in the repo.
 
 ### CI/CD and graceful redeploy
 
@@ -837,7 +841,7 @@ chmod 600 .env
 | `context.py` prompt sections | Reuse text | Replace assembly logic; keep in `context.py` |
 | MCP server implementations | Reuse, move | Move into `mcp/` subdirectory (`mcp/imap.py`, `mcp/gcal.py`, etc.) |
 | `config/mcp_servers.json` | Reuse as-is | Format unchanged |
-| `memory/PERSONALITY.md`, `USER.md` | Reuse as-is | |
+| `memory/PERSONALITY.md`, `USER.md` | Reuse as-is | Move to `AGENT_CONFIG_PATH` on host |
 | `env_utils.py` | Reuse as-is | |
 | `location.py` | Reuse as-is | |
 | `loop.py` | Discard | Logic extracted into pipeline middleware |
