@@ -196,7 +196,7 @@ CREATE TABLE kv (
 CREATE TABLE personality_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     entry TEXT NOT NULL,     -- the adaptation (e.g. "user mentioned bereavement — soften tone")
-    verdict TEXT NOT NULL,   -- 'approved' | 'rejected' | 'escalated'
+    verdict TEXT NOT NULL,   -- 'approved' (silent) | 'rejected' (discarded) | 'escalated' (active + user notified)
     timestamp TEXT NOT NULL,
     expires_at TEXT          -- NULL = indefinite; set for temporary adaptations
 );
@@ -345,7 +345,7 @@ class Middleware(Protocol):
 **Built-in middleware (in order):**
 1. `middleware/rate_limit.py` — per-sender rate limiting
 2. `middleware/secret.py` — watches for pending secret keys; intercepts the next message as the value
-3. `middleware/location.py` — detects `[Location: lat, lon]` format; writes to store; stops chain
+3. `middleware/location.py` — detects `[Location: lat, lon]` format; writes to store; strips the tag from the message and passes the remainder through (stops chain only if the message was nothing but the tag)
 4. `middleware/slash.py` — handles `/schedules`, `/restart`; stops chain
 5. `middleware/typing.py` — sends typing indicator before passing through
 6. `middleware/agent.py` — invokes the agent; attaches reply to event

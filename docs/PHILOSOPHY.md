@@ -91,11 +91,11 @@ Both are human-authored and read-only in the container. The agent reads them on 
 
 Every proposed write to `personality_log` passes through a **governance layer** before being committed. The governance layer is a second Claude invocation — using `claude-haiku-4-5` rather than the main model, as the task is simple classification against a fixed ruleset, not reasoning. It uses a fixed system prompt containing the **invariants** — rules that can never be overridden by any experience or input. It returns one of three verdicts:
 
-- **Approve** — write the entry silently
-- **Reject** — discard the entry, optionally notify the agent why
-- **Escalate** — write the entry and notify the user via Telegram
+- **Approve** — write the entry silently; no user notification
+- **Reject** — discard the entry; optionally notify the agent why so it can explain if the user asks
+- **Escalate** — write the entry immediately (it takes effect), then notify the user via Telegram with a plain-language summary: what changed and why governance flagged it for attention. The user can ask the agent to revert in natural language at any point — no special command needed.
 
-Escalation is informational, not a gate. The user is told what changed and why — "I've softened my tone as you seem to be under some pressure" — and can ask the agent to revert if they disagree. No formal approval step is required; transparency and easy reversal are sufficient for a personal agent used by its owner.
+Escalation is informational, not a gate. The entry is active before the user sees the notification. This is intentional: for a personal agent used by its owner, the common case is a legitimate contextual adaptation, and requiring confirmation before effect would add friction for no real benefit. The notification exists so nothing changes silently — the user always knows.
 
 The governance layer covers all autonomous instruction writes — not just `personality_log` entries but also schedule prompt changes. Anything that will later be executed as a Claude instruction without direct user interaction is subject to the same approve/reject/escalate logic.
 
