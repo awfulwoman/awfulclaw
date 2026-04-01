@@ -44,6 +44,7 @@ agent/
     __init__.py
     schedule.py        # ScheduleHandler
     heartbeat.py       # HeartbeatHandler
+    knowledge_flush.py # Daily flush of facts/people/summaries to Obsidian
   mcp/
     README.md          # What MCP servers are, how to add a new one, config/mcp_servers.json format
     __init__.py        # MCPClient
@@ -493,14 +494,50 @@ async def main():
 
 ---
 
+## Data Philosophy
+
+The app is a **coordination layer**, not a data store. External systems are the canonical source of truth for their respective domains:
+
+| Domain | Canonical source |
+|--------|-----------------|
+| Long-form notes and knowledge | Obsidian |
+| Events and scheduling | Google Calendar |
+| Tasks and to-dos | Obsidian or a dedicated task manager |
+| Email | IMAP |
+| Contacts | People profiles (MCP tool) |
+
+The agent reads from and writes to these systems via MCP. It does not replace them.
+
+### SQLite as working memory
+
+The local SQLite database is a **hot cache** — fast, structured storage that the agent can query during context assembly without making external API calls on every turn. It holds:
+
+- **Facts** — things the agent has learned about the user and their world (preferences, context, state)
+- **People** — contact profiles and relationship context
+- **Conversation history** — recent turns for in-context recall
+- **Coordination state** — poll offsets, pending secrets, schedule timing
+
+This data is ephemeral in the sense that it serves the agent's immediate reasoning. It is not the user's authoritative record of anything.
+
+### Obsidian as long-term knowledge store
+
+Facts and people profiles are written out to Obsidian daily via `handlers/knowledge_flush.py`. This gives the user a human-readable, searchable, permanent record of everything the agent has learned — living alongside their own notes in Obsidian rather than locked inside the app's database.
+
+The daily flush writes:
+- One note per person in `Contacts/` (updated in place)
+- A rolling `Agent Knowledge/facts.md` updated with current facts
+- A daily conversation summary to `Agent Logs/YYYY-MM-DD.md`
+
+On first run or after a database reset, the agent can rebuild its working knowledge by reading these Obsidian notes back in.
+
 ## Memory and Storage Redesign
 
 | Current | New |
 |---------|-----|
 | `memory/schedules.json` | `schedules` table in SQLite |
-| `memory/conversations/YYYY-MM-DD.md` | `conversations` table in SQLite |
-| `memory/tasks/*.md` | `tasks` table in SQLite |
-| `memory/awfulclaw.db` facts/people | Same tables, same file, extended with embeddings |
+| `memory/conversations/YYYY-MM-DD.md` | `conversations` table in SQLite + daily summary flushed to Obsidian |
+| `memory/tasks/*.md` | Removed — tasks live in the user's task manager, read via MCP |
+| `memory/awfulclaw.db` facts/people | Same tables, same file, extended with embeddings; flushed daily to Obsidian |
 | Regex parsing of markdown | Typed `Turn` objects, JSON content field |
 | `.telegram_offset` file | `kv` table |
 
@@ -508,8 +545,6 @@ async def main():
 - `memory/SOUL.md` — personality
 - `memory/USER.md` — user profile
 - `memory/HEARTBEAT.md` — idle nudge prompt
-
-These are read at runtime but never written by the agent (the agent uses `set_fact` and `set_person` for structured data instead).
 
 ---
 
@@ -545,6 +580,7 @@ These are read at runtime but never written by the agent (the agent uses `set_fa
 - `schedules` table + cron evaluation
 - `scheduler.py` async task
 - `handlers/schedule.py`, `handlers/heartbeat.py`
+- `handlers/knowledge_flush.py` — daily Obsidian export of facts, people, conversation summary
 - Daily briefing
 
 ### Phase 6: Idle and heartbeat
