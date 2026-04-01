@@ -47,7 +47,7 @@ agent/
     schedule.py        # ScheduleHandler
     heartbeat.py       # HeartbeatHandler
     knowledge_flush.py # Daily flush of facts/people/summaries to Obsidian
-    governance.py      # PROTECTED: invariant checks for personality_log writes
+    governance.py      # Invariant checks for all autonomous instruction writes (personality_log + schedule prompts)
   mcp/
     README.md          # What MCP servers are, how to add a new one, config/mcp_servers.json format
     __init__.py        # MCPClient
@@ -201,6 +201,9 @@ CREATE TABLE personality_log (
     timestamp TEXT NOT NULL,
     expires_at TEXT          -- NULL = indefinite; set for temporary adaptations
 );
+
+-- governance also covers schedule prompt changes; the schedules table prompt column
+-- is treated as a governed field — writes pass through handlers/governance.py
 ```
 
 **Public API:**

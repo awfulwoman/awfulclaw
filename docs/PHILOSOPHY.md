@@ -77,7 +77,7 @@ OpenClaw — the most actively developed agent harness of this type — uses a `
 - **`PERSONALITY.md`** — identity, personality, tone, values. *Who the agent is.*
 - **`PROTOCOLS.md`** — operating rules, priorities, procedures. *How the agent behaves.*
 
-Both sit at `propose-only` sensitivity. The agent reads them on every turn and can reason about them. When it identifies a meaningful shift in its own character, or a gap in its operating procedures, it opens a PR with an explanation. A human reviews and approves. This keeps evolution deliberate rather than accidental.
+Both sit at `propose-only` sensitivity. The agent reads them on every turn and can reason about them. They are the stable, human-authored baseline — the agent never writes to them directly. Day-to-day personality adaptations go through `personality_log` and the governance layer; structural changes to identity or operating procedures are made by the user directly editing the files.
 
 **Why this matters:** In OpenClaw's default configuration, agents *can* modify their identity files at runtime. The security community considers this the primary attack surface — a compromised identity file means a permanently hijacked agent. Protection is left to the user (file permissions, third-party tooling). File integrity protection is an open feature request in OpenClaw's core (issue #19640). We treat this as a first-class design constraint, not an afterthought.
 
@@ -87,9 +87,13 @@ Both sit at `propose-only` sensitivity. The agent reads them on every turn and c
 
 Every proposed write to `personality_log` passes through a **governance layer** before being committed. The governance layer is a second, lightweight Claude invocation with a fixed system prompt containing the **invariants** — rules that can never be overridden by any experience or input. It returns one of three verdicts:
 
-- **Approve** — write the entry to the log
+- **Approve** — write the entry silently
 - **Reject** — discard the entry, optionally notify the agent why
-- **Escalate** — notify the user, propose a PR to update `PERSONALITY.md`
+- **Escalate** — write the entry and notify the user via Telegram
+
+Escalation is informational, not a gate. The user is told what changed and why — "I've softened my tone as you seem to be under some pressure" — and can ask the agent to revert if they disagree. No formal approval step is required; transparency and easy reversal are sufficient for a personal agent used by its owner.
+
+The governance layer covers all autonomous instruction writes — not just `personality_log` entries but also schedule prompt changes. Anything that will later be executed as a Claude instruction without direct user interaction is subject to the same approve/reject/escalate logic.
 
 The invariants are hardcoded in `handlers/governance.py` — part of the codebase, immutable at runtime via the read-only container filesystem. They are not a runtime configuration. Examples of invariants:
 
