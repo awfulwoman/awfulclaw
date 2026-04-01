@@ -2,6 +2,36 @@
 
 This document describes a clean-room reimplementation of awfulclaw in Python, informed by the limitations documented in `ARCHITECTURE.md`. The goal is a significantly more elegant, extensible, and correct system while preserving everything that works well (MCP tooling, the connector abstraction, the memory model, cron scheduling).
 
+## Open Issues
+
+These must be resolved before implementation begins.
+
+### 🔴 Architectural gaps
+
+**MCP servers in separate containers cannot use stdio**
+Stdio MCP requires a parent-child process relationship. A separate Docker container breaks this. The plan currently has external MCP servers (IMAP, gcal etc.) as separate containers but does not specify how they communicate. Options: MCP-over-HTTP/SSE for containerised servers (supported by MCP spec), or keep all servers as child processes inside the agent container. Decision needed.
+
+**Embedding generation**
+The plan references `text-embedding-3-small` — an OpenAI model. Anthropic has no public embedding API. With the no-API-key constraint this is a blocking gap. Options: `sentence-transformers` locally (in-container, no API needed, adds model weight); or drop semantic search entirely in favour of SQLite FTS5 (simpler, no model dependency). Decision needed.
+
+**Persistent CLI session mechanics**
+The plan describes a "persistent subprocess reused across turns" but the current implementation is one-shot (`claude --print`). How multi-turn conversation works with a persistent subprocess is never specified. Decision needed.
+
+### 🟡 Errors and inconsistencies to fix
+
+- SDK references scattered throughout (Mermaid diagram, MCPClient section, Phase 1, "What to Reuse", `claude.py` discard note) — settled decision is CLI subprocess
+- `~/.claude/` described as named volume in one place (line ~402) — settled decision is bind mount
+- `SOUL` reference in context assembler — should be `PERSONALITY`
+- `CHECKIN.md` missing from some enumerations (PHILOSOPHY.md, compose description)
+- Phase 3 context section references "SOUL, tasks" — stale from old architecture
+- `tasks` table and Store API contradict "tasks live externally in user's task manager"
+- `USER.md` in wrong row in PHILOSOPHY.md sensitivity table (listed as working state, should be read-only config)
+- `middleware/agent.py` name collision with top-level `agent.py` — consider renaming to `middleware/invoke.py`
+- `env_manager.py` and `skills.py` MCP servers listed in package layout but never described anywhere
+- Data philosophy section duplicated between plan and PHILOSOPHY.md
+
+---
+
 ## Goals
 
 - **Separation of concerns** — no more 437-line monolith loop; each responsibility lives in its own module with a clear interface
