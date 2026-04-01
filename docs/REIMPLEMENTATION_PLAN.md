@@ -6,7 +6,7 @@ This document describes a clean-room reimplementation of awfulclaw in Python, in
 
 - **Separation of concerns** — no more 437-line monolith loop; each responsibility lives in its own module with a clear interface
 - **Structured data end-to-end** — typed message objects, JSON-lines conversation storage, no regex parsing of markdown files
-- **Unified storage** — single SQLite database for all persistent state; markdown files only for human-editable config (SOUL.md, USER.md)
+- **Unified storage** — single SQLite database for all persistent state; markdown files only for human-editable config (CHARACTER.md, USER.md)
 - **Reliable Claude invocation** — Anthropic SDK directly (no subprocess), persistent session, retry logic
 - **Relevance-aware context** — ranked context assembly, semantic search via `sqlite-vec`
 - **Composable event pipeline** — middleware stack replaces baked-in interceptors; new behaviours added without touching core
@@ -550,8 +550,8 @@ On first run or after a database reset, the agent can rebuild its working knowle
 | `.telegram_offset` file | `kv` table |
 
 **What stays as markdown files** (human-edited config, not program state):
-- `memory/SOUL.md` — identity, personality, tone, values (*who the agent is*; `protected`)
-- `memory/AGENTS.md` — operating rules, priorities, procedures (*how the agent behaves*; `propose-only`)
+- `memory/CHARACTER.md` — identity, personality, tone, values (*who the agent is*; `protected`)
+- `memory/PROTOCOLS.md` — operating rules, priorities, procedures (*how the agent behaves*; `propose-only`)
 - `memory/USER.md` — user profile (`propose-only`)
 - `memory/HEARTBEAT.md` — idle nudge prompt (`propose-only`)
 
@@ -606,7 +606,7 @@ On first run or after a database reset, the agent can rebuild its working knowle
 ### Phase 8: Migration
 - Import script: read `schedules.json` → insert into new DB
 - Import script: read `conversations/YYYY-MM-DD.md` → insert turns into new DB
-- SOUL.md and USER.md copied as-is
+- CHARACTER.md and USER.md copied as-is
 - facts/people DB migrated via SQL
 
 ---
@@ -621,7 +621,7 @@ On first run or after a database reset, the agent can rebuild its working knowle
 | `context.py` prompt sections | Reuse text | Replace assembly logic; keep in `context.py` |
 | MCP server implementations | Reuse, move | Move into `mcp/` subdirectory (`mcp/imap.py`, `mcp/gcal.py`, etc.) |
 | `config/mcp_servers.json` | Reuse as-is | Format unchanged |
-| `memory/SOUL.md`, `USER.md` | Reuse as-is | |
+| `memory/CHARACTER.md`, `USER.md` | Reuse as-is | |
 | `env_utils.py` | Reuse as-is | |
 | `location.py` | Reuse as-is | |
 | `loop.py` | Discard | Logic extracted into pipeline middleware |
