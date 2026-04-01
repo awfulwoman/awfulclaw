@@ -43,6 +43,49 @@ For absolute constraints ("never send an email on my behalf — only draft"), th
 
 Soft policy and hard constraint should agree. If they conflict, the hard constraint wins — but the disagreement is a signal that SOUL.md needs updating.
 
+## Agent self-knowledge and the limits of self-modification
+
+The agent should have full visibility of its own working state and architecture. An agent that understands why it can't do something is more cooperative and more useful than one that simply hits a wall. Self-knowledge is desirable. Self-modification is not uniformly desirable — it depends on what is being modified.
+
+Files and configuration are graded by sensitivity:
+
+| Sensitivity | Examples | Agent can read? | Agent can write? |
+|-------------|----------|----------------|-----------------|
+| **Protected** | `middleware/policy.py`, credential mechanism | Yes | No — ever |
+| **Propose-only** | `SOUL.md`, `mcp_servers.json` | Yes | Via PR + human approval only |
+| **Working state** | facts, people, schedules, `USER.md` | Yes | Yes |
+| **Blind write** | `.env` credential values | No | Yes (write-only, value never readable) |
+
+This grading is made explicit in the files themselves — a header block in each file states its sensitivity level and the reason. This serves two purposes: it is legible to developers reading the code, and legible to the agent reading its own files, so it can explain constraints to the user rather than simply failing.
+
+**Python files** use a module-level docstring:
+```python
+# SENSITIVITY: protected
+# Defines hard policy constraints. Not modifiable by the agent under any circumstances.
+# Changes require explicit human review of security implications.
+```
+
+**Markdown files** use YAML frontmatter:
+```markdown
+---
+sensitivity: propose-only
+modification: pull-request, human approval required
+reason: Defines agent identity and behaviour. Unilateral modification would allow the agent to rewrite its own values and constraints.
+---
+```
+
+### SOUL.md
+
+`SOUL.md` is the agent's identity — its personality, values, and behavioural instructions. It sits at `propose-only` sensitivity. The agent reads it on every turn and can reason about it, but cannot modify it directly.
+
+When the agent identifies a genuine gap or problem in its own instructions — a constraint that's causing unnecessary friction, a missing capability description — it can open a PR proposing a change, with an explanation of the reasoning. A human reviews and approves. This keeps the agent's identity stable while allowing it to participate in its own evolution.
+
+### Code and self-development
+
+The agent *writing* code and the agent *running* code are different things. The agent may identify capability gaps, write new tools or middleware, add tests, and propose a pull request. A human reviews and merges. The file watcher picks up the change and restarts. The agent never becomes the new code unilaterally — a human always stands in the merge path.
+
+The `protected` layer (hard policy constraints, the credential mechanism) is outside even this path. It cannot be proposed for modification by the agent. Changes to it require a human acting entirely outside the agent's awareness.
+
 ## The agent proposes; the user approves
 
 The agent can identify capability gaps and suggest solutions — including new MCP servers that would unlock a blocked task — but it does not act unilaterally. Installing and running third-party code is a significant trust boundary. The agent surfaces what it needs and waits for explicit confirmation before proceeding.

@@ -15,6 +15,8 @@ This document describes a clean-room reimplementation of awfulclaw in Python, in
 
 The package uses subdirectories to group files by role. Each directory is a Python package with an `__init__.py` that exports its public interface.
 
+Every file carries a **sensitivity header** — a module docstring (`.py`) or YAML frontmatter (`.md`) — stating whether the file is `protected`, `propose-only`, or freely writable. This makes the grading legible to developers and to the agent itself. See `PHILOSOPHY.md` for the full model.
+
 ```
 agent/
   main.py              # entry point — wiring only
