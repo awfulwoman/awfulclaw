@@ -67,7 +67,7 @@ This makes every file's role unambiguous without needing filename prefixes — `
 1. **Events flow through a pipeline, not a monolith.** Inbound messages enter a middleware chain. Each middleware can transform, intercept, or pass through. New behaviours are new middleware.
 2. **One database, one schema.** All persistent state (facts, people, schedules, conversations, tasks) lives in a single SQLite file with a clear schema. Markdown files are config, not storage.
 3. **Typed messages everywhere.** Use dataclasses or Pydantic models for every message, turn, and event. No plain dicts, no regex parsing.
-4. **SDK over subprocess.** Use the Anthropic Python SDK directly. This gives streaming, proper tool-use round-trips, retry logic, and no process-startup latency.
+4. **CLI over SDK.** Auth comes from a Claude subscription via OAuth, not an API key — the Anthropic Python SDK is not used. The `claude` CLI handles OAuth transparently. Improvements over the current implementation come from a persistent session, structured `stream-json` output, and retry logic around the subprocess — not from switching auth models.
 5. **Async throughout.** No `run_in_executor` wrappers. All I/O is natively async — `httpx.AsyncClient`, `aiosqlite`, async MCP.
 6. **Dependency injection over globals.** Components receive their dependencies at construction. No module-level singletons, no import-time side effects.
 
@@ -395,32 +395,27 @@ class ContextAssembler:
 
 ### Claude Client (`claude_client.py`)
 
-**Responsibility:** Invoke Claude via the Anthropic SDK; handle tool-use round-trips, retries, streaming.
+**Responsibility:** Invoke Claude via the `claude` CLI; manage a persistent session, handle retries, and parse structured output.
 
-**Design:** Uses `anthropic.AsyncAnthropic`. No subprocess. Tool calls dispatched to the MCP client. Exponential backoff on `APIStatusError` (529, 529) and network errors.
+**Authentication:** This app uses a Claude subscription (OAuth), not an API key. The Anthropic Python SDK is not used — it requires API key auth. The `claude` CLI binary handles OAuth transparently, storing and refreshing tokens in `~/.claude/`. This directory is mounted as a named volume in the container so tokens survive across rebuilds.
+
+**Design:** Spawns a persistent `claude` subprocess with `--output-format stream-json` for structured output. The session is reused across turns — avoiding per-turn startup cost — and respawned automatically if it dies or times out. MCP servers are attached via `--mcp-config` as today. Exponential backoff on non-zero exit codes.
 
 ```python
 class ClaudeClient:
     async def complete(
         self,
-        messages: list[MessageParam],
+        messages: list[Turn],
         system: str,
-        tools: list[ToolParam],
+        mcp_config: Path,
     ) -> str: ...
 ```
 
-Internal tool-use loop:
-```
-while True:
-    response = await anthropic.messages.create(...)
-    if response.stop_reason == "tool_use":
-        results = await mcp_client.dispatch(response.tool_calls)
-        messages += [assistant_turn(response), tool_results_turn(results)]
-    else:
-        return response.text
-```
+The `stream-json` output format emits newline-delimited JSON events (text deltas, tool use, stop reason), replacing the fragile sentinel-marker approach in the current implementation. Tool-use round-trips are handled within the persistent session — Claude calls a tool, the MCP server responds, Claude continues — without restarting the process.
 
-**Differs from original:** No subprocess, no stdin/stdout serialization, no sentinel markers. Native tool-use loop. Retry logic. Streaming support (can send partial replies).
+**Differs from original:** Persistent session (not fresh subprocess per turn). Structured `stream-json` output (not stdout scraping with sentinel markers). Retry logic. Same CLI-based auth model — OAuth subscription, no API key required.
+
+**Container note:** The `claude` binary is installed in the Docker image at build time. The `~/.claude/` auth directory is a named volume, writable, never committed to the repo.
 
 ---
 
@@ -646,6 +641,7 @@ services:
     volumes:
       - memory:/app/memory          # mutable working state
       - ./config:/app/config:ro     # mcp_servers.json etc. (read-only)
+      - claude-auth:/root/.claude   # OAuth token, refreshed automatically
     env_file: .env                  # injected at runtime, never in image
     restart: unless-stopped
 
@@ -677,6 +673,12 @@ volumes:
       type: none
       o: bind
       device: ${MEMORY_PATH}   # host path, outside the repo
+  claude-auth:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${CLAUDE_AUTH_PATH}  # ~/.claude on the host; never in repo
 ```
 
 ### What lives in the repo vs. outside it
@@ -688,6 +690,7 @@ The repo is public. Nothing personal or secret ever touches it.
 | **Repo** | Application code, `compose.yaml`, `config/mcp_servers.json` template, `Dockerfile`s, GitHub Actions workflows |
 | **Host volume (`MEMORY_PATH`)** | `memory/` — SQLite DB, `PERSONALITY.md`, `PROTOCOLS.md`, `USER.md`, `HEARTBEAT.md` |
 | **`.env` file** (gitignored) | Runtime secrets — Telegram token, IMAP credentials, API keys |
+| **`claude-auth` volume** (`~/.claude/`) | OAuth token for Claude subscription — never in repo, writable for token refresh |
 | **GitHub Actions secrets** | Deploy credentials — SSH key, registry token |
 
 `PERSONALITY.md`, `PROTOCOLS.md`, and `USER.md` are personal configuration. They live in the memory volume on the host, not in the repo.
