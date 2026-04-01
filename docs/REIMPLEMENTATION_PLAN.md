@@ -631,7 +631,7 @@ These live in `AGENT_CONFIG_PATH` on the host, mounted read-only into the contai
 
 ### Service layout
 
-Each MCP server runs as its own container. Overhead is low; isolation is high.
+External MCP servers (IMAP, Google Calendar, GitHub, Home Assistant) each run as their own container — separate credentials, separate network access, separate failure domains. The memory MCP server is different: it accesses only the local SQLite DB, has no external network access, and is so tightly coupled to the agent that separating it adds process-boundary overhead with no isolation benefit. It runs as a local stdio process spawned by the agent, registered in `config/mcp_servers.json` exactly as today — not a compose service.
 
 All mutable state uses **bind mounts** (explicit host paths) rather than named volumes. Bind mounts are transparent — the host directory is visible, easily backed up with any standard tool (rsync, Time Machine, restic), and the path is unambiguous.
 
@@ -663,16 +663,6 @@ services:
       - ${CLAUDE_AUTH_PATH}:/root/.claude             # OAuth token, writable for refresh
     env_file: .env                                    # injected at runtime, never in image
     restart: unless-stopped
-
-  mcp-memory:
-    image: ghcr.io/owner/mcp-memory:latest
-    user: "1000:1000"
-    read_only: true
-    cap_drop: [ALL]
-    security_opt: [no-new-privileges:true]
-    volumes:
-      - ${MEMORY_PATH}:/app/memory                    # read-write working state
-      - ${AGENT_CONFIG_PATH}:/app/agent_config:ro     # reads PERSONALITY.md etc. for context
 
   mcp-imap:
     image: ghcr.io/owner/mcp-imap:latest
@@ -813,7 +803,7 @@ networks:
 services:
   agent:
     networks: [awfulclaw]
-  mcp-memory:
+  mcp-imap:
     networks: [awfulclaw]
   # etc.
 ```
