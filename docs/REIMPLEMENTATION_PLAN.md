@@ -11,6 +11,49 @@ This document describes a clean-room reimplementation of awfulclaw in Python, in
 - **Relevance-aware context** — ranked context assembly, semantic search via `sqlite-vec`
 - **Composable event pipeline** — middleware stack replaces baked-in interceptors; new behaviours added without touching core
 
+## Package Layout
+
+The package uses subdirectories to group files by role. Each directory is a Python package with an `__init__.py` that exports its public interface.
+
+```
+agent/
+  main.py              # entry point — wiring only
+  agent.py             # Agent: context assembly + Claude invocation
+  bus.py               # Event bus
+  context.py           # ContextAssembler
+  pipeline.py          # Pipeline + Middleware ABC
+  scheduler.py         # Scheduler async task
+  store.py             # Store: unified SQLite layer
+  config.py            # Settings via pydantic-settings
+  connectors/
+    __init__.py        # Connector ABC, Message, InboundEvent, OutboundEvent
+    telegram.py        # TelegramConnector
+    tui.py             # TUIConnector (Textual)
+  middleware/
+    __init__.py
+    rate_limit.py
+    secret.py
+    location.py
+    slash.py
+    typing.py
+    agent.py           # AgentMiddleware (terminal middleware)
+  handlers/
+    __init__.py
+    schedule.py        # ScheduleHandler
+    heartbeat.py       # HeartbeatHandler
+  mcp/
+    __init__.py        # MCPClient
+    memory.py          # memory_write + memory_search tools
+    schedule.py        # schedule tools
+    imap.py            # email tools
+    gcal.py            # Google Calendar tools
+    owntracks.py       # location tools
+    env_manager.py     # env_set / env_keys tools
+    skills.py          # skill_read tool
+```
+
+This makes every file's role unambiguous without needing filename prefixes — `connectors/telegram.py` is clearly a connector, `middleware/location.py` is clearly middleware.
+
 ## Design Principles
 
 1. **Events flow through a pipeline, not a monolith.** Inbound messages enter a middleware chain. Each middleware can transform, intercept, or pass through. New behaviours are new middleware.
@@ -195,7 +238,7 @@ async def search_facts(query: str, limit: int = 10) -> list[Fact]:
 
 ---
 
-### Transport / Connector (`transport/`)
+### Transport / Connector (`connectors/`)
 
 **Responsibility:** Adapter between a messaging platform and the event bus.
 
@@ -215,9 +258,9 @@ class Connector(ABC):
 
 Two connectors ship in the new implementation:
 
-**`TelegramConnector`** — uses `httpx.AsyncClient` with long-polling. Offset stored in `store.kv`. No background threads. Supports text, images, and typing indicators.
+**`connectors/telegram.py`** — uses `httpx.AsyncClient` with long-polling. Offset stored in `store.kv`. No background threads. Supports text, images, and typing indicators.
 
-**`TUIConnector`** — a local terminal UI for development, debugging, and offline use. Built on [Textual](https://github.com/Textualize/textual). Renders a chat-style interface in the terminal with a scrollable message history panel and an input box. Runs as an async Textual app inside its own task; sends `InboundEvent` on Enter and renders `OutboundEvent` messages as they arrive.
+**`connectors/tui.py`** — a local terminal UI for development, debugging, and offline use. Built on [Textual](https://github.com/Textualize/textual). Renders a chat-style interface in the terminal with a scrollable message history panel and an input box. Runs as an async Textual app inside its own task; sends `InboundEvent` on Enter and renders `OutboundEvent` messages as they arrive.
 
 ```python
 class TUIConnector(Connector):
@@ -270,7 +313,7 @@ class ScheduleEvent:
 
 ---
 
-### Message Pipeline (`pipeline.py`)
+### Message Pipeline (`pipeline.py`, `middleware/`)
 
 **Responsibility:** Process inbound events through a middleware stack before they reach the agent.
 
@@ -282,14 +325,14 @@ class Middleware(Protocol):
 ```
 
 **Built-in middleware (in order):**
-1. `RateLimitMiddleware` — per-sender rate limiting
-2. `SecretCaptureMiddleware` — watches for pending secret keys; intercepts the next message as the value
-3. `LocationMiddleware` — detects `[Location: lat, lon]` format; writes to store; stops chain
-4. `SlashCommandMiddleware` — handles `/schedules`, `/restart`; stops chain
-5. `TypingMiddleware` — sends typing indicator before passing through
-6. `AgentMiddleware` — invokes the agent; attaches reply to event
+1. `middleware/rate_limit.py` — per-sender rate limiting
+2. `middleware/secret.py` — watches for pending secret keys; intercepts the next message as the value
+3. `middleware/location.py` — detects `[Location: lat, lon]` format; writes to store; stops chain
+4. `middleware/slash.py` — handles `/schedules`, `/restart`; stops chain
+5. `middleware/typing.py` — sends typing indicator before passing through
+6. `middleware/agent.py` — invokes the agent; attaches reply to event
 
-New behaviours (e.g. a `/remind` command) are new middleware — `loop.py` is never touched.
+New behaviours (e.g. a `/remind` command) are a new file in `middleware/` — `pipeline.py` and `main.py` are never touched.
 
 **Differs from original:** Interceptors extracted from `loop.py`. No shared mutable closure state between interceptors.
 
@@ -402,7 +445,7 @@ class Scheduler:
                 await asyncio.sleep(60)
 ```
 
-Schedule events are handled by `ScheduleHandler` (not in the message pipeline) which invokes `agent.invoke(schedule.prompt)` and optionally posts the reply as an `OutboundEvent`.
+Schedule events are handled by `handlers/schedule.py` (not in the message pipeline) which invokes `agent.invoke(schedule.prompt)` and optionally posts the reply as an `OutboundEvent`. Heartbeat logic lives in `handlers/heartbeat.py`.
 
 **Differs from original:** Scheduler is event-driven, not polled. No coupling to the idle tick. Schedule storage in SQLite (consistent with everything else).
 
@@ -476,28 +519,28 @@ These are read at runtime but never written by the agent (the agent uses `set_fa
 - Smoke test: single-turn invoke from a script
 
 ### Phase 2: Connectors and bus
-- `Bus` with typed events
-- `TelegramConnector` (async, offset in store.kv)
-- `TUIConnector` (Textual-based, for local dev without Telegram)
-- Basic `Pipeline` with `AgentMiddleware` only
+- `bus.py` with typed events
+- `connectors/telegram.py` (async, offset in store.kv)
+- `connectors/tui.py` (Textual-based, for local dev without Telegram)
+- Basic `pipeline.py` with `middleware/agent.py` only
 - End-to-end: receive message → Claude reply → send (works with both connectors)
 
 ### Phase 3: Context and memory
-- `ContextAssembler` with budget-based ranking
+- `context.py` (`ContextAssembler`) with budget-based ranking
 - `sqlite-vec` embedding + semantic search
 - Full system prompt with SOUL, USER, facts, people, tasks, schedules
 
 ### Phase 4: Middleware
-- `SecretCaptureMiddleware`
-- `LocationMiddleware`
-- `SlashCommandMiddleware`
-- `RateLimitMiddleware`
-- `TypingMiddleware`
+- `middleware/secret.py`
+- `middleware/location.py`
+- `middleware/slash.py`
+- `middleware/rate_limit.py`
+- `middleware/typing.py`
 
 ### Phase 5: Scheduler
 - `schedules` table + cron evaluation
-- `Scheduler` async task
-- `ScheduleHandler`
+- `scheduler.py` async task
+- `handlers/schedule.py`, `handlers/heartbeat.py`
 - Daily briefing
 
 ### Phase 6: Idle and heartbeat
@@ -523,11 +566,11 @@ These are read at runtime but never written by the agent (the agent uses `set_fa
 
 | Component | Verdict | Notes |
 |-----------|---------|-------|
-| `connector.py` Connector ABC | Reuse, adapt | Make async |
-| `telegram.py` | Reuse, adapt | Replace `requests` with `httpx.AsyncClient` |
-| `scheduler.py` cron logic | Reuse | Extract `get_due` / `should_wake` |
-| `context.py` prompt sections | Reuse text | Replace assembly logic |
-| MCP server implementations | Reuse as-is | They're standalone; no changes needed |
+| `connector.py` Connector ABC | Reuse, adapt | Make async; becomes `connectors/__init__.py` |
+| `telegram.py` | Reuse, adapt | Move to `connectors/telegram.py`; replace `requests` with `httpx.AsyncClient` |
+| `scheduler.py` cron logic | Reuse | Extract `get_due` / `should_wake` into `scheduler.py` |
+| `context.py` prompt sections | Reuse text | Replace assembly logic; keep in `context.py` |
+| MCP server implementations | Reuse, move | Move into `mcp/` subdirectory (`mcp/imap.py`, `mcp/gcal.py`, etc.) |
 | `config/mcp_servers.json` | Reuse as-is | Format unchanged |
 | `memory/SOUL.md`, `USER.md` | Reuse as-is | |
 | `env_utils.py` | Reuse as-is | |
