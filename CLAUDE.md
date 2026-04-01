@@ -31,6 +31,7 @@ IMAP_PORT=993
 IMAP_USER=you@example.com
 IMAP_PASSWORD=...
 GOOGLE_CLIENT_SECRET_PATH=/path/to/client_secret.json  # required for Google Calendar MCP server
+OBSIDIAN_VAULT=obsidian                               # vault name for Obsidian CLI MCP server
 OWNTRACKS_URL=https://your-recorder.example.com  # required to use OwnTracks MCP server
 OWNTRACKS_USER=charlie                            # default: charlie
 OWNTRACKS_DEVICE=iphone                           # default: iphone

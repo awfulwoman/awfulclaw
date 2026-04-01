@@ -116,30 +116,20 @@
       ]
     },
     {
-      "name": "mcp-obsidian",
+      "name": "obsidian",
       "command": "uv",
       "args": [
         "run",
-        "--project",
-        "/Users/charlie/Code/awfulwoman/awfulclaw/mcp_servers/mcp-obsidian",
-        "--python",
-        "3.12",
-        "mcp-obsidian"
+        "python",
+        "-m",
+        "awfulclaw_mcp.obsidian"
       ],
       "env": {
-        "OBSIDIAN_API_KEY": "${OBSIDIAN_API_KEY}",
-        "OBSIDIAN_HOST": "${OBSIDIAN_HOST}",
-        "OBSIDIAN_PORT": "${OBSIDIAN_PORT}",
-        "OBSIDIAN_PROTOCOL": "${OBSIDIAN_PROTOCOL}"
+        "OBSIDIAN_VAULT": "${OBSIDIAN_VAULT}"
       },
       "env_required": [
-        "OBSIDIAN_API_KEY"
-      ],
-      "source": {
-        "github_url": "https://github.com/MarkusPfundstein/mcp-obsidian",
-        "install_type": "python_clone",
-        "package": "mcp-obsidian"
-      }
+        "OBSIDIAN_VAULT"
+      ]
     },
     {
       "name": "github",

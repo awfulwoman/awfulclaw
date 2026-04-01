@@ -2,15 +2,45 @@
 
 from __future__ import annotations
 
+import os
 import re
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from awfulclaw import memory, scheduler
-from awfulclaw.db import list_facts, list_people, read_fact, read_person
+
+_VAULT = os.getenv("OBSIDIAN_VAULT", "").strip()
 
 _SKILLS_DIR = Path("config/skills")
+
+
+def _obsidian(*args: str) -> str:
+    cmd = ["obsidian"]
+    if _VAULT:
+        cmd.append(f"vault={_VAULT}")
+    cmd.extend(args)
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        return result.stdout.strip() if result.returncode == 0 else ""
+    except Exception:
+        return ""
+
+
+def _load_obsidian_folder(folder: str) -> dict[str, str]:
+    """Return {stem: content} for all .md files in the given vault folder."""
+    listing = _obsidian("files", f"folder={folder}", "ext=md")
+    notes: dict[str, str] = {}
+    for line in listing.splitlines():
+        path = line.strip()
+        if not path:
+            continue
+        content = _obsidian("read", f"path={path}")
+        if content and content not in ("[no output]", ""):
+            stem = Path(path).stem
+            notes[stem] = content
+    return notes
 
 _MAX_CHARS = 8000
 
@@ -60,10 +90,21 @@ def _load_user() -> str:
 
 def _find_person_by_phone(phone: str) -> tuple[str, str] | None:
     """Return (name, content) of the first person record matching the phone number."""
-    for name in list_people():
-        content = read_person(name)
-        if phone in content:
-            return f"{name}.md", content
+    raw = _obsidian("search:context", f"query={phone}", "path=awfulclaw/people", "format=json")
+    if not raw:
+        return None
+    import json
+    try:
+        results = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    for item in results:
+        path = item.get("file", "")
+        if not path:
+            continue
+        content = _obsidian("read", f"path={path}")
+        if content:
+            return Path(path).name, content
     return None
 
 
@@ -122,8 +163,17 @@ Use the context already loaded in this prompt to assemble the answer — no tool
 You have MCP tools available beyond basic conversation. \
 Use them proactively when the user's request maps to one:
 
-- **Memory** — read/write facts, people profiles, and task files via `memory_write` / \
-`memory_search`
+- **Obsidian** — your primary knowledge store. Prefer Obsidian over internal memory for \
+anything the user might want to browse, edit, or search themselves:
+  - Notes and research: `obsidian_create`, `obsidian_read`, `obsidian_append`
+  - Daily journal: `obsidian_daily_append`, `obsidian_daily_read`
+  - Tasks and todos: `obsidian_tasks`, `obsidian_task_toggle`
+  - Bookmarks: `obsidian_bookmark_add`, `obsidian_bookmarks`
+  - Facts about the user or world: create/update `awfulclaw/facts/<topic>.md`
+  - People profiles: create/update `awfulclaw/people/<name>.md`
+  - Search everything: `obsidian_search`
+- **Memory** — use `memory_write` only for internal agent files (tasks, USER.md updates). \
+Use `memory_search` to search internal memory and conversation history.
 - **Schedules** — create, update, or delete recurring or one-off scheduled prompts via \
 `schedule_create` / `schedule_delete` / `schedule_list`
 - **MCP servers** — install, register, remove, and diagnose MCP servers via \
@@ -136,7 +186,7 @@ via `env_set` (if you already have the value); or ask the user to provide a secr
 
 When the user says something like "install this MCP server <url>", use `mcp_server_add_from_github`. \
 When they ask to be reminded of something, use `schedule_create`. \
-When they share a fact about themselves, use `memory_write` to persist it.
+When they share a fact about themselves, store it in Obsidian at `awfulclaw/facts/<topic>.md`.
 
 ## Requesting secrets from the user
 
@@ -184,8 +234,11 @@ using this mechanism.\
         )
         sections.append("\n".join(lines))
 
-    # Location (dedicated section with formatted label)
-    location_content = read_fact("location")
+    # Facts from Obsidian (awfulclaw/facts/)
+    facts = _load_obsidian_folder("awfulclaw/facts")
+
+    # Location fact: special-cased to a single line
+    location_content = facts.pop("location", "")
     if location_content:
         loc_lines = {
             line.split(":", 1)[0].strip(): line.split(":", 1)[1].strip()
@@ -200,19 +253,17 @@ using this mechanism.\
                 loc_label += f" (as of {updated})"
             sections.append(loc_label)
 
-    # All facts (excluding location, handled above)
-    for key in list_facts():
-        if key == "location":
-            continue
-        content = read_fact(key)
-        if content:
-            sections.append(f"## Fact: {key}.md\n{content}")
+    for key, content in sorted(facts.items()):
+        sections.append(f"## Fact: {key}.md\n{content}")
 
-    # People: sender match first, then by words in message
+    # People from Obsidian (awfulclaw/people/)
+    people = _load_obsidian_folder("awfulclaw/people")
+
     if sender:
         if sender_person:
             filename, content = sender_person
             sections.append(f"## Person: {filename}\n{content}")
+            included_people.add(filename)
         else:
             sections.append(
                 f"## Unknown sender: {sender}\n"
@@ -221,12 +272,11 @@ using this mechanism.\
             )
 
     words = set(incoming_message.lower().split())
-    for name in list_people():
+    for name, content in sorted(people.items()):
         filename = f"{name}.md"
         if filename in included_people:
             continue
-        content = read_person(name)
-        if name in words or any(word in content.lower() for word in words if len(word) > 3):
+        if name.lower() in words or any(word in content.lower() for word in words if len(word) > 3):
             sections.append(f"## Person: {filename}\n{content}")
 
     # Open tasks (files containing unchecked checkboxes)

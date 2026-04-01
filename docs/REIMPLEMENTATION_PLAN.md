@@ -213,9 +213,33 @@ class Connector(ABC):
     async def stop(self) -> None: ...
 ```
 
-`TelegramConnector` uses `httpx.AsyncClient` with long-polling. Offset stored in `store.kv`. No background threads.
+Two connectors ship in the new implementation:
 
-**Differs from original:** Async-native (no `threading.Thread`). Connector pushes events via callback rather than being polled by the gateway. Gateway eliminated — bus takes its place.
+**`TelegramConnector`** — uses `httpx.AsyncClient` with long-polling. Offset stored in `store.kv`. No background threads. Supports text, images, and typing indicators.
+
+**`TUIConnector`** — a local terminal UI for development, debugging, and offline use. Built on [Textual](https://github.com/Textualize/textual). Renders a chat-style interface in the terminal with a scrollable message history panel and an input box. Runs as an async Textual app inside its own task; sends `InboundEvent` on Enter and renders `OutboundEvent` messages as they arrive.
+
+```python
+class TUIConnector(Connector):
+    """
+    Terminal chat UI built with Textual.
+    Useful for local dev and running the agent without Telegram.
+    Start with: uv run python -m agent --connector tui
+    """
+    async def start(self, on_message):
+        self._on_message = on_message
+        await self._app.run_async()   # Textual takes over the terminal
+
+    async def send(self, to, message):
+        self._app.post_message(AgentReply(message.text))
+
+    async def send_typing(self, to):
+        self._app.post_message(TypingIndicator())
+```
+
+The TUI connector doubles as the primary development harness — no Telegram credentials needed to run and test the agent locally.
+
+**Differs from original:** Async-native (no `threading.Thread`). Connector pushes events via callback rather than being polled by the gateway. Gateway eliminated — bus takes its place. Connector selected via `--connector telegram|tui` CLI flag (default: `telegram`).
 
 ---
 
@@ -454,8 +478,9 @@ These are read at runtime but never written by the agent (the agent uses `set_fa
 ### Phase 2: Connectors and bus
 - `Bus` with typed events
 - `TelegramConnector` (async, offset in store.kv)
+- `TUIConnector` (Textual-based, for local dev without Telegram)
 - Basic `Pipeline` with `AgentMiddleware` only
-- End-to-end: receive Telegram message → Claude reply → send
+- End-to-end: receive message → Claude reply → send (works with both connectors)
 
 ### Phase 3: Context and memory
 - `ContextAssembler` with budget-based ranking

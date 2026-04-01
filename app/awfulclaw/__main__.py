@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 
 from awfulclaw import config, loop
 from awfulclaw.gateway import Gateway
@@ -13,9 +14,16 @@ def main() -> None:
     print("awfulclaw v0.1.0 — iMessage AI agent")
     print("Use Ctrl-C to exit.")
     try:
-        connector = config.get_connector()
         channel = config.get_channel()
-        gateway = Gateway([(channel, connector)])
+        connector = config.get_connector()
+        connectors = [(channel, connector)]
+
+        extra = os.getenv("AWFULCLAW_EXTRA_CHANNELS", "").strip().lower()
+        if "stdio" in extra:
+            from awfulclaw.stdio import StdioConnector
+            connectors.append(("stdio", StdioConnector()))
+
+        gateway = Gateway(connectors)
         asyncio.run(loop.run(gateway))
     except RuntimeError as exc:
         logging.error("%s", exc)
