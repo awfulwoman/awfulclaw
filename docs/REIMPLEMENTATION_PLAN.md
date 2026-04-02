@@ -138,7 +138,7 @@ class Settings(BaseSettings):
 
 Paths default to directories relative to the working directory but can be overridden via environment variables (`MEMORY_PATH`, `AGENT_CONFIG_PATH`). This allows mounting mutable state on a separate filesystem — e.g. a ZFS dataset with snapshots and replication — while keeping the code checkout on the boot volume.
 
-**Differs from original:** No 10+ loose `get_*()` functions. One settings object passed through DI.
+**Rationale:** One settings object passed through DI eliminates scattered `get_*()` functions and makes configuration testable.
 
 ---
 
@@ -229,7 +229,7 @@ class Store:
     async def kv_set(key, value)
 ```
 
-**Differs from original:** No JSON file for schedules, no regex-parsed markdown for conversations, no split between `memory.py` and `db.py`. One module, one file, one schema.
+**Rationale:** All persistent state in one module with one schema. No format translation between storage and application — typed objects go in, typed objects come out.
 
 ---
 
@@ -249,7 +249,7 @@ async def search_facts(query: str, limit: int = 10) -> list[Fact]:
     )
 ```
 
-**Differs from original:** Substring `LIKE` search replaced with vector similarity. No more missed matches due to wording differences.
+**Rationale:** Vector similarity finds semantically related content regardless of exact wording — "feeling down" matches a query for "sad".
 
 ---
 
@@ -297,7 +297,7 @@ class TUIConnector(Connector):
 
 The TUI connector doubles as the primary development harness — no Telegram credentials needed to run and test the agent locally.
 
-**Differs from original:** Async-native (no `threading.Thread`). Connector pushes events via callback rather than being polled by the gateway. Gateway eliminated — bus takes its place. Connector selected via `--connector telegram|tui` CLI flag (default: `telegram`).
+**Design notes:** Async-native — each connector runs its own async task, no threads. Connectors push events via callback rather than being polled. Connector selected via `--connector telegram|tui` CLI flag (default: `telegram`).
 
 ---
 
@@ -324,7 +324,7 @@ class ScheduleEvent:
     schedule: Schedule
 ```
 
-**Differs from original:** Replaces the gateway's thread-safe queue. Makes the scheduler a first-class event producer rather than something polled inside the idle tick.
+**Rationale:** Decouples producers from consumers. The scheduler is a first-class event producer on equal footing with connectors.
 
 ---
 
@@ -349,7 +349,7 @@ class Middleware(Protocol):
 
 New behaviours (e.g. a `/remind` command) are a new file in `middleware/` — `pipeline.py` and `main.py` are never touched.
 
-**Differs from original:** Interceptors extracted from `loop.py`. No shared mutable closure state between interceptors.
+**Rationale:** Each middleware is an independent unit with no shared mutable state. New behaviours are new files — core modules are never touched.
 
 ---
 
@@ -365,7 +365,7 @@ class Agent:
     async def invoke(self, prompt: str, history: list[Turn] = []) -> str: ...
 ```
 
-**Differs from original:** `reply()` is the main path (message → response); `invoke()` is used by the scheduler for prompt-driven turns. Both go through the same `ClaudeClient`.
+**Design notes:** `reply()` is the main path (message → response); `invoke()` is used by the scheduler for prompt-driven turns. Both go through the same `ClaudeClient`.
 
 ---
 
@@ -388,7 +388,7 @@ class ContextAssembler:
     async def build(self, message: str, sender: str | None, channel: str) -> str: ...
 ```
 
-**Differs from original:** Relevance scoring replaces crude "drop oldest facts" truncation. Budget scales with actual conversation length rather than a fixed cap.
+**Rationale:** Budget scales with actual conversation length rather than a fixed cap. Relevance scoring ensures the most useful context is included first.
 
 ---
 
@@ -412,7 +412,7 @@ class ClaudeClient:
 
 The `stream-json` output format emits newline-delimited JSON events (text deltas, tool use, stop reason), replacing the fragile sentinel-marker approach in the current implementation.
 
-**Differs from original:** Structured `stream-json` output (not stdout scraping with sentinel markers). Retry logic. Same CLI-based auth model — OAuth subscription, no API key required.
+**Design notes:** Structured `stream-json` output for reliable parsing. Exponential backoff on failure. CLI-based auth — OAuth subscription, no API key required.
 
 ---
 
@@ -430,7 +430,7 @@ class MCPClient:
     async def reload_if_changed(self) -> bool: ...
 ```
 
-**Differs from original:** No `--mcp-config` flag on subprocess. Persistent connections rather than re-spawning every turn. Tool catalogue is live and doesn't require config regeneration.
+**Design notes:** Persistent connections to MCP servers — spawned once at startup, reused across turns. Tool catalogue is fetched live at connection time and refreshed on config reload.
 
 **Third-party server installation:** When the agent identifies a capability gap, it may propose installing a third-party MCP server. The flow mirrors the secret-request pattern — the agent names a specific server, explains what it does, and waits for explicit user confirmation. On approval, the server is registered in `config/mcp_servers.json` and picked up on the next reload. Servers are run via `npx -y` (npm) or `uvx` (Python) without a permanent install. The agent cannot install servers without user approval — see `PHILOSOPHY.md`.
 
@@ -512,7 +512,7 @@ class Scheduler:
 
 Schedule events are handled by `handlers/schedule.py` (not in the message pipeline) which invokes `agent.invoke(schedule.prompt)` and optionally posts the reply as an `OutboundEvent`. Periodic ambient check-ins are handled by `handlers/checkin.py` — distinct from schedules, which fire blindly at a set time. The check-in reads `agent_config/CHECKIN.md` (a short patrol checklist maintained by the user), invokes Claude, and sends a reply only if Claude determines something warrants attention. If nothing does, it stays silent. `checkin_interval` in Settings controls frequency.
 
-**Differs from original:** Scheduler is event-driven, not polled. No coupling to the idle tick. Schedule storage in SQLite (consistent with everything else).
+**Design notes:** Event-driven — sleeps until next due time rather than polling. Schedules stored in SQLite, consistent with all other state.
 
 ---
 
@@ -550,7 +550,7 @@ async def main():
         tg.create_task(mcp.watch_config(settings.mcp_config))
 ```
 
-**Differs from original:** `main.py` is ~30 lines of wiring, not 437 lines of logic.
+**Rationale:** `main.py` is ~30 lines of wiring. All logic lives in the components it connects.
 
 ---
 
