@@ -77,6 +77,8 @@ This makes every file's role unambiguous without needing filename prefixes — `
 4. **CLI over SDK.** Auth comes from a Claude subscription via OAuth, not an API key — the Anthropic Python SDK is not used. The `claude` CLI handles OAuth transparently. Improvements over the current implementation come from structured `stream-json` output and retry logic around the subprocess — not from switching auth models.
 5. **Async throughout.** No `run_in_executor` wrappers. All I/O is natively async — `httpx.AsyncClient`, `aiosqlite`, async MCP.
 6. **Dependency injection over globals.** Components receive their dependencies at construction. No module-level singletons, no import-time side effects.
+7. **Atomic file writes.** Any code that writes files outside SQLite (knowledge flush to Obsidian, future exporters) must write to a temporary file in the same directory first, then `os.rename()` to the final path. This prevents readers from seeing partial data. Applies to `handlers/knowledge_flush.py` and any future file-writing handler.
+8. **Fail fast at startup.** Before entering the main event loop, `main.py` runs a preflight check that validates all external dependencies are reachable and correctly configured. A startup failure with a clear error message is always preferable to a runtime failure mid-conversation.
 
 ## Proposed Architecture
 
@@ -280,6 +282,8 @@ Two connectors ship in the new implementation:
 
 **`connectors/telegram.py`** — uses `httpx.AsyncClient` with long-polling. Offset stored in `store.kv`. No background threads. Supports text, images, and typing indicators.
 
+**Message batching:** Each poll cycle may return multiple messages from the same chat. Rather than firing `on_message` once per message, the connector batches all messages from the same chat that arrived in a single poll cycle into one `InboundEvent` with a combined content field (messages joined by newlines, preserving sender attribution for group chats). This produces more coherent agent responses when users send several messages in quick succession — the agent sees the full burst as a single turn rather than racing to reply to each one individually. Messages from *different* chats in the same poll cycle are still dispatched as separate events.
+
 **`connectors/rest.py`** — an HTTP API for programmatic access. Built on an async ASGI framework (e.g. Starlette or FastAPI). Exposes a minimal chat endpoint that accepts a message and returns the agent's reply. Useful for integrating with mobile apps, web dashboards, webhooks, or any client that speaks HTTP.
 
 ```python
@@ -335,7 +339,7 @@ The test harness starts the agent with the REST connector and an in-memory SQLit
 
 Client implementations live outside this repo.
 
-**Design notes:** Async-native — each connector runs its own async task, no threads. Connectors push events via callback rather than being polled. Connector selected via `--connector telegram|rest` CLI flag (default: `telegram`).
+**Design notes:** Async-native — each connector runs its own async task, no threads. Connectors push events via callback rather than being polled. Connector selected via `--connector telegram|rest` CLI flag (default: `telegram`). The REST connector does not batch — each HTTP request is one turn.
 
 ---
 
@@ -702,9 +706,29 @@ Governed writes are infrequent — personality adaptations and schedule prompt c
 **Responsibility:** Wire everything together and run. Nothing else.
 
 ```python
+async def preflight(settings: Settings, store: Store) -> None:
+    """Validate external dependencies before entering the main loop.
+    Raises on failure — a clear startup error beats a runtime surprise."""
+    # DB: verify schema is current
+    await store.check_schema()
+    # agent_config: verify required files are readable
+    for name in ("PERSONALITY.md", "PROTOCOLS.md", "USER.md"):
+        path = settings.agent_config_path / name
+        if not path.is_file():
+            raise FileNotFoundError(f"Missing required config: {path}")
+    # Telegram: verify bot token is valid (getMe)
+    if settings.telegram:
+        await TelegramConnector.verify_token(settings.telegram)
+    # MCP: verify config file exists and parses
+    if not settings.mcp_config.is_file():
+        raise FileNotFoundError(f"Missing MCP config: {settings.mcp_config}")
+
+
 async def main():
     settings = Settings()
     store = await Store.connect(settings.db_path)
+    await preflight(settings, store)
+
     bus = Bus()
     mcp = MCPClient()
     await mcp.connect_all(settings.mcp_config)
@@ -731,7 +755,7 @@ async def main():
         tg.create_task(mcp.watch_config(settings.mcp_config))
 ```
 
-**Rationale:** `main.py` is ~30 lines of wiring. All logic lives in the components it connects.
+**Rationale:** `main.py` is wiring and preflight — nothing else. `preflight()` validates all external dependencies before the event loop starts: DB schema, required config files, Telegram bot token, MCP config. A clear startup error is always preferable to a runtime failure mid-conversation. All logic lives in the components it connects.
 
 ---
 
@@ -883,11 +907,12 @@ This is a clean-room reimplementation, not a refactor. The old codebase (in `leg
 - `Store` with full schema and async API
 - `ClaudeClient` with CLI subprocess, `stream-json` parsing, retry
 - `MCPClient` with persistent connections
+- `preflight()` — startup validation (DB schema, config files, Telegram token, MCP config)
 - Smoke test: single-turn invoke from a script
 
 ### Phase 2: Connectors and bus
 - `bus.py` with typed events
-- `connectors/telegram.py` (async, offset in store.kv)
+- `connectors/telegram.py` (async, offset in store.kv, per-chat message batching)
 - `connectors/rest.py` (HTTP API + SSE, for programmatic access and external clients)
 - Basic `pipeline.py` with `InvokeMiddleware` only
 - End-to-end: receive message → Claude reply → send (works with both connectors)
@@ -911,7 +936,7 @@ This is a clean-room reimplementation, not a refactor. The old codebase (in `leg
 - `schedules` table + cron evaluation
 - `scheduler.py` async task
 - `handlers/schedule.py`
-- `handlers/knowledge_flush.py` — daily Obsidian export of facts, people, conversation summary
+- `handlers/knowledge_flush.py` — daily Obsidian export of facts, people, conversation summary (atomic writes — see below)
 
 ### Phase 6: Idle and check-in
 - `handlers/checkin.py` — reads `CHECKIN.md`, invokes Claude, sends only if warranted
