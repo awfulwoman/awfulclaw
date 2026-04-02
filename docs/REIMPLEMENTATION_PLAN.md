@@ -125,6 +125,8 @@ The key change from the current design: **the loop no longer owns logic**. It on
 class Settings(BaseSettings):
     model: str = "claude-sonnet-4-6"
     governance_model: str = "claude-haiku-4-5-20251001"  # classification only — no need for full model
+    memory_path: Path = Path("memory")                   # SQLite DB, working state
+    agent_config_path: Path = Path("agent_config")       # PERSONALITY.md, PROTOCOLS.md, USER.md, CHECKIN.md
     telegram: TelegramSettings
     imap: ImapSettings | None = None
     gcal: GCalSettings | None = None
@@ -133,6 +135,8 @@ class Settings(BaseSettings):
     idle_interval: int = 60
     checkin_interval: int = 86400  # seconds between ambient check-ins (default 24h)
 ```
+
+Paths default to directories relative to the working directory but can be overridden via environment variables (`MEMORY_PATH`, `AGENT_CONFIG_PATH`). This allows mounting mutable state on a separate filesystem — e.g. a ZFS dataset with snapshots and replication — while keeping the code checkout on the boot volume.
 
 **Differs from original:** No 10+ loose `get_*()` functions. One settings object passed through DI.
 
@@ -571,7 +575,7 @@ See `PHILOSOPHY.md` for the full data philosophy. In brief: the agent is a coord
 - `agent_config/USER.md` — user profile
 - `agent_config/CHECKIN.md` — ambient check-in checklist; short, human-maintained patrol prompt
 
-These live in `agent_config/` on the Mac Mini, chmod 444. The agent reads them; it cannot write to them. The user edits them directly. Example files with documentation and customisation notes are provided in `config/agent_config_examples/`.
+These live at `AGENT_CONFIG_PATH` (default: `agent_config/`), chmod 444. The agent reads them; it cannot write to them. The user edits them directly. Example files with documentation and customisation notes are provided in `config/agent_config_examples/`.
 
 ---
 
@@ -705,10 +709,10 @@ Environment variables are loaded from `.env` by the agent at startup (via `pydan
 On a single-purpose Mac Mini, file permissions provide config immutability without containers or sandboxing:
 
 ```bash
-# Run once during initial setup
-chmod -R 444 agent_config/      # PERSONALITY.md, PROTOCOLS.md, USER.md, CHECKIN.md — read-only
-chmod 600 .env                  # secrets — readable only by the host user
-# memory/ is writable by default — no special permissions needed
+# Run once during initial setup — paths shown are defaults; override via .env
+chmod -R 444 ${AGENT_CONFIG_PATH:-agent_config}/  # PERSONALITY.md, PROTOCOLS.md, USER.md, CHECKIN.md — read-only
+chmod 600 .env                                     # secrets — readable only by the host user
+# MEMORY_PATH is writable by default — no special permissions needed
 ```
 
 Code files are owned by the host user. The agent process runs as the same user but the governance layer (`handlers/governance.py`) and middleware are protected by being part of the git-managed codebase — changes require a PR, human approval, and merge to `main`.
@@ -741,12 +745,12 @@ The repo is public. Nothing personal or secret ever touches it.
 | Location | Contents |
 |----------|----------|
 | **Repo** | Application code, `config/mcp_servers.json`, `config/skills/*.md`, launchd plists, scripts |
-| **`agent_config/`** (read-only via chmod) | `PERSONALITY.md`, `PROTOCOLS.md`, `USER.md`, `CHECKIN.md` — human-authored config. Back this up. |
-| **`memory/`** (read-write) | SQLite DB, conversation history, facts, schedules. Back this up. |
+| **`AGENT_CONFIG_PATH`** (default: `agent_config/`, read-only via chmod) | `PERSONALITY.md`, `PROTOCOLS.md`, `USER.md`, `CHECKIN.md` — human-authored config. Back this up. |
+| **`MEMORY_PATH`** (default: `memory/`, read-write) | SQLite DB, conversation history, facts, schedules. Back this up. |
 | **`.env`** (gitignored, chmod 600) | Runtime secrets — Telegram token, IMAP credentials, API keys. |
 | **`~/.claude/`** | OAuth tokens for the `claude` CLI. Writable for token refresh; never in repo. |
 
 ### Backups
 
-All mutable state lives in two places: `memory/` (SQLite DB) and `agent_config/` (markdown config). Both are plain files on disk, easily backed up with Time Machine, rsync, or restic. No volume mounts, no container filesystems to extract from.
+All mutable state lives in two places: `MEMORY_PATH` (SQLite DB) and `AGENT_CONFIG_PATH` (markdown config). Both are plain files on disk, easily backed up with Time Machine, rsync, restic, or ZFS snapshots. Because the paths are configurable, these directories can live on a separate filesystem — e.g. a ZFS dataset with its own snapshot and replication schedule — while the code checkout remains on the boot volume.
 
