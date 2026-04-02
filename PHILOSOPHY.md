@@ -52,17 +52,18 @@ Files and configuration are graded by what the agent can do with them:
 
 | Category | Examples | Agent can read? | Agent can write? | Enforced by |
 |----------|----------|----------------|-----------------|-------------|
-| **Code** | all `.py` files, `mcp_servers.json` | Yes | No | `--allowedTools` blocks `Edit`/`Write`/`Bash`; no MCP tool exposes file-write; changes require git PR and merge to `main` |
-| **Read-only config** | `PERSONALITY.md`, `PROTOCOLS.md`, `USER.md`, `CHECKIN.md` | Yes | No | `--allowedTools` blocks write tools; chmod 444 as defence in depth |
-| **Working state** | facts, people, schedules, conversations | Yes | Yes | `memory/` directory, writable via MCP tools |
-| **Blind write** | `.env` credential values | Soft no | Yes (write-only via `env_manager` MCP tool) | No MCP tool exposes values. The CLI `Read` built-in *could* read `.env` — this is a soft boundary (PROTOCOLS.md instructs against it, chmod 600 blocks other users). The hard boundary is that `Bash` is blocked, so Claude cannot exfiltrate values via network or subprocess. |
+| **Code** | all `.py` files, `mcp_servers.json` | Yes | No | `mcp/file_read.py` scoped to project directory; `--allowedTools` blocks `Edit`/`Write`/`Bash`; no MCP tool exposes file-write; changes require git PR and merge to `main` |
+| **Read-only config** | `PERSONALITY.md`, `PROTOCOLS.md`, `USER.md`, `CHECKIN.md` | Yes | No | `mcp/file_read.py` allows reads; `--allowedTools` blocks write tools; chmod 444 as defence in depth |
+| **Working state** | facts, people, schedules, conversations | Yes | Yes | `memory/` directory, writable via MCP tools; governed writes for facts/people (see below) |
+| **Blind write** | `.env` credential values | **No** | Yes (write-only via `env_manager` MCP tool) | `mcp/file_read.py` explicitly denies `.env`; CLI `Read` is blocked via `--allowedTools`; no MCP tool exposes values. Hard boundary at the capability level. |
+| **Outside project** | `~/.ssh`, `~/.aws`, browser data | **No** | No | `mcp/file_read.py` rejects paths outside project directory; CLI `Read` blocked |
 
 No file carries sensitivity headers or classification metadata. Immutability is enforced by tool scoping, with filesystem permissions as defence in depth:
 
-- **Code files** — `--allowedTools` blocks `Bash`, `Edit`, `Write`; no MCP tool exposes file-write capability; changes require a git PR and merge to `main`
+- **Code files** — `--allowedTools` blocks `Bash`, `Edit`, `Write`, `Read`; `mcp/file_read.py` allows scoped reads within the project; no MCP tool exposes file-write capability; changes require a git PR and merge to `main`
 - **`PERSONALITY.md`, `PROTOCOLS.md`, `USER.md`, `CHECKIN.md`** — in `agent_config/`, no write tool exposed; chmod 444 as defence in depth
 - **Working state** (DB, conversation history) — `memory/`, writable by the agent process via MCP tools
-- **`.env` credentials** — loaded by pydantic-settings at startup; no MCP tool exposes values. CLI `Read` is a soft boundary (see table above); the hard boundary against exfiltration is that `Bash` is blocked
+- **`.env` credentials** — loaded by pydantic-settings at startup; `mcp/file_read.py` explicitly denies `.env`; CLI `Read` blocked via `--allowedTools`. Hard boundary — no tool can read credential values
 
 `PERSONALITY.md` and `PROTOCOLS.md` carry a brief YAML frontmatter comment for human readers, explaining what the file is and how to edit it:
 
@@ -98,13 +99,25 @@ Every proposed write to `personality_log` passes through a **governance layer** 
 
 Escalation is informational, not a gate. The entry is active before the user sees the notification. This is intentional: for a personal agent used by its owner, the common case is a legitimate contextual adaptation, and requiring confirmation before effect would add friction for no real benefit. The notification exists so nothing changes silently — the user always knows.
 
-The governance layer covers all autonomous instruction writes — not just `personality_log` entries but also schedule prompt changes. Anything that will later be executed as a Claude instruction without direct user interaction is subject to the same approve/reject/escalate logic.
+The governance layer covers all writes that influence future agent behaviour:
+
+- **`personality_log` entries** — contextual adaptations to personality and tone
+- **Schedule prompt changes** — prompts that execute autonomously without user interaction
+- **Fact and people writes** — stored in SQLite and replayed into the system prompt via semantic search on future turns. An instruction-shaped fact is a persistent second-order injection — it outlives the conversation it arrived in. This is the memory poisoning attack vector.
+
+Anything that will later appear in the system prompt or be executed as a Claude instruction without direct user interaction is subject to the same approve/reject/escalate logic.
 
 The invariants are hardcoded in `handlers/governance.py` — part of the codebase, immutable at runtime via file permissions. They are not a runtime configuration. Examples of invariants:
 
 - Reject any entry that references an external URL or filesystem path (prompt injection signal)
 - Escalate any entry that represents a radical shift in core values or tone
 - Reject any entry that attempts to disable, override, or work around the governance layer itself
+- Reject fact/people values that contain instruction-override language targeting agent behaviour
+- Escalate fact values that look like behavioural preferences but could be injection
+- Reject schedule prompts that instruct file reads outside the working directory, contain override language, or attempt to manipulate content framing
+- Escalate schedule prompts that take external actions (email, calendar) without user review
+
+The full invariant list with rationale for each governed write type is in `DESIGN.md` under Governance.
 
 The invariants are documented in `DESIGN.md` — the code is the authority, the spec is the explanation. No separate governance config file exists, as a file the agent cannot read has no value as communication.
 
@@ -126,11 +139,11 @@ This applies especially to third-party MCP servers. The agent may identify a sui
 
 On a dedicated Mac Mini, the combination of CLI tool scoping, MCP tool restrictions, and filesystem permissions provides layered protection for constraints that would otherwise be conventions:
 
-- **CLI built-in tools** — `--allowedTools` blocks `Bash`, `Edit`, and `Write`. Claude cannot execute arbitrary shell commands or write to the filesystem via CLI built-ins. This is the primary security boundary — without it, same-user file permissions would be trivially bypassed. See the allowlist table in `DESIGN.md` under MCP Client.
+- **CLI built-in tools** — `--allowedTools` blocks `Bash`, `Edit`, `Write`, and `Read`. Claude cannot execute arbitrary shell commands, write to the filesystem, or read files outside the project directory via CLI built-ins. File reading is handled by `mcp/file_read.py`, which scopes reads to the project directory and explicitly denies `.env`. See the allowlist table in `DESIGN.md` under MCP Client.
 - **Code files** — `--allowedTools` blocks `Bash`, `Edit`, `Write`; no MCP tool exposes file-write capability. `handlers/governance.py` and the policy middleware are immutable at runtime — changes require a git PR and merge to `main`.
 - **`agent_config/`** — chmod 444 as defence in depth; the hard boundary is tool scoping (no write tools exposed), not file permissions.
-- **`memory/`** — writable; this is where working state lives.
-- **`.env`** — loaded by pydantic-settings at startup; the agent's `env_manager` MCP tool can append new key=value pairs but no tool exposes existing values to Claude. `Read` (CLI built-in) could read `.env` — PROTOCOLS.md instructs against this, and the file is chmod 600, but neither is a hard boundary. The hard boundary is that Claude has no shell access to exfiltrate values.
+- **`memory/`** — writable; this is where working state lives. Fact and people writes pass through the governance layer (see below).
+- **`.env`** — loaded by pydantic-settings at startup; the agent's `env_manager` MCP tool can append new key=value pairs. `mcp/file_read.py` explicitly denies `.env`. CLI `Read` is blocked. Hard boundary — no tool can read credential values.
 - **Secrets never in the repo.** Credentials are injected at runtime via environment variables. The repo is public; nothing personal or secret ever touches it.
 
 Adding a new MCP server means a new entry in `config/mcp_servers.json`, proposed via PR and approved by a human. The agent proposes; the file watcher deploys. The agent never modifies the config directly.
