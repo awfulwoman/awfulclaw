@@ -432,6 +432,28 @@ class MCPClient:
 
 ---
 
+### Credential Manager (`mcp/env_manager.py`)
+
+**Responsibility:** Allow the agent to request and store sensitive credentials without ever being able to read them back.
+
+**Design:** An MCP server exposing two tools:
+
+- `env_keys()` — lists the keys currently defined in `.env` (names only, not values)
+- `env_set(key)` — registers a pending key name; the next user message is captured as the value by `SecretCaptureMiddleware`
+
+The flow:
+
+1. Agent identifies it needs a credential (e.g. `IMAP_PASSWORD`)
+2. Agent calls `env_set("IMAP_PASSWORD")` — this registers the key as pending
+3. Agent tells the user: "Please send me your IMAP password. The next message you send will be stored securely."
+4. `SecretCaptureMiddleware` intercepts the user's next message as the value
+5. `env_manager` appends `IMAP_PASSWORD=<value>` to `.env`
+6. On next restart, the new env var is available to the relevant MCP server
+
+**Security property:** Write-only. No `env_get` tool exists — the agent can store credentials but never read them back. The `.env` file is loaded by the process environment at startup, so values are available to MCP servers and subprocesses, but the agent itself never sees the raw file contents. This prevents credential exfiltration if a prompt injection attack is successful.
+
+---
+
 ### Skills (`config/skills/`)
 
 **Responsibility:** Reusable prompt fragments that describe workflows in natural language. Skills tell the agent *what to do*; MCP tools are *how it does it*.
