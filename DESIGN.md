@@ -19,7 +19,7 @@ The goal is a significantly more elegant, extensible, and correct system while p
 
 The package uses subdirectories to group files by role. Each directory is a Python package with an `__init__.py` that exports its public interface.
 
-No file carries sensitivity headers or classification metadata — immutability is enforced at the tool level (no MCP tool exposes file-write outside `memory/`), with filesystem permissions as defence in depth. See `PHILOSOPHY.md` for the full model.
+No file carries sensitivity headers or classification metadata — immutability is enforced at the tool level (`--allowedTools` blocks `Bash`/`Edit`/`Write`; no MCP tool exposes file-write outside `memory/`), with filesystem permissions as defence in depth. See `PHILOSOPHY.md` for the full model.
 
 ```
 agent/
@@ -440,7 +440,7 @@ class ContextAssembler:
 
 **Authentication:** This app uses a Claude subscription (OAuth), not an API key. The Anthropic Python SDK is not used — it requires API key auth. The `claude` CLI binary handles OAuth transparently, storing and refreshing tokens in `~/.claude/`.
 
-**Design:** One-shot invocation per turn. The system prompt and conversation history are assembled into a single prompt string by `ContextAssembler` and passed to the CLI via `--print --output-format stream-json`. The prompt is provided via stdin (piped to the subprocess) to avoid argument length limits. MCP servers are attached via `--mcp-config`. Exponential backoff on non-zero exit codes.
+**Design:** One-shot invocation per turn. The system prompt and conversation history are assembled into a single prompt string by `ContextAssembler` and passed to the CLI via `--print --output-format stream-json --allowedTools`. The prompt is provided via stdin (piped to the subprocess) to avoid argument length limits. MCP servers are attached via `--mcp-config`. `--allowedTools` restricts which CLI built-in tools Claude can use (see the allowlist table under MCP Client). Exponential backoff on non-zero exit codes.
 
 The CLI does not manage multi-turn state — the agent replays relevant history each invocation as part of the assembled prompt. This is intentional: it keeps conversation management in the Store and gives the `ContextAssembler` full control over what context is included.
 
@@ -455,7 +455,7 @@ class ClaudeClient:
 
 The `stream-json` output format emits newline-delimited JSON events (text deltas, tool use, stop reason), replacing the fragile sentinel-marker approach in the current implementation.
 
-**Design notes:** Prompt passed via stdin to avoid shell argument limits. Structured `stream-json` output for reliable parsing. Exponential backoff on failure. CLI-based auth — OAuth subscription, no API key required. The exact CLI flags should be verified against the installed `claude` version during Phase 1 implementation.
+**Design notes:** Prompt passed via stdin to avoid shell argument limits. Structured `stream-json` output for reliable parsing. Exponential backoff on failure. CLI-based auth — OAuth subscription, no API key required. `--allowedTools` enforces the CLI built-in tool allowlist (see table below). The exact CLI flags should be verified against the installed `claude` version during Phase 1 implementation.
 
 ---
 
@@ -477,7 +477,22 @@ class MCPClient:
 
 **Third-party server installation:** When the agent identifies a capability gap, it may propose installing a third-party MCP server. The flow mirrors the secret-request pattern — the agent names a specific server, explains what it does, and waits for explicit user confirmation. On approval, the server is registered in `config/mcp_servers.json` and picked up on the next reload. Servers are run via `npx -y` (npm) or `uvx` (Python) without a permanent install. The agent cannot install servers without user approval — see `PHILOSOPHY.md`.
 
-**Built-in CLI tools vs MCP tools:** The `claude` CLI provides several built-in tools (`WebSearch`, `WebFetch`, `Bash`, `Read`, `Edit`, etc.) that are available to Claude alongside MCP tools. Web search does not need an MCP server — the CLI's built-in `WebSearch` and `WebFetch` tools handle it. The PROTOCOLS.md capabilities section references these tools by name so Claude uses them rather than hallucinating tool calls (a problem in the legacy app, where the system prompt mentioned "web search" without anchoring it to a real tool name).
+**Built-in CLI tools — allowlist:** The `claude` CLI provides built-in tools alongside MCP tools. Not all are safe to expose. The CLI's `--allowedTools` flag accepts a comma-separated list of tool names; only listed tools are available to Claude. `ClaudeClient` passes this flag on every invocation.
+
+| CLI built-in | Allowed | Reason |
+|---|---|---|
+| `WebSearch` | **Yes** | Web search — referenced in PROTOCOLS.md |
+| `WebFetch` | **Yes** | URL fetching — referenced in PROTOCOLS.md |
+| `Read` | **Yes** | Lets Claude read skill files, config, and its own code for self-knowledge |
+| `Bash` | **No** | Arbitrary shell access breaks the entire permission model — chmod, cat `.env`, network exfiltration |
+| `Edit` | **No** | File writes bypass tool-level restrictions — could modify config, code, or `.env` |
+| `Write` | **No** | Same as Edit |
+| `NotebookEdit` | **No** | Not needed; no notebooks in the project |
+| MCP tools (`mcp__*`) | **Yes** | All MCP server tools are allowed — they enforce their own scoping |
+
+This is the critical closure of the security model. PHILOSOPHY.md states that absolute constraints belong at the capability boundary, not in soft policy. Without this allowlist, `Bash` would let Claude bypass every file permission and tool-level restriction — chmod 444, the governance layer, the write-only credential store. With it, Claude can only act through MCP tools (which enforce scoped capabilities) and the two read-only CLI built-ins.
+
+PROTOCOLS.md references `WebSearch` and `WebFetch` by name so Claude uses them rather than hallucinating tool calls (a problem in the legacy app, where the system prompt mentioned "web search" without anchoring it to a real tool name).
 
 ---
 
@@ -1022,7 +1037,7 @@ chmod 600 .env                                     # secrets — readable only b
 # MEMORY_PATH is writable by default — no special permissions needed
 ```
 
-The agent process runs as the same user who owns the code files. Protection is tool-level, not OS-level: no MCP tool exposes file-write capability, so Claude cannot modify code or config. Defence in depth: code changes also require a git PR, human approval, and merge to `main`. chmod 444 on `agent_config/` prevents accidental writes but is not a hard security boundary (same-user ownership means the owner can override it).
+The agent process runs as the same user who owns the code files. The primary security boundary is tool-level: `--allowedTools` blocks `Bash`, `Edit`, and `Write` (see the allowlist table under MCP Client), and no MCP tool exposes general file-write capability. This means Claude can only act through scoped MCP tools and read-only CLI built-ins. Defence in depth: code changes also require a git PR, human approval, and merge to `main`. chmod 444 on `agent_config/` guards against accidental writes by non-Claude processes but is not the security boundary — tool scoping is.
 
 ### TCC permissions (Calendar, Reminders, Contacts)
 

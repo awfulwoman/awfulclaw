@@ -36,6 +36,7 @@ Agent behaviour can be constrained at different levels, with different guarantee
 | **PERSONALITY.md** | Natural language instruction | Soft — Claude is told what not to do |
 | **Middleware** | Code that intercepts tool calls | Hard — enforced regardless of Claude's reasoning |
 | **MCP server** | Tool implementation that refuses or omits | Hard — the capability does not exist |
+| **CLI `--allowedTools`** | Blocks dangerous CLI built-ins (`Bash`, `Edit`, `Write`) | Hard — the capability is never offered to Claude |
 
 For preferences and style ("prefer concise replies"), PERSONALITY.md is the right place.
 
@@ -51,17 +52,17 @@ Files and configuration are graded by what the agent can do with them:
 
 | Category | Examples | Agent can read? | Agent can write? | Enforced by |
 |----------|----------|----------------|-----------------|-------------|
-| **Code** | all `.py` files, `mcp_servers.json` | Yes | No | No MCP tool exposes file-write; changes require git PR and merge to `main` |
-| **Read-only config** | `PERSONALITY.md`, `PROTOCOLS.md`, `USER.md`, `CHECKIN.md` | Yes | No | No MCP tool exposes file-write; chmod 444 as defence in depth |
-| **Working state** | facts, people, schedules, conversations | Yes | Yes | `memory/` directory, writable |
-| **Blind write** | `.env` credential values | No | Yes (write-only via `env_manager` MCP tool) | No MCP tool exposes secret values; Claude never sees them |
+| **Code** | all `.py` files, `mcp_servers.json` | Yes | No | `--allowedTools` blocks `Edit`/`Write`/`Bash`; no MCP tool exposes file-write; changes require git PR and merge to `main` |
+| **Read-only config** | `PERSONALITY.md`, `PROTOCOLS.md`, `USER.md`, `CHECKIN.md` | Yes | No | `--allowedTools` blocks write tools; chmod 444 as defence in depth |
+| **Working state** | facts, people, schedules, conversations | Yes | Yes | `memory/` directory, writable via MCP tools |
+| **Blind write** | `.env` credential values | Soft no | Yes (write-only via `env_manager` MCP tool) | No MCP tool exposes values. The CLI `Read` built-in *could* read `.env` — this is a soft boundary (PROTOCOLS.md instructs against it, chmod 600 blocks other users). The hard boundary is that `Bash` is blocked, so Claude cannot exfiltrate values via network or subprocess. |
 
-No file carries sensitivity headers or classification metadata. Immutability is enforced at the filesystem level, not by convention:
+No file carries sensitivity headers or classification metadata. Immutability is enforced by tool scoping, with filesystem permissions as defence in depth:
 
-- **Code files** — no MCP tool exposes file-write capability; changes require a git PR and merge to `main`
+- **Code files** — `--allowedTools` blocks `Bash`, `Edit`, `Write`; no MCP tool exposes file-write capability; changes require a git PR and merge to `main`
 - **`PERSONALITY.md`, `PROTOCOLS.md`, `USER.md`, `CHECKIN.md`** — in `agent_config/`, no write tool exposed; chmod 444 as defence in depth
-- **Working state** (DB, conversation history) — `memory/`, writable by the agent process
-- **`.env` credentials** — loaded by pydantic-settings at startup; no MCP tool exposes values, so Claude cannot read them back
+- **Working state** (DB, conversation history) — `memory/`, writable by the agent process via MCP tools
+- **`.env` credentials** — loaded by pydantic-settings at startup; no MCP tool exposes values. CLI `Read` is a soft boundary (see table above); the hard boundary against exfiltration is that `Bash` is blocked
 
 `PERSONALITY.md` and `PROTOCOLS.md` carry a brief YAML frontmatter comment for human readers, explaining what the file is and how to edit it:
 
@@ -123,12 +124,13 @@ This applies especially to third-party MCP servers. The agent may identify a sui
 
 ## Tool boundaries enforce what policy merely requests
 
-On a dedicated Mac Mini, the combination of tool-level restrictions and filesystem permissions provides layered protection for constraints that would otherwise be conventions:
+On a dedicated Mac Mini, the combination of CLI tool scoping, MCP tool restrictions, and filesystem permissions provides layered protection for constraints that would otherwise be conventions:
 
-- **Code files** — no MCP tool exposes file-write capability. `handlers/governance.py` and the policy middleware are immutable at runtime — changes require a git PR and merge to `main`.
-- **`agent_config/`** — chmod 444; the agent cannot modify its own identity or operating rules.
+- **CLI built-in tools** — `--allowedTools` blocks `Bash`, `Edit`, and `Write`. Claude cannot execute arbitrary shell commands or write to the filesystem via CLI built-ins. This is the primary security boundary — without it, same-user file permissions would be trivially bypassed. See the allowlist table in `DESIGN.md` under MCP Client.
+- **Code files** — `--allowedTools` blocks `Bash`, `Edit`, `Write`; no MCP tool exposes file-write capability. `handlers/governance.py` and the policy middleware are immutable at runtime — changes require a git PR and merge to `main`.
+- **`agent_config/`** — chmod 444 as defence in depth; the hard boundary is tool scoping (no write tools exposed), not file permissions.
 - **`memory/`** — writable; this is where working state lives.
-- **`.env`** — loaded by pydantic-settings at startup; the agent's `env_manager` MCP tool can append new key=value pairs but no tool exposes existing values to Claude.
+- **`.env`** — loaded by pydantic-settings at startup; the agent's `env_manager` MCP tool can append new key=value pairs but no tool exposes existing values to Claude. `Read` (CLI built-in) could read `.env` — PROTOCOLS.md instructs against this, and the file is chmod 600, but neither is a hard boundary. The hard boundary is that Claude has no shell access to exfiltrate values.
 - **Secrets never in the repo.** Credentials are injected at runtime via environment variables. The repo is public; nothing personal or secret ever touches it.
 
 Adding a new MCP server means a new entry in `config/mcp_servers.json`, proposed via PR and approved by a human. The agent proposes; the file watcher deploys. The agent never modifies the config directly.
