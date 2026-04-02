@@ -36,6 +36,7 @@ agent/
     __init__.py        # Connector ABC, Message, InboundEvent, OutboundEvent
     telegram.py        # TelegramConnector
     tui.py             # TUIConnector (Textual)
+    rest.py            # RESTConnector (HTTP API)
   middleware/
     README.md          # What middleware is, execution order, how to add a new one
     __init__.py        # Middleware Protocol, Next type alias
@@ -271,7 +272,7 @@ class Connector(ABC):
     async def stop(self) -> None: ...
 ```
 
-Two connectors ship in the new implementation:
+Three connectors ship in the new implementation:
 
 **`connectors/telegram.py`** — uses `httpx.AsyncClient` with long-polling. Offset stored in `store.kv`. No background threads. Supports text, images, and typing indicators.
 
@@ -295,9 +296,43 @@ class TUIConnector(Connector):
         self._app.post_message(TypingIndicator())
 ```
 
+**`connectors/rest.py`** — an HTTP API for programmatic access. Built on an async ASGI framework (e.g. Starlette or FastAPI). Exposes a minimal chat endpoint that accepts a message and returns the agent's reply. Useful for integrating with mobile apps, web dashboards, webhooks, or any client that speaks HTTP.
+
+```python
+class RESTConnector(Connector):
+    """
+    HTTP API connector.
+    Start with: uv run python -m agent --connector rest
+    Listens on port 8080 by default (configurable via REST_PORT).
+    """
+    async def start(self, on_message):
+        self._on_message = on_message
+        await self._server.serve()     # uvicorn ASGI server
+
+    async def send(self, to, message):
+        self._pending_responses[to].set_result(message)
+
+    async def send_typing(self, to):
+        pass  # no-op for REST; could use SSE for streaming
+```
+
+The REST connector uses a request/response model: each inbound POST creates an `InboundEvent`, the pipeline processes it, and the reply is returned in the HTTP response. For longer interactions, Server-Sent Events (SSE) can stream partial replies and typing indicators.
+
+```
+POST /chat
+  {"message": "What's on my calendar today?"}
+  → 200 {"reply": "You have a dentist appointment at 2pm."}
+
+GET /chat/stream  (SSE, optional)
+  {"message": "Summarise my week"}
+  → event: typing
+  → event: delta  data: {"text": "This week you..."}
+  → event: done   data: {"reply": "This week you had 3 meetings..."}
+```
+
 The TUI connector doubles as the primary development harness — no Telegram credentials needed to run and test the agent locally.
 
-**Design notes:** Async-native — each connector runs its own async task, no threads. Connectors push events via callback rather than being polled. Connector selected via `--connector telegram|tui` CLI flag (default: `telegram`).
+**Design notes:** Async-native — each connector runs its own async task, no threads. Connectors push events via callback rather than being polled. Connector selected via `--connector telegram|tui|rest` CLI flag (default: `telegram`).
 
 ---
 
