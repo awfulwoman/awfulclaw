@@ -521,7 +521,7 @@ config/skills/
 
 **Skills are user-authored.** Like `agent_config/`, skill files are human-maintained. The agent can suggest a new skill ("I notice you ask me to triage emails every morning — want me to draft a skill for that?") but cannot create or modify the file. The user writes it and drops it into `config/skills/`.
 
-Example skill files with documentation are in `config/agent_config_examples/`.
+Example skill content (like the daily briefing) is a markdown file describing intent — see `config/skills/` in the implementation.
 
 ---
 
@@ -609,18 +609,106 @@ See `PHILOSOPHY.md` for the full data philosophy. In brief: the agent is a coord
 - `agent_config/USER.md` — user profile
 - `agent_config/CHECKIN.md` — ambient check-in checklist; short, human-maintained patrol prompt
 
-These live at `AGENT_CONFIG_PATH` (default: `agent_config/`), chmod 444. The agent reads them; it cannot write to them. The user edits them directly. Example files with documentation and customisation notes are provided in `config/agent_config_examples/`.
+These live at `AGENT_CONFIG_PATH` (default: `agent_config/`), chmod 444. The agent reads them; it cannot write to them. The user edits them directly.
+
+#### Example: PERSONALITY.md
+
+```markdown
+---
+managed-by: human
+reason: Identity and personality baseline. The agent reads this on every turn but cannot modify it.
+---
+
+# Personality
+
+You are a helpful, concise personal assistant.
+
+You communicate naturally and directly. You don't pad responses with filler or unnecessary caveats.
+
+You will always be honest about what you know and don't know.
+```
+
+This file defines *who the agent is* — name, voice, tone, values. Things that belong here: the agent's name, personality traits, communication style, formatting rules, honesty policies, core values. Things that do NOT belong here (put them in PROTOCOLS.md): operational rules, tool usage instructions, memory policies.
+
+#### Example: PROTOCOLS.md
+
+```markdown
+---
+managed-by: human
+reason: Operating rules and procedures. The agent reads this on every turn but cannot modify it.
+---
+
+# Protocols
+
+## Communication
+
+- Draft rather than send. When acting on the user's behalf (emails, messages, calendar invites), always draft and present for approval unless explicitly told to send directly.
+- When in doubt, ask rather than guess. A clarifying question is better than a wrong assumption.
+- Surface consequential actions. Never take actions that affect external systems silently — always tell the user what you did.
+
+## Memory and learning
+
+- Learn preferences passively. When the user corrects you or expresses a preference, save it as a fact so you remember next time. Don't announce that you're saving it.
+- Don't over-note. Save recurring preferences and important context, not every passing detail.
+- Update USER.md fields when the user shares relevant profile information (name, timezone, preferences).
+
+## Timezones and travel
+
+- When the user mentions travelling or changing location, update the Timezone field in USER.md to the correct IANA timezone immediately.
+- Review existing cron schedules and ask which should follow the user versus stay anchored to a fixed timezone.
+- When creating new schedules, ask whether they should follow the user or stay fixed. Default to the user's current timezone.
+
+## Scheduling
+
+- When creating reminders or recurring tasks, always confirm the time and timezone before saving.
+- For one-off reminders, use fire_at. For recurring tasks, use cron.
+- Name schedules descriptively so the user can identify them in a list.
+
+## Capabilities and tools
+
+- If you identify a capability gap (e.g. you need a tool you don't have), explain what you need and why. Don't try to work around missing tools.
+- When proposing a new MCP server or tool, explain what it does before asking the user to approve installation.
+```
+
+This file defines *how the agent behaves* — operational rules, procedures, policies. The key test: if you swapped PERSONALITY.md to create a different character, PROTOCOLS.md should still work unchanged.
+
+#### Example: USER.md
+
+```markdown
+# User Profile
+
+Name: 
+Timezone: Europe/London
+Preferences: 
+Background: 
+```
+
+Basic profile information. Keep it brief — detailed preferences belong as facts in the database where they can be semantically searched and ranked by relevance.
+
+#### Example: CHECKIN.md
+
+```markdown
+# Check-in Checklist
+
+When running an ambient check-in, review the following and speak up only if something warrants attention. If nothing does, stay silent.
+
+- Any unread emails that look urgent or time-sensitive?
+- Any schedules that fired since the last check-in? Did they succeed?
+- Any upcoming calendar events in the next few hours that the user should prepare for?
+```
+
+The patrol checklist for ambient check-ins. Check-ins are distinct from schedules: schedules fire blindly at a set time and always produce output. Check-ins are conditional — they only speak when something matters. Keep it short and specific; each item should be something the agent can actually check with its available tools.
 
 ---
 
 ## Implementation Approach
 
-This is a clean-room reimplementation, not a refactor. The old codebase (`app/awfulclaw/`) must not pollute the new one.
+This is a clean-room reimplementation, not a refactor. The old codebase (in `legacy/`) must not pollute the new one.
 
 **Before writing any new code:**
 
 1. Create the implementation branch.
-2. Delete `app/awfulclaw/` on that branch. The old code must not be present at any path where it could be accidentally read during development.
+2. Delete `legacy/` on that branch. The old code must not be present at any path where it could be accidentally read during development.
 3. Build `agent/` from scratch, using this plan as the spec.
 
 **During implementation:**
@@ -629,13 +717,12 @@ This is a clean-room reimplementation, not a refactor. The old codebase (`app/aw
 - Do not reference the old code. This plan is the spec — it describes every component, interface, and design decision in sufficient detail to build from. If something is unclear, the plan needs updating, not a peek at the old implementation.
 - The old code has patterns this plan explicitly replaces (monolith loop, regex parsing, threading, synchronous I/O). Looking at it risks importing those patterns unconsciously.
 
-**Tests and config that stay:**
+**What gets created fresh during implementation:**
 
-- `config/mcp_servers.json` — format unchanged, reuse as-is
-- `config/skills/` — reuse as-is
-- `config/agent_config_examples/` — reuse as-is
-- `memory/` — runtime state, not code; unaffected by the rewrite
-- `scripts/` — launchd helpers; update paths but keep the structure
+- `config/mcp_servers.json` — same format as before, created from the spec in this document
+- `config/skills/` — skill prompt fragments, created as needed
+- `agent_config/` — PERSONALITY.md, PROTOCOLS.md, USER.md, CHECKIN.md from the examples above
+- `scripts/` — launchd helpers, written to match the new package layout
 
 ---
 
