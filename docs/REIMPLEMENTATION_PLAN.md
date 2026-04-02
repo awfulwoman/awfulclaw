@@ -30,6 +30,7 @@ agent/
   pipeline.py          # Pipeline + Middleware ABC
   scheduler.py         # Scheduler async task
   store.py             # Store: unified SQLite layer
+  claude_client.py     # ClaudeClient: CLI subprocess, stream-json parsing, retry
   config.py            # Settings via pydantic-settings
   connectors/
     README.md          # What a Connector is, how to implement one, available connectors
@@ -69,7 +70,7 @@ This makes every file's role unambiguous without needing filename prefixes — `
 ## Design Principles
 
 1. **Events flow through a pipeline, not a monolith.** Inbound messages enter a middleware chain. Each middleware can transform, intercept, or pass through. New behaviours are new middleware.
-2. **One database, one schema.** All persistent state (facts, people, schedules, conversations, tasks) lives in a single SQLite file with a clear schema. Markdown files are config, not storage.
+2. **One database, one schema.** All persistent state (facts, people, schedules, conversations) lives in a single SQLite file with a clear schema. Markdown files are config, not storage.
 3. **Typed messages everywhere.** Use dataclasses or Pydantic models for every message, turn, and event. No plain dicts, no regex parsing.
 4. **CLI over SDK.** Auth comes from a Claude subscription via OAuth, not an API key — the Anthropic Python SDK is not used. The `claude` CLI handles OAuth transparently. Improvements over the current implementation come from structured `stream-json` output and retry logic around the subprocess — not from switching auth models.
 5. **Async throughout.** No `run_in_executor` wrappers. All I/O is natively async — `httpx.AsyncClient`, `aiosqlite`, async MCP.
@@ -449,7 +450,7 @@ The `stream-json` output format emits newline-delimited JSON events (text deltas
 
 ---
 
-### MCP Client (`mcp_client.py`)
+### MCP Client (`mcp/__init__.py`)
 
 **Responsibility:** Manage MCP server connections and dispatch tool calls.
 
@@ -659,12 +660,15 @@ This is a clean-room reimplementation, not a refactor. The old codebase (`app/aw
 - `sqlite-vec` embedding + semantic search
 - Full system prompt with PERSONALITY, PROTOCOLS, USER, facts, people, schedules
 
-### Phase 4: Middleware
+### Phase 4: Middleware and governance
 - `middleware/secret.py`
 - `middleware/location.py`
 - `middleware/slash.py`
 - `middleware/rate_limit.py`
 - `middleware/typing.py`
+- `handlers/governance.py` — invariant checks for personality_log and schedule prompt writes
+- `mcp/env_manager.py` — write-only credential storage
+- `mcp/skills.py` — read-only skill prompt fragments
 
 ### Phase 5: Scheduler
 - `schedules` table + cron evaluation
