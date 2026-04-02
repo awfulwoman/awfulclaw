@@ -2,33 +2,42 @@
 
 This document describes a clean-room reimplementation of awfulclaw in Python, informed by the limitations documented in `ARCHITECTURE.md`. The goal is a significantly more elegant, extensible, and correct system while preserving everything that works well (MCP tooling, the connector abstraction, the memory model, cron scheduling).
 
-## Open Issues
+## Revision: Mac Mini Native Deployment (2026-04-02)
 
-These must be resolved before implementation begins.
+The agent will run natively on a dedicated Mac Mini instead of in Docker containers. This resolves all open architectural gaps and simplifies the deployment model significantly. The rest of this document should be read with the following decisions applied — a full rewrite is pending, but these decisions are authoritative.
 
-### 🔴 Architectural gaps
+### Runtime and deployment
 
-**MCP servers in separate containers cannot use stdio**
-Stdio MCP requires a parent-child process relationship. A separate Docker container breaks this. The plan currently has external MCP servers (IMAP, gcal etc.) as separate containers but does not specify how they communicate. Options: MCP-over-HTTP/SSE for containerised servers (supported by MCP spec), or keep all servers as child processes inside the agent container. Decision needed.
+- **No Docker.** The agent and all MCP servers run as native macOS processes. The entire Containerisation section of this document is superseded.
+- **Service management via launchd.** Each service gets a launchd plist (e.g. `ai.awfulclaw.agent`). launchd provides process supervision (`KeepAlive`), logging (`StandardOutPath`/`StandardErrorPath`), resource limits, and environment variable injection. Replaces Docker Compose.
+- **No dedicated user or sandbox-exec.** On a single-purpose Mac Mini, file permissions and app-level governance are sufficient. No sandbox profiles to maintain, no multi-user friction.
+- **Deployment via git pull + file watcher.** A launchd periodic job runs `git pull origin main`. The existing file watcher (`ai.awfulclaw.watcher`) detects changed `.py` files and restarts the agent with a 60s debounce. No Watchtower, no GHCR, no inbound ports.
+- **Graceful shutdown.** The agent handles `SIGTERM` — finishes in-flight Claude invocation, writes pending state to DB, exits cleanly. launchd restarts automatically via `KeepAlive`.
+- **Config immutability via file permissions.** `agent_config/` (PERSONALITY.md, PROTOCOLS.md, USER.md, CHECKIN.md) is chmod 444 — the agent can read but not write. Code files are owned by the host user and not writable by the agent process. `memory/` is writable. `.env` is readable only by launchd at startup; the agent's `env_manager` MCP tool can append but not read.
 
-**Embedding generation**
-The plan references `text-embedding-3-small` — an OpenAI model. Anthropic has no public embedding API. With the no-API-key constraint this is a blocking gap. Options: `sentence-transformers` locally (in-container, no API needed, adds model weight); or drop semantic search entirely in favour of SQLite FTS5 (simpler, no model dependency). Decision needed.
+### Resolved architectural gaps
 
-**Persistent CLI session mechanics**
-The plan describes a "persistent subprocess reused across turns" but the current implementation is one-shot (`claude --print`). How multi-turn conversation works with a persistent subprocess is never specified. Decision needed.
+- **MCP servers and stdio** — resolved. All MCP servers are child processes of the agent. Stdio works natively. No SSE/HTTP bridge needed.
+- **Embedding generation** — resolved. Use `sentence-transformers` with `all-MiniLM-L6-v2` (~80MB) running locally on the M-series chip. Embeddings stored as BLOBs in SQLite via `sqlite-vec`. Used for semantic search of facts and people during context assembly.
+- **CLI session mechanics** — resolved. One-shot per turn: `claude --print --output-format stream-json`. No persistent subprocess. The agent manages conversation history via the Store and assembles context fresh each turn. `stream-json` gives structured output (text deltas, tool use, stop reason) without stdout scraping.
 
-### 🟡 Errors and inconsistencies to fix
+### Resolved errors and inconsistencies
 
-- SDK references scattered throughout (Mermaid diagram, MCPClient section, Phase 1, "What to Reuse", `claude.py` discard note) — settled decision is CLI subprocess
-- `~/.claude/` described as named volume in one place (line ~402) — settled decision is bind mount
-- `SOUL` reference in context assembler — should be `PERSONALITY`
-- `CHECKIN.md` missing from some enumerations (PHILOSOPHY.md, compose description)
-- Phase 3 context section references "SOUL, tasks" — stale from old architecture
-- `tasks` table and Store API contradict "tasks live externally in user's task manager"
-- `USER.md` in wrong row in PHILOSOPHY.md sensitivity table (listed as working state, should be read-only config)
-- `middleware/agent.py` name collision with top-level `agent.py` — consider renaming to `middleware/invoke.py`
-- `env_manager.py` and `skills.py` MCP servers listed in package layout but never described anywhere
-- Data philosophy section duplicated between plan and PHILOSOPHY.md
+- **SDK references** → all replaced with CLI subprocess. The Mermaid diagram node should read `CLI` not `SDK`.
+- **`~/.claude/`** → just a directory on disk, not a named volume. OAuth tokens live there natively.
+- **`SOUL`** → `PERSONALITY` throughout.
+- **`CHECKIN.md`** → added to all enumerations (already fixed in PHILOSOPHY.md).
+- **Phase 3 "SOUL, tasks"** → should reference PERSONALITY, people, facts, schedules.
+- **`tasks` table** → removed from schema and Store API. Tasks live externally in user's task manager, accessed via MCP.
+- **`USER.md`** → moved to read-only config row in PHILOSOPHY.md sensitivity table (already fixed).
+- **`middleware/invoke.py`** → renamed to `middleware/invoke.py` to avoid collision with top-level `agent.py`.
+- **Data philosophy section** → removed from this document; lives in PHILOSOPHY.md only.
+- **`env_manager.py`** — MCP server for secure credential storage. The agent registers a pending key name, `SecretCaptureMiddleware` intercepts the user's next message as the value, and `env_manager` appends the key=value to `.env`. Write-only — no read tool exposed. Prevents exfiltration because the agent never has read access to `.env`. Values become available after the next launchd restart.
+- **`skills.py`** — read-only MCP server that reads prompt fragments from `config/skills/*.md`. Allows the agent to lazy-load skill definitions at runtime (e.g. a specialised writing style, a debugging checklist) without stuffing everything into the system prompt. Read-only — the agent cannot create or modify skills.
+
+### What stays the same
+
+The entire application architecture is unchanged: event bus, middleware pipeline, connectors, store, context assembler, scheduler, MCP servers. The package layout is unchanged (with the `invoke.py` rename). Design principles are unchanged (with principle 4 updated to remove "persistent session" language). All component interfaces are unchanged. The only thing that changed is how the system is deployed and run.
 
 ---
 
@@ -45,7 +54,7 @@ The plan describes a "persistent subprocess reused across turns" but the current
 
 The package uses subdirectories to group files by role. Each directory is a Python package with an `__init__.py` that exports its public interface.
 
-No file carries sensitivity headers or classification metadata — immutability is enforced at the mount level. See `PHILOSOPHY.md` for the full model.
+No file carries sensitivity headers or classification metadata — immutability is enforced at the filesystem level (file permissions). See `PHILOSOPHY.md` for the full model.
 
 ```
 agent/
@@ -70,7 +79,7 @@ agent/
     location.py
     slash.py
     typing.py
-    agent.py           # AgentMiddleware (terminal middleware)
+    invoke.py          # InvokeMiddleware (terminal middleware — invokes the agent)
   handlers/
     README.md          # What handlers are, difference from middleware, how to add one
     __init__.py
@@ -97,7 +106,7 @@ This makes every file's role unambiguous without needing filename prefixes — `
 1. **Events flow through a pipeline, not a monolith.** Inbound messages enter a middleware chain. Each middleware can transform, intercept, or pass through. New behaviours are new middleware.
 2. **One database, one schema.** All persistent state (facts, people, schedules, conversations, tasks) lives in a single SQLite file with a clear schema. Markdown files are config, not storage.
 3. **Typed messages everywhere.** Use dataclasses or Pydantic models for every message, turn, and event. No plain dicts, no regex parsing.
-4. **CLI over SDK.** Auth comes from a Claude subscription via OAuth, not an API key — the Anthropic Python SDK is not used. The `claude` CLI handles OAuth transparently. Improvements over the current implementation come from a persistent session, structured `stream-json` output, and retry logic around the subprocess — not from switching auth models.
+4. **CLI over SDK.** Auth comes from a Claude subscription via OAuth, not an API key — the Anthropic Python SDK is not used. The `claude` CLI handles OAuth transparently. Improvements over the current implementation come from structured `stream-json` output and retry logic around the subprocess — not from switching auth models.
 5. **Async throughout.** No `run_in_executor` wrappers. All I/O is natively async — `httpx.AsyncClient`, `aiosqlite`, async MCP.
 6. **Dependency injection over globals.** Components receive their dependencies at construction. No module-level singletons, no import-time side effects.
 
@@ -110,7 +119,7 @@ flowchart TD
     Bus[Event Bus]
     Pipeline[Message Pipeline\nmiddleware stack]
     Agent[Agent\ncontext + invoke]
-    SDK[Anthropic SDK\nclaude-3-x]
+    CLI[Claude CLI\nstream-json]
     MCP[MCP Client\ntool dispatch]
     Store[Store\naiosqlite]
     Vec[Vector Index\nsqlite-vec]
@@ -123,10 +132,10 @@ flowchart TD
     Pipeline -->|filtered turn| Agent
     Agent -->|system prompt| Store
     Agent -->|semantic search| Vec
-    Agent -->|messages + tools| SDK
-    SDK -->|tool calls| MCP
-    MCP -->|tool results| SDK
-    SDK -->|reply| Agent
+    Agent -->|messages + tools| CLI
+    CLI -->|tool calls| MCP
+    MCP -->|tool results| CLI
+    CLI -->|reply| Agent
     Agent -->|OutboundEvent| Bus
     Bus --> Transport
     Store <-->|read/write| MCP
@@ -210,14 +219,6 @@ CREATE TABLE schedules (
     last_run TEXT
 );
 
-CREATE TABLE tasks (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title TEXT NOT NULL,
-    body TEXT NOT NULL,
-    done INTEGER NOT NULL DEFAULT 0,
-    updated_at TEXT NOT NULL
-);
-
 CREATE TABLE kv (
     key TEXT PRIMARY KEY,    -- general-purpose key-value (telegram offset, etc.)
     value TEXT NOT NULL
@@ -255,9 +256,6 @@ class Store:
     async def upsert_schedule(Schedule)
     async def delete_schedule(id)
 
-    async def list_open_tasks() -> list[Task]
-    async def upsert_task(Task)
-
     async def kv_get(key) -> str | None
     async def kv_set(key, value)
 ```
@@ -270,7 +268,7 @@ class Store:
 
 **Responsibility:** Semantic search over facts and people for context assembly.
 
-**Design:** `sqlite-vec` extension loaded at connection time. Embeddings generated via Anthropic's `text-embedding-3-small` (or locally via `sentence-transformers` — configurable). Embeddings stored as BLOB in the same row as the content. Search uses cosine similarity.
+**Design:** `sqlite-vec` extension loaded at connection time. Embeddings generated locally via `sentence-transformers` using `all-MiniLM-L6-v2` (~80MB model, runs well on M-series chip). No API calls required. Embeddings stored as BLOB in the same row as the content. Search uses cosine similarity.
 
 ```python
 async def search_facts(query: str, limit: int = 10) -> list[Fact]:
@@ -378,7 +376,7 @@ class Middleware(Protocol):
 3. `middleware/location.py` — detects `[Location: lat, lon]` format; writes to store; strips the tag from the message and passes the remainder through (stops chain only if the message was nothing but the tag)
 4. `middleware/slash.py` — handles `/schedules`, `/restart`; stops chain
 5. `middleware/typing.py` — sends typing indicator before passing through
-6. `middleware/agent.py` — invokes the agent; attaches reply to event
+6. `middleware/invoke.py` — invokes the agent; attaches reply to event
 
 New behaviours (e.g. a `/remind` command) are a new file in `middleware/` — `pipeline.py` and `main.py` are never touched.
 
@@ -427,11 +425,11 @@ class ContextAssembler:
 
 ### Claude Client (`claude_client.py`)
 
-**Responsibility:** Invoke Claude via the `claude` CLI; manage a persistent session, handle retries, and parse structured output.
+**Responsibility:** Invoke Claude via the `claude` CLI; handle retries and parse structured output.
 
-**Authentication:** This app uses a Claude subscription (OAuth), not an API key. The Anthropic Python SDK is not used — it requires API key auth. The `claude` CLI binary handles OAuth transparently, storing and refreshing tokens in `~/.claude/`. This directory is mounted as a named volume in the container so tokens survive across rebuilds.
+**Authentication:** This app uses a Claude subscription (OAuth), not an API key. The Anthropic Python SDK is not used — it requires API key auth. The `claude` CLI binary handles OAuth transparently, storing and refreshing tokens in `~/.claude/`.
 
-**Design:** Spawns a persistent `claude` subprocess with `--output-format stream-json` for structured output. The session is reused across turns — avoiding per-turn startup cost — and respawned automatically if it dies or times out. MCP servers are attached via `--mcp-config` as today. Exponential backoff on non-zero exit codes.
+**Design:** One-shot invocation per turn: `claude --print --output-format stream-json`. The agent manages conversation history via the Store and passes it as context each turn. MCP servers are attached via `--mcp-config` as today. Exponential backoff on non-zero exit codes.
 
 ```python
 class ClaudeClient:
@@ -443,11 +441,9 @@ class ClaudeClient:
     ) -> str: ...
 ```
 
-The `stream-json` output format emits newline-delimited JSON events (text deltas, tool use, stop reason), replacing the fragile sentinel-marker approach in the current implementation. Tool-use round-trips are handled within the persistent session — Claude calls a tool, the MCP server responds, Claude continues — without restarting the process.
+The `stream-json` output format emits newline-delimited JSON events (text deltas, tool use, stop reason), replacing the fragile sentinel-marker approach in the current implementation.
 
-**Differs from original:** Persistent session (not fresh subprocess per turn). Structured `stream-json` output (not stdout scraping with sentinel markers). Retry logic. Same CLI-based auth model — OAuth subscription, no API key required.
-
-**Container note:** The `claude` binary is installed in the Docker image at build time. The `~/.claude/` auth directory is a named volume, writable, never committed to the repo.
+**Differs from original:** Structured `stream-json` output (not stdout scraping with sentinel markers). Retry logic. Same CLI-based auth model — OAuth subscription, no API key required.
 
 ---
 
@@ -517,7 +513,7 @@ async def main():
         LocationMiddleware(store),
         SlashCommandMiddleware(store),
         TypingMiddleware(),
-        AgentMiddleware(agent),
+        InvokeMiddleware(agent),
     ])
 
     connector = TelegramConnector(settings.telegram, store)
@@ -536,43 +532,7 @@ async def main():
 
 ## Data Philosophy
 
-The app is a **coordination layer**, not a data store. External systems are the canonical source of truth for their respective domains.
-
-**Long-term storage must use open, widely-supported formats.** Markdown for text. CSV for tabular data. Standard image formats (JPEG, PNG, etc.) for images. Open protocols (IMAP, CalDAV) for services. Data should never be locked inside an application or a proprietary format — it should be readable by any text editor, transferable to any tool, and survivable beyond the lifetime of this app.
-
-SQLite is acceptable for working state precisely because it is not long-term storage. Anything that matters long-term lives in flat files.
-
-| Domain | Canonical source |
-|--------|-----------------|
-| Long-form notes and knowledge | Obsidian |
-| Events and scheduling | Google Calendar |
-| Tasks and to-dos | Obsidian or a dedicated task manager |
-| Email | IMAP |
-| Contacts | People profiles (MCP tool) |
-
-The agent reads from and writes to these systems via MCP. It does not replace them.
-
-### SQLite as working memory
-
-The local SQLite database is a **hot cache** — fast, structured storage that the agent can query during context assembly without making external API calls on every turn. It holds:
-
-- **Facts** — things the agent has learned about the user and their world (preferences, context, state)
-- **People** — contact profiles and relationship context
-- **Conversation history** — recent turns for in-context recall
-- **Coordination state** — poll offsets, pending secrets, schedule timing
-
-This data is ephemeral in the sense that it serves the agent's immediate reasoning. It is not the user's authoritative record of anything.
-
-### Obsidian as long-term knowledge store
-
-Facts and people profiles are written out to Obsidian daily via `handlers/knowledge_flush.py`. This gives the user a human-readable, searchable, permanent record of everything the agent has learned — living alongside their own notes in Obsidian rather than locked inside the app's database.
-
-The daily flush writes:
-- One note per person in `Contacts/` (updated in place)
-- A rolling `Agent Knowledge/facts.md` updated with current facts
-- A daily conversation summary to `Agent Logs/YYYY-MM-DD.md`
-
-On first run or after a database reset, the agent can rebuild its working knowledge by reading these Obsidian notes back in.
+See `PHILOSOPHY.md` for the full data philosophy. In brief: the agent is a coordination layer, not a data store. SQLite is working memory; Obsidian is the long-term knowledge store. Facts and people are flushed daily to Obsidian via `handlers/knowledge_flush.py`.
 
 ## Memory and Storage Redesign
 
@@ -591,7 +551,7 @@ On first run or after a database reset, the agent can rebuild its working knowle
 - `agent_config/USER.md` — user profile
 - `agent_config/CHECKIN.md` — ambient check-in checklist; short, human-maintained patrol prompt
 
-These live in `AGENT_CONFIG_PATH` on the host, mounted read-only into the container. The agent reads them; it cannot write to them. The user edits them directly on the host.
+These live in `agent_config/` on the Mac Mini, chmod 444. The agent reads them; it cannot write to them. The user edits them directly.
 
 ---
 
@@ -600,7 +560,7 @@ These live in `AGENT_CONFIG_PATH` on the host, mounted read-only into the contai
 ### Phase 1: Core scaffolding
 - `Settings` via pydantic-settings
 - `Store` with full schema and async API
-- `ClaudeClient` with SDK, tool-use loop, retry
+- `ClaudeClient` with CLI subprocess, `stream-json` parsing, retry
 - `MCPClient` with persistent connections
 - Smoke test: single-turn invoke from a script
 
@@ -608,13 +568,13 @@ These live in `AGENT_CONFIG_PATH` on the host, mounted read-only into the contai
 - `bus.py` with typed events
 - `connectors/telegram.py` (async, offset in store.kv)
 - `connectors/tui.py` (Textual-based, for local dev without Telegram)
-- Basic `pipeline.py` with `middleware/agent.py` only
+- Basic `pipeline.py` with `InvokeMiddleware` only
 - End-to-end: receive message → Claude reply → send (works with both connectors)
 
 ### Phase 3: Context and memory
 - `context.py` (`ContextAssembler`) with budget-based ranking
 - `sqlite-vec` embedding + semantic search
-- Full system prompt with SOUL, USER, facts, people, tasks, schedules
+- Full system prompt with PERSONALITY, PROTOCOLS, USER, facts, people, schedules
 
 ### Phase 4: Middleware
 - `middleware/secret.py`
@@ -643,75 +603,90 @@ These live in `AGENT_CONFIG_PATH` on the host, mounted read-only into the contai
 ### Phase 8: Migration
 - Import script: read `schedules.json` → insert into new DB
 - Import script: read `conversations/YYYY-MM-DD.md` → insert turns into new DB
-- PERSONALITY.md, PROTOCOLS.md, and USER.md copied into `AGENT_CONFIG_PATH` on the host
+- PERSONALITY.md, PROTOCOLS.md, USER.md, and CHECKIN.md copied into `agent_config/`
 - facts/people DB migrated via SQL
 
 ---
 
-## Containerisation
+## Service Management
 
-### Principles
+The agent runs natively on a dedicated Mac Mini (Apple Silicon). No Docker, no containers. Process supervision, logging, and restart are handled by macOS launchd.
 
-- Every service runs as a **non-root user**. Docker's default of running as root is not acceptable. The core agent and every MCP server container specifies a named non-root user (`agent`, UID 1000) via the `USER` Dockerfile directive.
-- **All Linux capabilities dropped.** `cap_drop: ALL` in compose.yaml. No capabilities are added back — this app needs none.
-- **`no-new-privileges`** — processes inside containers cannot escalate privileges even if a vulnerability exists.
-- **Read-only root filesystem** on the core agent container. Everything writable is an explicit bind mount. Code immutability is physically enforced — `handlers/governance.py` cannot be modified by any running process, including the agent itself.
+### launchd services
 
-### Service layout
+Two launchd plists manage the system:
 
-External MCP servers (IMAP, Google Calendar, GitHub, Home Assistant) each run as their own container — separate credentials, separate network access, separate failure domains. The memory MCP server is different: it accesses only the local SQLite DB, has no external network access, and is so tightly coupled to the agent that separating it adds process-boundary overhead with no isolation benefit. It runs as a local stdio process spawned by the agent, registered in `config/mcp_servers.json` exactly as today — not a compose service.
+**`ai.awfulclaw.agent`** — the agent process itself.
 
-All mutable state uses **bind mounts** (explicit host paths) rather than named volumes. Bind mounts are transparent — the host directory is visible, easily backed up with any standard tool (rsync, Time Machine, restic), and the path is unambiguous.
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>ai.awfulclaw.agent</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/path/to/uv</string>
+        <string>run</string>
+        <string>python</string>
+        <string>-m</string>
+        <string>agent</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/path/to/awfulclaw</string>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/usr/local/var/log/awfulclaw/agent.log</string>
+    <key>StandardErrorPath</key>
+    <string>/usr/local/var/log/awfulclaw/agent.err</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>
+```
 
-**File permissions:** The container runs as UID/GID 1000. The host directories must be owned by the same UID, or the container will fail to write. Create them explicitly before first run:
+Environment variables are loaded from `.env` by the agent at startup (via `pydantic-settings`), not injected by launchd. This keeps secrets out of the plist.
+
+**`ai.awfulclaw.watcher`** — monitors `app/` for changed `.py` files on the `main` branch and restarts the agent with a 60s debounce. Already exists in `scripts/`.
+
+### File permissions
+
+On a single-purpose Mac Mini, file permissions provide config immutability without containers or sandboxing:
 
 ```bash
-# Run once on the host before starting containers
-mkdir -p ${MEMORY_PATH} ${AGENT_CONFIG_PATH} ${CLAUDE_AUTH_PATH}
-chown -R 1000:1000 ${MEMORY_PATH} ${CLAUDE_AUTH_PATH}
-# AGENT_CONFIG_PATH is read-only in the container — owned by the host user, not 1000
+# Run once during initial setup
+chmod -R 444 agent_config/      # PERSONALITY.md, PROTOCOLS.md, USER.md, CHECKIN.md — read-only
+chmod 600 .env                  # secrets — readable only by the host user
+# memory/ is writable by default — no special permissions needed
 ```
 
-If the host user's UID differs from 1000, set `user: "${UID}:${GID}"` in compose and pass those values via `.env` or shell export. Avoid running as root — this negates the security benefit.
+Code files are owned by the host user. The agent process runs as the same user but the governance layer (`handlers/governance.py`) and middleware are protected by being part of the git-managed codebase — changes require a PR, human approval, and merge to `main`.
 
-```yaml
-# compose.yaml (outline)
-services:
-  agent:
-    image: ghcr.io/owner/agent:latest
-    user: "1000:1000"
-    read_only: true
-    cap_drop: [ALL]
-    security_opt: [no-new-privileges:true]
-    tmpfs: [/tmp]
-    volumes:
-      - ${MEMORY_PATH}:/app/memory                    # read-write working state
-      - ${AGENT_CONFIG_PATH}:/app/agent_config:ro     # PERSONALITY.md, PROTOCOLS.md, USER.md
-      - ./config:/app/config:ro                       # mcp_servers.json (in repo)
-      - ${CLAUDE_AUTH_PATH}:/home/agent/.claude         # OAuth token, writable for refresh
-    env_file: .env                                    # injected at runtime, never in image
-    restart: unless-stopped
+### MCP servers
 
-  mcp-imap:
-    image: ghcr.io/owner/mcp-imap:latest
-    user: "1000:1000"
-    read_only: true
-    cap_drop: [ALL]
-    security_opt: [no-new-privileges:true]
-    env_file: .env
-    profiles: [imap]   # only started if IMAP is configured
+All MCP servers run as **stdio child processes** of the agent. No separate services, no SSE bridges. The agent spawns them according to `config/mcp_servers.json` and communicates via stdin/stdout. This is the simplest and most reliable approach — it works because everything runs on the same machine.
 
-  # mcp-gcal, mcp-github, mcp-homeassistant etc. follow the same pattern
-  # Third-party MCP servers are added here as new services via PR
-```
+### Deployment
 
-No `volumes:` top-level block — bind mounts need none. All paths are set in `.env` (gitignored), e.g.:
+Deploys use a simple git-based flow with no inbound ports, no CI/CD pipeline, and no image registry:
 
 ```
-MEMORY_PATH=/home/charlie/awfulclaw-memory
-AGENT_CONFIG_PATH=/home/charlie/awfulclaw-config
-CLAUDE_AUTH_PATH=/home/charlie/.claude
+PR merged to main
+  → launchd periodic job runs `git pull origin main` (every 5 minutes)
+  → file watcher (ai.awfulclaw.watcher) detects changed .py files
+  → 60s debounce
+  → watcher sends SIGTERM to agent, launchd restarts it automatically
+  → new code is live; Telegram offset in kv table ensures no messages dropped
 ```
+
+### Graceful shutdown
+
+The agent handles `SIGTERM`: no new Claude invocations are started after the signal, the current one completes, pending state is written to DB, and the process exits cleanly. launchd restarts it automatically via `KeepAlive`. No messages are dropped — the Telegram offset in the `kv` table ensures the new process resumes exactly where the old one left off.
 
 ### What lives in the repo vs. outside it
 
@@ -719,136 +694,15 @@ The repo is public. Nothing personal or secret ever touches it.
 
 | Location | Contents |
 |----------|----------|
-| **Repo** | Application code, `compose.yaml`, `config/mcp_servers.json` template, `Dockerfile`s, GitHub Actions workflows |
-| **`MEMORY_PATH` (read-write bind mount)** | SQLite DB, conversation history, facts, schedules. Back this up. |
-| **`AGENT_CONFIG_PATH` (read-only bind mount)** | `PERSONALITY.md`, `PROTOCOLS.md`, `USER.md` — human-authored config, not writable by the container. Back this up. |
-| **`.env` file** (gitignored) | Runtime secrets — Telegram token, IMAP credentials, API keys. Also sets `MEMORY_PATH`, `AGENT_CONFIG_PATH`, `CLAUDE_AUTH_PATH`. |
-| **`CLAUDE_AUTH_PATH` (read-write bind mount)** | `~/.claude/` — OAuth token, writable for refresh; never in repo. |
-| **GitHub Actions secrets** | `GHCR_TOKEN` for pushing images — no host credentials needed |
+| **Repo** | Application code, `config/mcp_servers.json`, `config/skills/*.md`, launchd plists, scripts |
+| **`agent_config/`** (read-only via chmod) | `PERSONALITY.md`, `PROTOCOLS.md`, `USER.md`, `CHECKIN.md` — human-authored config. Back this up. |
+| **`memory/`** (read-write) | SQLite DB, conversation history, facts, schedules. Back this up. |
+| **`.env`** (gitignored, chmod 600) | Runtime secrets — Telegram token, IMAP credentials, API keys. |
+| **`~/.claude/`** | OAuth tokens for the `claude` CLI. Writable for token refresh; never in repo. |
 
-### CI/CD and graceful redeploy
+### Backups
 
-Deploys are handled by **Watchtower**, which polls GHCR for image digest changes and restarts containers automatically. No inbound ports, no SSH, no webhook listener — GitHub Actions just builds and pushes; the host takes care of the rest.
-
-```
-PR merged to main
-  → GitHub Actions builds images, pushes to GHCR
-  → Watchtower detects digest change on next poll
-  → Watchtower pulls new image, sends SIGTERM to running container
-  → agent: finishes in-flight message, writes pending state to DB, exits
-  → new container starts, resumes from bind-mount state (Telegram offset, DB intact)
-```
-
-Watchtower runs as part of the same compose project:
-
-```yaml
-  watchtower:
-    image: containrrr/watchtower
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    environment:
-      - WATCHTOWER_POLL_INTERVAL=300        # check every 5 minutes
-      - WATCHTOWER_CLEANUP=true             # remove old images after update
-      - WATCHTOWER_SCOPE=awfulclaw          # only watch containers in this project
-    restart: unless-stopped
-```
-
-Label containers that Watchtower should manage:
-
-```yaml
-  agent:
-    ...
-    labels:
-      - com.centurylinklabs.watchtower.scope=awfulclaw
-```
-
-The agent handles `SIGTERM` gracefully — no new Claude invocations are started after the signal, the current one completes, and the process exits cleanly. `stop_grace_period: 30s` in compose.yaml gives it a window. No messages are dropped; the Telegram offset in the `kv` table ensures the new container resumes exactly where the old one left off.
-
-Adding a new MCP server means adding a service to `compose.yaml` via PR. The agent proposes the diff; a human approves; CI pushes the new image; Watchtower deploys it. The agent never runs `docker` commands directly.
-
-### Multi-architecture support
-
-The agent runs on `linux/amd64` (standard Intel/AMD server) and `linux/arm64` (Raspberry Pi 4/5, Apple Silicon). Older 32-bit Pi models are not supported — Node.js (required by the `claude` CLI) dropped `linux/arm/v7` support.
-
-GitHub Actions builds a multi-arch manifest with a single tag. Watchtower and Docker pull the correct layer automatically:
-
-```yaml
-# .github/workflows/build.yaml (relevant step)
-- name: Build and push
-  uses: docker/build-push-action@v5
-  with:
-    platforms: linux/amd64,linux/arm64
-    push: true
-    tags: ghcr.io/owner/agent:latest
-```
-
-QEMU emulation (`docker/setup-qemu-action`) handles cross-compilation in Actions without needing native ARM runners. Build times are longer but images are identical in behaviour.
-
-**Raspberry Pi notes:**
-- Use a 64-bit OS (Raspberry Pi OS Lite 64-bit or Ubuntu Server arm64)
-- Ensure `CLAUDE_AUTH_PATH` is pre-populated on the Pi before first run — the OAuth flow must be completed on a machine with a browser, then the `~/.claude/` directory copied across
-- The Pi is a good always-on host: low power (~5W), no sleep, no automatic reboots
-
-### Shared host hardening
-
-When running alongside other containers on the same host, two extra measures apply.
-
-**Docker socket proxy.** Watchtower needs the Docker socket, which grants effective root over the entire host. On a shared host, replace the direct socket mount with [`tecnativa/docker-socket-proxy`](https://github.com/Tecnativa/docker-socket-proxy), which exposes only the API endpoints Watchtower actually requires:
-
-```yaml
-  socket-proxy:
-    image: tecnativa/docker-socket-proxy
-    environment:
-      - CONTAINERS=1   # allow container list/inspect
-      - POST=1         # allow restart/pull
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    networks:
-      - socket-proxy
-    restart: unless-stopped
-
-  watchtower:
-    image: containrrr/watchtower
-    environment:
-      - DOCKER_HOST=tcp://socket-proxy:2375
-      - WATCHTOWER_POLL_INTERVAL=300
-      - WATCHTOWER_CLEANUP=true
-      - WATCHTOWER_SCOPE=awfulclaw
-    networks:
-      - socket-proxy
-    restart: unless-stopped
-```
-
-Watchtower never touches the raw socket — the proxy enforces what it can and cannot do.
-
-**Network isolation.** Define an explicit network so awfulclaw containers cannot reach neighbours on the default bridge:
-
-```yaml
-networks:
-  awfulclaw:
-    driver: bridge
-
-services:
-  agent:
-    networks: [awfulclaw]
-  mcp-imap:
-    networks: [awfulclaw]
-  # etc.
-```
-
-**Resource limits.** Prevent a stuck agent from starving other services:
-
-```yaml
-  agent:
-    mem_limit: 512m
-    cpus: "1.0"
-```
-
-**`.env` permissions.** On a shared host, tighten the env file so other users cannot read secrets:
-
-```bash
-chmod 600 .env
-```
+All mutable state lives in two places: `memory/` (SQLite DB) and `agent_config/` (markdown config). Both are plain files on disk, easily backed up with Time Machine, rsync, or restic. No volume mounts, no container filesystems to extract from.
 
 ## What to Reuse
 
@@ -865,7 +719,7 @@ chmod 600 .env
 | `location.py` | Reuse as-is | |
 | `loop.py` | Discard | Logic extracted into pipeline middleware |
 | `gateway.py` | Discard | Replaced by bus + async connectors |
-| `claude.py` | Discard | Replaced by SDK-based ClaudeClient |
+| `claude.py` | Discard | Replaced by `ClaudeClient` with `stream-json` output parsing |
 | `memory.py` | Discard | Replaced by Store |
 | `db.py` | Discard | Replaced by Store |
 | `briefings.py` | Discard | Orientation briefing handled in `main.py` startup; daily briefing is user-configured via the schedule MCP tool |

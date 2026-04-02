@@ -51,28 +51,28 @@ Files and configuration are graded by what the agent can do with them:
 
 | Category | Examples | Agent can read? | Agent can write? | Enforced by |
 |----------|----------|----------------|-----------------|-------------|
-| **Code** | all `.py` files, `mcp_servers.json` | Yes | No | Container read-only filesystem |
-| **Propose-only config** | `PERSONALITY.md`, `PROTOCOLS.md` | Yes | Via PR + human approval only | YAML frontmatter + agent behaviour |
-| **Working state** | facts, people, schedules, `USER.md` | Yes | Yes | Memory bind mount |
-| **Blind write** | `.env` credential values | No | Yes (write-only, value never readable) | Never mounted into container |
+| **Code** | all `.py` files, `mcp_servers.json` | Yes | No | File permissions (owned by host user, not writable by agent process) |
+| **Read-only config** | `PERSONALITY.md`, `PROTOCOLS.md`, `USER.md`, `CHECKIN.md` | Yes | No | File permissions on `agent_config/` (chmod 444) |
+| **Working state** | facts, people, schedules, conversations | Yes | Yes | `memory/` directory, writable |
+| **Blind write** | `.env` credential values | No | Yes (write-only via `env_manager` MCP tool) | Agent process has no read access to `.env`; values loaded by launchd at startup |
 
-No file carries sensitivity headers or classification metadata. Immutability is enforced at the mount level, not by convention:
+No file carries sensitivity headers or classification metadata. Immutability is enforced at the filesystem level, not by convention:
 
-- **Code files** — read-only root filesystem; no running process can write to them
-- **`PERSONALITY.md`, `PROTOCOLS.md`, `USER.md`** — separate host directory (`AGENT_CONFIG_PATH`) mounted `:ro`; the agent cannot write to them even if it tries
-- **Working state** (DB, conversation history) — `MEMORY_PATH`, read-write
-- **`.env` credentials** — never mounted into the container at all
+- **Code files** — owned by the host user; the agent process does not have write permission
+- **`PERSONALITY.md`, `PROTOCOLS.md`, `USER.md`, `CHECKIN.md`** — in `agent_config/`, chmod 444; the agent can read but not write
+- **Working state** (DB, conversation history) — `memory/`, writable by the agent process
+- **`.env` credentials** — readable only by launchd at process startup; the agent has no tool to read it back
 
-`PERSONALITY.md` and `PROTOCOLS.md` carry a brief YAML frontmatter comment for human readers, explaining what the file is and that it should be edited on the host:
+`PERSONALITY.md` and `PROTOCOLS.md` carry a brief YAML frontmatter comment for human readers, explaining what the file is and how to edit it:
 
 ```markdown
 ---
 managed-by: human
-reason: Identity and behaviour baseline. Edit on the host; the container mount is read-only.
+reason: Identity and behaviour baseline. Edit directly; the agent cannot write to this directory.
 ---
 ```
 
-The README documents the mount layout so the agent can explain constraints to the user rather than simply failing.
+The README documents the directory layout so the agent can explain constraints to the user rather than simply failing.
 
 ### PERSONALITY.md and PROTOCOLS.md
 
@@ -81,7 +81,7 @@ OpenClaw — the most actively developed agent harness of this type — uses a `
 - **`PERSONALITY.md`** — identity, personality, tone, values. *Who the agent is.*
 - **`PROTOCOLS.md`** — operating rules, priorities, procedures. *How the agent behaves.*
 
-Both are human-authored and read-only in the container. The agent reads them on every turn and can reason about them, but cannot write to them. Day-to-day personality adaptations go through `personality_log` and the governance layer; structural changes to identity or operating procedures are made by the user directly editing the files on the host.
+Both are human-authored and read-only (chmod 444). The agent reads them on every turn and can reason about them, but cannot write to them. Day-to-day personality adaptations go through `personality_log` and the governance layer; structural changes to identity or operating procedures are made by the user directly editing the files on the host.
 
 **Why this matters:** In OpenClaw's default configuration, agents *can* modify their identity files at runtime. The security community considers this the primary attack surface — a compromised identity file means a permanently hijacked agent. Protection is left to the user (file permissions, third-party tooling). File integrity protection is an open feature request in OpenClaw's core (issue #19640). We treat this as a first-class design constraint, not an afterthought.
 
@@ -99,7 +99,7 @@ Escalation is informational, not a gate. The entry is active before the user see
 
 The governance layer covers all autonomous instruction writes — not just `personality_log` entries but also schedule prompt changes. Anything that will later be executed as a Claude instruction without direct user interaction is subject to the same approve/reject/escalate logic.
 
-The invariants are hardcoded in `handlers/governance.py` — part of the codebase, immutable at runtime via the read-only container filesystem. They are not a runtime configuration. Examples of invariants:
+The invariants are hardcoded in `handlers/governance.py` — part of the codebase, immutable at runtime via file permissions. They are not a runtime configuration. Examples of invariants:
 
 - Reject any entry that references an external URL or filesystem path (prompt injection signal)
 - Escalate any entry that represents a radical shift in core values or tone
@@ -113,7 +113,7 @@ The agent *writing* code and the agent *running* code are different things. The 
 
 OpenClaw's community has explored the alternative — agents that crystallize new tool code automatically when patterns repeat (openclaw-foundry, the self-improving-agent skill). This is powerful but removes the human from the loop entirely. Our model is deliberately more conservative: the agent can participate in its own development but cannot ship itself.
 
-Hard policy constraints and the governance layer are outside this path entirely. The read-only container filesystem means no running process — including the agent — can modify them. Changes require a human editing the source, opening a PR, and triggering a CI rebuild.
+Hard policy constraints and the governance layer are outside this path entirely. File permissions mean the agent process cannot modify them. Changes require a human editing the source, opening a PR, and the file watcher restarting the agent after merge.
 
 ## The agent proposes; the user approves
 
@@ -121,16 +121,17 @@ The agent can identify capability gaps and suggest solutions — including new M
 
 This applies especially to third-party MCP servers. The agent may identify a suitable server (from a known registry or by searching), explain what it does and why it's needed, and request approval. Only after confirmation does it install and register the server. This keeps the user in control of what code runs on their machine.
 
-## Containers enforce what code merely requests
+## File permissions enforce what code merely requests
 
-Containerisation is not just a deployment convenience — it is a security layer that gives hard technical backing to constraints that would otherwise be conventions. Key principles:
+On a dedicated Mac Mini, file permissions provide the hard technical backing for constraints that would otherwise be conventions:
 
-- **No root.** Every container runs as a named non-root user. Docker's default of running as root is not acceptable for an autonomous agent.
-- **Minimal capabilities.** All Linux capabilities are dropped at the compose level. None are added back.
-- **Read-only root filesystem.** The core agent container's filesystem is read-only except for explicit volume mounts. This means `handlers/governance.py` and the policy middleware are physically immutable at runtime — not just instructed to be.
-- **Secrets never in the image.** Credentials are injected at runtime via environment variables. The repo is public; nothing personal or secret ever touches it.
+- **Code files** — owned by the host user; the agent process has read but not write access. This means `handlers/governance.py` and the policy middleware are physically immutable at runtime — not just instructed to be.
+- **`agent_config/`** — chmod 444; the agent cannot modify its own identity or operating rules.
+- **`memory/`** — writable; this is where working state lives.
+- **`.env`** — readable only by launchd at startup; the agent's `env_manager` MCP tool can append new key=value pairs but cannot read existing values.
+- **Secrets never in the repo.** Credentials are injected at runtime via environment variables. The repo is public; nothing personal or secret ever touches it.
 
-Adding a new MCP server means a new service in `compose.yaml`, proposed via PR and approved by a human. The agent proposes; the pipeline deploys. The agent never runs `docker` commands directly.
+Adding a new MCP server means a new entry in `config/mcp_servers.json`, proposed via PR and approved by a human. The agent proposes; the file watcher deploys. The agent never modifies the config directly.
 
 ## The agent earns trust through transparency
 
