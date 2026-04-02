@@ -59,7 +59,9 @@ agent/
     memory.py          # memory_write + memory_search tools
     schedule.py        # schedule tools
     imap.py            # email tools
-    gcal.py            # Google Calendar tools
+    eventkit.py        # calendar + reminders tools (macOS EventKit via pyobjc)
+    contacts.py        # contacts tools (macOS Contacts via pyobjc)
+    weather.py         # weather tools (Open-Meteo, no auth)
     owntracks.py       # location tools
     env_manager.py     # env_set / env_keys tools
     skills.py          # skill_read tool
@@ -131,7 +133,8 @@ class Settings(BaseSettings):
     agent_config_path: Path = Path("agent_config")       # PERSONALITY.md, PROTOCOLS.md, USER.md, CHECKIN.md
     telegram: TelegramSettings
     imap: ImapSettings | None = None
-    gcal: GCalSettings | None = None
+    eventkit: EventKitSettings | None = None
+    contacts: ContactsSettings | None = None
     owntracks: OwnTracksSettings | None = None
     poll_interval: int = 5
     idle_interval: int = 60
@@ -470,6 +473,8 @@ class MCPClient:
 
 **Third-party server installation:** When the agent identifies a capability gap, it may propose installing a third-party MCP server. The flow mirrors the secret-request pattern — the agent names a specific server, explains what it does, and waits for explicit user confirmation. On approval, the server is registered in `config/mcp_servers.json` and picked up on the next reload. Servers are run via `npx -y` (npm) or `uvx` (Python) without a permanent install. The agent cannot install servers without user approval — see `PHILOSOPHY.md`.
 
+**Built-in CLI tools vs MCP tools:** The `claude` CLI provides several built-in tools (`WebSearch`, `WebFetch`, `Bash`, `Read`, `Edit`, etc.) that are available to Claude alongside MCP tools. Web search does not need an MCP server — the CLI's built-in `WebSearch` and `WebFetch` tools handle it. The PROTOCOLS.md capabilities section references these tools by name so Claude uses them rather than hallucinating tool calls (a problem in the legacy app, where the system prompt mentioned "web search" without anchoring it to a real tool name).
+
 ---
 
 ### Credential Manager (`mcp/env_manager.py`)
@@ -491,6 +496,124 @@ The flow:
 6. On next restart, the new env var is available to the relevant MCP server
 
 **Security property:** Write-only from Claude's perspective. No `env_get` tool exists — Claude can store credentials but never read them back. The `.env` file is loaded by pydantic-settings at startup, so values are available to the Python process (which needs them to connect to Telegram, IMAP, etc.), but no MCP tool exposes secret values to Claude. This prevents credential exfiltration if a prompt injection attack is successful.
+
+---
+
+### Calendar & Reminders (`mcp/eventkit.py`)
+
+**Responsibility:** Read/write access to macOS Calendar and Reminders via the EventKit framework, replacing the previous `gcal.py` design.
+
+**Design:** Uses `pyobjc-framework-EventKit` to access the system `EKEventStore`. This gives the agent access to **all calendars and reminder lists synced to macOS** — iCloud, Google, Exchange, CalDAV — without any per-service API authentication. The user's existing Calendar.app sync handles auth.
+
+**Dependencies:** `pyobjc-framework-EventKit` (v11.0+, Python ≥3.10)
+
+**Tools exposed:**
+
+```
+calendar_list()         → list of calendars with source (iCloud, Google, etc.)
+calendar_events(
+    start, end,         # ISO 8601 date/time range
+    calendar=None       # filter to specific calendar; None = all
+) → list of events with title, start, end, location, notes, calendar name
+
+calendar_create_event(
+    title, start, end,
+    calendar=None,      # target calendar; None = default
+    location=None,
+    notes=None
+) → event ID
+
+calendar_update_event(id, **fields) → updated event
+calendar_delete_event(id) → confirmation
+
+reminders_lists()       → list of reminder lists
+reminders_incomplete(
+    list=None,          # filter to specific list; None = all
+    due_before=None     # only reminders due before this date
+) → list of reminders with title, due date, priority, notes, list name
+
+reminders_completed(
+    list=None,
+    completed_after=None
+) → list of recently completed reminders
+
+reminder_create(
+    title,
+    list=None,          # target list; None = default
+    due=None,           # ISO 8601 date/time
+    priority=None,      # 0 (none), 1 (high), 5 (medium), 9 (low)
+    notes=None
+) → reminder ID
+
+reminder_complete(id)   → confirmation
+reminder_update(id, **fields) → updated reminder
+reminder_delete(id)     → confirmation
+```
+
+**Why EventKit instead of Google Calendar API:**
+
+- **Zero auth complexity.** No OAuth client ID, no refresh tokens, no consent screens. The user's macOS account sync handles everything.
+- **Multi-provider.** Works with Google Calendar, iCloud, Exchange, and any CalDAV provider — all unified through one API.
+- **Reminders included.** Same framework covers Apple Reminders, which fills the "tasks live in the user's task manager, read via MCP" gap from the memory redesign.
+- **Offline resilience.** EventKit caches locally; reads work even when the network is down.
+- **Natural fit.** The agent runs on a dedicated Mac — leveraging the platform is the whole point.
+
+**Design notes:** `EKEventStore` is thread-safe but not async. Calls are synchronous and fast (local SQLite under the hood), so `asyncio.to_thread()` wrapping is acceptable here — these are sub-millisecond local reads, not network I/O. Calendar write operations (create/update/delete) follow the draft-first protocol from PROTOCOLS.md — the agent presents the draft and waits for approval before committing.
+
+**TCC permissions:** Requires `kTCCServiceCalendar` and `kTCCServiceReminders` grants. See the TCC setup section under Service Management.
+
+---
+
+### Contacts (`mcp/contacts.py`)
+
+**Responsibility:** Read-only access to macOS Contacts via the Contacts framework.
+
+**Design:** Uses `pyobjc-framework-Contacts` to query the system `CNContactStore`. Like EventKit, this accesses all synced contact sources (iCloud, Google, Exchange, CardDAV) without per-service auth.
+
+**Dependencies:** `pyobjc-framework-Contacts` (Python ≥3.10, macOS ≥10.11)
+
+**Tools exposed:**
+
+```
+contacts_search(
+    query               # name, email, or phone number fragment
+) → list of matching contacts with name, phone numbers, emails, organisation
+
+contacts_get(id) → full contact details
+```
+
+**Design notes:** Read-only — the agent cannot create or modify contacts. This is intentional: contacts are a reference resource, not an agent workspace. The agent uses contacts to resolve ambiguous references ("text Charlie" → lookup phone number) and to enrich context ("meeting with Sarah" → pull org/role from contacts).
+
+`CNContactStore` is synchronous; use `asyncio.to_thread()` as with EventKit.
+
+**TCC permissions:** Requires `kTCCServiceContacts`. See the TCC setup section under Service Management.
+
+---
+
+### Weather (`mcp/weather.py`)
+
+**Responsibility:** Current conditions and forecast data for the user's location.
+
+**Design:** Uses the [Open-Meteo API](https://open-meteo.com/) — free, no API key, no signup, no rate limits for fair use. Location is pulled from the user's last known coordinates in `store.kv` (set by `middleware/location.py` via OwnTracks). Falls back to the timezone in USER.md if no location is available.
+
+**Dependencies:** `httpx` (already a project dependency)
+
+**Tools exposed:**
+
+```
+weather_current(
+    lat=None, lon=None  # defaults to last known location from store
+) → temperature, conditions, humidity, wind, feels-like
+
+weather_forecast(
+    lat=None, lon=None,
+    days=3              # 1–16 day forecast
+) → daily high/low, conditions, precipitation probability
+```
+
+**Design notes:** No new dependencies — uses the existing `httpx.AsyncClient`. Natively async, no thread wrapping needed. Responses are simple JSON; the MCP server formats them into concise natural language summaries rather than raw numbers. The daily briefing skill can incorporate weather without any setup.
+
+**No auth required.** Open-Meteo is genuinely free for non-commercial use with no API key. This is the only MCP server that requires network access to function (EventKit, Contacts, and Reminders all work offline).
 
 ---
 
@@ -622,7 +745,7 @@ See `PHILOSOPHY.md` for the full data philosophy. In brief: the agent is a coord
 |---------|-----|
 | `memory/schedules.json` | `schedules` table in SQLite |
 | `memory/conversations/YYYY-MM-DD.md` | `conversations` table in SQLite + daily summary flushed to Obsidian |
-| `memory/tasks/*.md` | Removed — tasks live in the user's task manager, read via MCP |
+| `memory/tasks/*.md` | Removed — tasks live in Apple Reminders, accessed via `mcp/eventkit.py` |
 | `memory/awfulclaw.db` facts/people | Same tables, same file, extended with embeddings; flushed daily to Obsidian |
 | Regex parsing of markdown | Typed `Turn` objects, JSON content field |
 | `.telegram_offset` file | `kv` table |
@@ -692,6 +815,7 @@ reason: Operating rules and procedures. The agent reads this on every turn but c
 
 - If you identify a capability gap (e.g. you need a tool you don't have), explain what you need and why. Don't try to work around missing tools.
 - When proposing a new MCP server or tool, explain what it does before asking the user to approve installation.
+- To search the web, use the built-in `WebSearch` tool. To fetch a specific URL, use the built-in `WebFetch` tool. Do not attempt to use tools that are not in your tool list.
 ```
 
 This file defines *how the agent behaves* — operational rules, procedures, policies. The key test: if you swapped PERSONALITY.md to create a different character, PROTOCOLS.md should still work unchanged.
@@ -719,6 +843,8 @@ When running an ambient check-in, review the following and speak up only if some
 - Any unread emails that look urgent or time-sensitive?
 - Any schedules that fired since the last check-in? Did they succeed?
 - Any upcoming calendar events in the next few hours that the user should prepare for?
+- Any reminders due today that haven't been completed?
+- Anything notable about today's weather (rain, extreme temperatures, alerts)?
 ```
 
 The patrol checklist for ambient check-ins. Check-ins are distinct from schedules: schedules fire blindly at a set time and always produce output. Check-ins are conditional — they only speak when something matters. Keep it short and specific; each item should be something the agent can actually check with its available tools.
@@ -791,14 +917,21 @@ This is a clean-room reimplementation, not a refactor. The old codebase (in `leg
 - `handlers/checkin.py` — reads `CHECKIN.md`, invokes Claude, sends only if warranted
 - `checkin_interval` cooldown via `kv` table (last fired timestamp)
 
-### Phase 7: Feature parity
+### Phase 7: macOS integration
+- `mcp/eventkit.py` — calendar + reminders via EventKit (replaces gcal)
+- `mcp/contacts.py` — read-only contacts via Contacts framework
+- `mcp/weather.py` — weather via Open-Meteo
+- `--tcc-setup` flag for initial permission grants
+- Update daily-briefing skill to incorporate reminders and weather
+
+### Phase 8: Feature parity
 - Location/timezone updates (OwnTracks)
 - Email triage
 - MCP config hot-reload
 - `/restart` slash command
 - Orientation briefing — on first startup, the agent sends a brief message summarising its current state (known schedules, recent context, available tools) so it can pick up coherently rather than starting cold
 
-### Phase 8: Migration
+### Phase 9: Migration
 - Import scripts read from a backup of the legacy data (not from the repo — `legacy/` was deleted in Phase 1)
 - Import script: read `schedules.json` → insert into new DB
 - Import script: read `conversations/YYYY-MM-DD.md` → insert turns into new DB
@@ -865,6 +998,26 @@ chmod 600 .env                                     # secrets — readable only b
 ```
 
 The agent process runs as the same user who owns the code files. Protection is tool-level, not OS-level: no MCP tool exposes file-write capability, so Claude cannot modify code or config. Defence in depth: code changes also require a git PR, human approval, and merge to `main`. chmod 444 on `agent_config/` prevents accidental writes but is not a hard security boundary (same-user ownership means the owner can override it).
+
+### TCC permissions (Calendar, Reminders, Contacts)
+
+macOS protects Calendar, Reminders, and Contacts access via TCC (Transparency, Consent, and Control). Launchd daemons cannot show consent dialogs — they have no GUI. The solution is a two-step setup:
+
+**Initial setup (run once, interactively):**
+
+```bash
+# Run the agent binary interactively to trigger TCC consent dialogs
+cd /path/to/awfulclaw
+uv run python -m agent --tcc-setup
+```
+
+The `--tcc-setup` flag imports EventKit and Contacts, requests access to each store, and exits. macOS shows the standard permission dialogs. The user clicks "Allow" for Calendar, Reminders, and Contacts. These grants are stored in the user's TCC database (`~/Library/Application Support/com.apple.TCC/TCC.db`) keyed to the Python binary path.
+
+**After granting:** The launchd-managed agent inherits the grants because it runs the same Python binary under the same user. No further dialogs are needed.
+
+**Verification:** `--tcc-setup` also verifies existing grants and reports which permissions are missing. Safe to re-run.
+
+**If Python is upgraded:** A new Python binary path means new TCC entries. Re-run `--tcc-setup` after upgrading Python or changing the `uv` virtual environment.
 
 ### MCP servers
 
