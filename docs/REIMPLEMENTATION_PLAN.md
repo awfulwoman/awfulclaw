@@ -31,12 +31,12 @@ agent/
   scheduler.py         # Scheduler async task
   store.py             # Store: unified SQLite layer
   config.py            # Settings via pydantic-settings
+  tui.py               # Terminal UI client — connects to REST API via HTTP/SSE
   connectors/
     README.md          # What a Connector is, how to implement one, available connectors
     __init__.py        # Connector ABC, Message, InboundEvent, OutboundEvent
     telegram.py        # TelegramConnector
-    tui.py             # TUIConnector (Textual)
-    rest.py            # RESTConnector (HTTP API)
+    rest.py            # RESTConnector (HTTP API + SSE streaming)
   middleware/
     README.md          # What middleware is, execution order, how to add a new one
     __init__.py        # Middleware Protocol, Next type alias
@@ -272,29 +272,9 @@ class Connector(ABC):
     async def stop(self) -> None: ...
 ```
 
-Three connectors ship in the new implementation:
+Two connectors ship in the new implementation:
 
 **`connectors/telegram.py`** — uses `httpx.AsyncClient` with long-polling. Offset stored in `store.kv`. No background threads. Supports text, images, and typing indicators.
-
-**`connectors/tui.py`** — a local terminal UI for development, debugging, and offline use. Built on [Textual](https://github.com/Textualize/textual). Renders a chat-style interface in the terminal with a scrollable message history panel and an input box. Runs as an async Textual app inside its own task; sends `InboundEvent` on Enter and renders `OutboundEvent` messages as they arrive.
-
-```python
-class TUIConnector(Connector):
-    """
-    Terminal chat UI built with Textual.
-    Useful for local dev and running the agent without Telegram.
-    Start with: uv run python -m agent --connector tui
-    """
-    async def start(self, on_message):
-        self._on_message = on_message
-        await self._app.run_async()   # Textual takes over the terminal
-
-    async def send(self, to, message):
-        self._app.post_message(AgentReply(message.text))
-
-    async def send_typing(self, to):
-        self._app.post_message(TypingIndicator())
-```
 
 **`connectors/rest.py`** — an HTTP API for programmatic access. Built on an async ASGI framework (e.g. Starlette or FastAPI). Exposes a minimal chat endpoint that accepts a message and returns the agent's reply. Useful for integrating with mobile apps, web dashboards, webhooks, or any client that speaks HTTP.
 
@@ -330,9 +310,20 @@ GET /chat/stream  (SSE, optional)
   → event: done   data: {"reply": "This week you had 3 meetings..."}
 ```
 
-The TUI connector doubles as the primary development harness — no Telegram credentials needed to run and test the agent locally.
+**`tui.py`** — a local terminal UI for development and debugging. Built on [Textual](https://github.com/Textualize/textual). The TUI is a **client of the REST connector**, not a connector itself — it connects to the REST API and renders a chat-style interface in the terminal with a scrollable message history panel and an input box. SSE streaming gives it typing indicators and incremental reply rendering.
 
-**Design notes:** Async-native — each connector runs its own async task, no threads. Connectors push events via callback rather than being polled. Connector selected via `--connector telegram|tui|rest` CLI flag (default: `telegram`).
+```bash
+# Start the agent with the REST connector, then connect the TUI:
+uv run python -m agent --connector rest &
+uv run python -m agent.tui
+
+# Or as a single command (starts REST and TUI together):
+uv run python -m agent --connector rest --tui
+```
+
+This keeps the Connector ABC lean (two implementations, not three) and validates the REST API as a real client interface. Anyone building a different client — web app, mobile app, CLI tool — follows the same pattern as the TUI.
+
+**Design notes:** Async-native — each connector runs its own async task, no threads. Connectors push events via callback rather than being polled. Connector selected via `--connector telegram|rest` CLI flag (default: `telegram`). The `--tui` flag is a convenience that starts the REST connector and launches the TUI client together.
 
 ---
 
@@ -652,7 +643,8 @@ This is a clean-room reimplementation, not a refactor. The old codebase (`app/aw
 ### Phase 2: Connectors and bus
 - `bus.py` with typed events
 - `connectors/telegram.py` (async, offset in store.kv)
-- `connectors/tui.py` (Textual-based, for local dev without Telegram)
+- `connectors/rest.py` (HTTP API + SSE)
+- `tui.py` (Textual client for REST connector, for local dev without Telegram)
 - Basic `pipeline.py` with `InvokeMiddleware` only
 - End-to-end: receive message → Claude reply → send (works with both connectors)
 
