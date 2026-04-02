@@ -566,9 +566,8 @@ This is a clean-room reimplementation, not a refactor. The old codebase (`app/aw
 **During implementation:**
 
 - Start each session by reading this plan and `PHILOSOPHY.md` — not the old codebase.
-- If you genuinely need to reference old behaviour (e.g. Telegram offset logic, cron evaluation), do so explicitly via `git show main:app/awfulclaw/file.py`. This is a deliberate act — you know you're looking at old code and why.
-- Do not copy-paste from the old codebase. Rewrite from the spec. The old code has patterns this plan explicitly replaces (monolith loop, regex parsing, threading, synchronous I/O).
-- The "What to Reuse" table at the end of this document identifies components worth preserving. "Reuse" means understanding the logic and reimplementing it in the new architecture — not importing the old module.
+- Do not reference the old code. This plan is the spec — it describes every component, interface, and design decision in sufficient detail to build from. If something is unclear, the plan needs updating, not a peek at the old implementation.
+- The old code has patterns this plan explicitly replaces (monolith loop, regex parsing, threading, synchronous I/O). Looking at it risks importing those patterns unconsciously.
 
 **Tests and config that stay:**
 
@@ -729,27 +728,3 @@ The repo is public. Nothing personal or secret ever touches it.
 
 All mutable state lives in two places: `memory/` (SQLite DB) and `agent_config/` (markdown config). Both are plain files on disk, easily backed up with Time Machine, rsync, or restic. No volume mounts, no container filesystems to extract from.
 
-## What to Learn From
-
-The old codebase is deleted on the implementation branch (see Implementation Approach). This table identifies where valuable *logic* lives — not files to copy or adapt, but behaviour worth understanding before reimplementing from scratch. Use `git show main:app/awfulclaw/<file>` to read these when needed.
-
-| Old component | Worth studying | What to take away |
-|---------------|---------------|-------------------|
-| `connector.py` | Connector ABC shape | The `poll` / `send` interface is sound; reimplement as async |
-| `telegram.py` | Offset persistence, long-polling | How Telegram update offsets work; reimplement with `httpx.AsyncClient` |
-| `scheduler.py` | Cron evaluation logic | `get_due` / `should_wake` — the cron matching is correct; reimplement in the new `scheduler.py` |
-| `context.py` | System prompt sections | The prompt structure (identity, user profile, facts, schedules) is good; replace the assembly logic |
-| `awfulclaw_mcp/` | MCP server implementations | The tool definitions and FastMCP patterns are reusable; reimplement in `mcp/` |
-| `env_utils.py` | `.env` file handling | Small utility; understand, then reimplement |
-| `location.py` | Timezone inference from coordinates | The logic for mapping lat/lon to IANA timezone |
-
-These components have no value to study — they are fully replaced by the new architecture:
-
-| Old component | Replaced by |
-|---------------|------------|
-| `loop.py` | Event bus + middleware pipeline |
-| `gateway.py` | Bus + async connectors |
-| `claude.py` | `ClaudeClient` with `stream-json` output |
-| `memory.py` | Store |
-| `db.py` | Store |
-| `briefings.py` | Schedule-triggered skills |
