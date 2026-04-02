@@ -553,6 +553,33 @@ These live in `agent_config/` on the Mac Mini, chmod 444. The agent reads them; 
 
 ---
 
+## Implementation Approach
+
+This is a clean-room reimplementation, not a refactor. The old codebase (`app/awfulclaw/`) must not pollute the new one.
+
+**Before writing any new code:**
+
+1. Create the implementation branch.
+2. Delete `app/awfulclaw/` on that branch. The old code must not be present at any path where it could be accidentally read during development.
+3. Build `agent/` from scratch, using this plan as the spec.
+
+**During implementation:**
+
+- Start each session by reading this plan and `PHILOSOPHY.md` — not the old codebase.
+- If you genuinely need to reference old behaviour (e.g. Telegram offset logic, cron evaluation), do so explicitly via `git show main:app/awfulclaw/file.py`. This is a deliberate act — you know you're looking at old code and why.
+- Do not copy-paste from the old codebase. Rewrite from the spec. The old code has patterns this plan explicitly replaces (monolith loop, regex parsing, threading, synchronous I/O).
+- The "What to Reuse" table at the end of this document identifies components worth preserving. "Reuse" means understanding the logic and reimplementing it in the new architecture — not importing the old module.
+
+**Tests and config that stay:**
+
+- `config/mcp_servers.json` — format unchanged, reuse as-is
+- `config/skills/` — reuse as-is
+- `config/agent_config_examples/` — reuse as-is
+- `memory/` — runtime state, not code; unaffected by the rewrite
+- `scripts/` — launchd helpers; update paths but keep the structure
+
+---
+
 ## Implementation Phases
 
 ### Phase 1: Core scaffolding
