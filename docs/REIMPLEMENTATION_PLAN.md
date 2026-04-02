@@ -432,6 +432,39 @@ class MCPClient:
 
 ---
 
+### Skills (`config/skills/`)
+
+**Responsibility:** Reusable prompt fragments that describe workflows in natural language. Skills tell the agent *what to do*; MCP tools are *how it does it*.
+
+**Design:** A skill is a markdown file in `config/skills/`. It contains natural language instructions — no code, no tool references. The agent loads skills on demand via the `skill_read` MCP tool.
+
+```
+config/skills/
+  daily-briefing.md    # "Summarise schedule, tasks, emails, and calendar"
+  email-triage.md      # "Check unread emails and flag anything urgent"
+  weekly-review.md     # "Summarise the week's conversations and open tasks"
+```
+
+**How skills are discovered:** The context assembler includes a list of available skill names (just the filenames, not the content) in the system prompt. This is small and bounded. When the agent needs a skill, it calls `skill_read("daily-briefing")` to load the full content.
+
+**How skills are invoked:** Skills are triggered in two ways:
+
+1. **Via schedules.** A schedule's `prompt` field says something like "Run the daily-briefing skill." The handler invokes the agent, the agent calls `skill_read`, and the skill content shapes its behaviour for that turn.
+2. **On the agent's initiative.** If a user request matches an available skill, the agent loads and follows it. The user can also ask directly: "run my email triage."
+
+**Skills compose tools, they don't define them.** A skill says "check for urgent emails" — the agent maps that to the IMAP tools. If the skill says "summarise my calendar," the agent uses gcal tools. A single skill can span multiple MCP servers without knowing they exist.
+
+**Missing capabilities:** When a skill references a capability the agent doesn't have:
+
+- **Default: skip and note.** "I don't have email access, so I skipped that part of the briefing." Transparent, no failure — the rest of the skill still runs.
+- **First invocation: suggest the missing tool.** If a skill has never worked because a required server isn't configured, the agent says "This skill wants email access. Want me to set up the IMAP server?" This only happens once — after the user declines, the agent remembers and skips silently.
+
+**Skills are user-authored.** Like `agent_config/`, skill files are human-maintained. The agent can suggest a new skill ("I notice you ask me to triage emails every morning — want me to draft a skill for that?") but cannot create or modify the file. The user writes it and drops it into `config/skills/`.
+
+Example skill files with documentation are in `config/agent_config_examples/`.
+
+---
+
 ### Scheduler (`scheduler.py`)
 
 **Responsibility:** Fire due schedules by posting `ScheduleEvent` to the bus.
