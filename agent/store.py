@@ -63,6 +63,28 @@ _EXPECTED_TABLES = {"facts", "people", "conversations", "schedules", "kv", "pers
 
 
 @dataclass
+class Turn:
+    id: int
+    channel: str
+    role: str
+    content: str
+    timestamp: str
+
+
+@dataclass
+class Schedule:
+    id: str
+    name: str
+    cron: Optional[str]
+    fire_at: Optional[str]
+    prompt: str
+    silent: bool
+    tz: str
+    created_at: str
+    last_run: Optional[str]
+
+
+@dataclass
 class Fact:
     key: str
     value: str
@@ -165,3 +187,52 @@ class Store:
         )
         rows = await cursor.fetchall()
         return [Person(id=r[0], name=r[1], phone=r[2], content=r[3], updated_at=r[4]) for r in rows]
+
+    # --- conversations ---
+
+    async def add_turn(self, channel: str, role: str, content: str) -> Turn:
+        now = datetime.now(timezone.utc).isoformat()
+        cursor = await self._db.execute(
+            "INSERT INTO conversations (channel, role, content, timestamp) VALUES (?, ?, ?, ?)",
+            (channel, role, content, now),
+        )
+        await self._db.commit()
+        assert cursor.lastrowid is not None
+        return Turn(id=cursor.lastrowid, channel=channel, role=role, content=content, timestamp=now)
+
+    async def recent_turns(self, channel: str, limit: int) -> list[Turn]:
+        cursor = await self._db.execute(
+            "SELECT id, channel, role, content, timestamp FROM conversations "
+            "WHERE channel = ? ORDER BY timestamp DESC LIMIT ?",
+            (channel, limit),
+        )
+        rows = await cursor.fetchall()
+        return list(reversed([Turn(id=r[0], channel=r[1], role=r[2], content=r[3], timestamp=r[4]) for r in rows]))
+
+    # --- schedules ---
+
+    async def list_schedules(self) -> list[Schedule]:
+        cursor = await self._db.execute(
+            "SELECT id, name, cron, fire_at, prompt, silent, tz, created_at, last_run FROM schedules ORDER BY name"
+        )
+        rows = await cursor.fetchall()
+        return [
+            Schedule(id=r[0], name=r[1], cron=r[2], fire_at=r[3], prompt=r[4], silent=bool(r[5]), tz=r[6], created_at=r[7], last_run=r[8])
+            for r in rows
+        ]
+
+    async def upsert_schedule(self, schedule: Schedule) -> None:
+        await self._db.execute(
+            "INSERT INTO schedules (id, name, cron, fire_at, prompt, silent, tz, created_at, last_run) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(id) DO UPDATE SET name = excluded.name, cron = excluded.cron, "
+            "fire_at = excluded.fire_at, prompt = excluded.prompt, silent = excluded.silent, "
+            "tz = excluded.tz, last_run = excluded.last_run",
+            (schedule.id, schedule.name, schedule.cron, schedule.fire_at, schedule.prompt,
+             int(schedule.silent), schedule.tz, schedule.created_at, schedule.last_run),
+        )
+        await self._db.commit()
+
+    async def delete_schedule(self, id: str) -> None:
+        await self._db.execute("DELETE FROM schedules WHERE id = ?", (id,))
+        await self._db.commit()
