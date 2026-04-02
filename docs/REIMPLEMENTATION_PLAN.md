@@ -31,7 +31,6 @@ agent/
   scheduler.py         # Scheduler async task
   store.py             # Store: unified SQLite layer
   config.py            # Settings via pydantic-settings
-  tui.py               # Terminal UI client — connects to REST API via HTTP/SSE
   connectors/
     README.md          # What a Connector is, how to implement one, available connectors
     __init__.py        # Connector ABC, Message, InboundEvent, OutboundEvent
@@ -310,20 +309,9 @@ GET /chat/stream  (SSE, optional)
   → event: done   data: {"reply": "This week you had 3 meetings..."}
 ```
 
-**`tui.py`** — a local terminal UI for development and debugging. Built on [Textual](https://github.com/Textualize/textual). The TUI is a **client of the REST connector**, not a connector itself — it connects to the REST API and renders a chat-style interface in the terminal with a scrollable message history panel and an input box. SSE streaming gives it typing indicators and incremental reply rendering.
+The REST API is designed for external clients — terminal UIs, web apps, mobile apps, CLI tools. Client implementations live outside this repo. Integration tests against the API endpoints ensure the contract is stable.
 
-```bash
-# Start the agent with the REST connector, then connect the TUI:
-uv run python -m agent --connector rest &
-uv run python -m agent.tui
-
-# Or as a single command (starts REST and TUI together):
-uv run python -m agent --connector rest --tui
-```
-
-This keeps the Connector ABC lean (two implementations, not three) and validates the REST API as a real client interface. Anyone building a different client — web app, mobile app, CLI tool — follows the same pattern as the TUI.
-
-**Design notes:** Async-native — each connector runs its own async task, no threads. Connectors push events via callback rather than being polled. Connector selected via `--connector telegram|rest` CLI flag (default: `telegram`). The `--tui` flag is a convenience that starts the REST connector and launches the TUI client together.
+**Design notes:** Async-native — each connector runs its own async task, no threads. Connectors push events via callback rather than being polled. Connector selected via `--connector telegram|rest` CLI flag (default: `telegram`).
 
 ---
 
@@ -643,8 +631,7 @@ This is a clean-room reimplementation, not a refactor. The old codebase (`app/aw
 ### Phase 2: Connectors and bus
 - `bus.py` with typed events
 - `connectors/telegram.py` (async, offset in store.kv)
-- `connectors/rest.py` (HTTP API + SSE)
-- `tui.py` (Textual client for REST connector, for local dev without Telegram)
+- `connectors/rest.py` (HTTP API + SSE, for programmatic access and external clients)
 - Basic `pipeline.py` with `InvokeMiddleware` only
 - End-to-end: receive message → Claude reply → send (works with both connectors)
 
