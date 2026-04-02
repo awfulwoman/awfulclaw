@@ -309,7 +309,26 @@ GET /chat/stream  (SSE, optional)
   → event: done   data: {"reply": "This week you had 3 meetings..."}
 ```
 
-The REST API is designed for external clients — terminal UIs, web apps, mobile apps, CLI tools. Client implementations live outside this repo. Integration tests against the API endpoints ensure the contract is stable.
+The REST API serves two purposes: **external clients** (terminal UIs, web apps, mobile apps) and — critically — **end-to-end testing**.
+
+Without an API, testing the agent means sending real messages through Telegram and reading the replies by hand. This makes automated testing nearly impossible and slows development to a crawl. The REST connector solves this: a test can POST a message, receive the reply as JSON, and assert on the content — all in a normal `pytest` run, no Telegram account needed.
+
+```python
+# Example end-to-end test
+async def test_schedule_creation(agent_client):
+    resp = await agent_client.post("/chat", json={"message": "Remind me to call mum every Sunday at 10am"})
+    assert resp.status_code == 200
+    reply = resp.json()["reply"]
+    assert "sunday" in reply.lower()
+
+    # Verify the schedule was actually created
+    resp = await agent_client.post("/chat", json={"message": "/schedules"})
+    assert "call mum" in resp.json()["reply"].lower()
+```
+
+The test harness starts the agent with the REST connector and an in-memory SQLite database, giving full end-to-end coverage through the real middleware pipeline, context assembler, and Claude invocation — not mocked substitutes. This is the primary development and CI feedback loop.
+
+Client implementations live outside this repo.
 
 **Design notes:** Async-native — each connector runs its own async task, no threads. Connectors push events via callback rather than being polled. Connector selected via `--connector telegram|rest` CLI flag (default: `telegram`).
 
