@@ -1,43 +1,8 @@
 # Reimplementation Plan
 
-This document describes a clean-room reimplementation of awfulclaw in Python, informed by the limitations documented in `ARCHITECTURE.md`. The goal is a significantly more elegant, extensible, and correct system while preserving everything that works well (MCP tooling, the connector abstraction, the memory model, cron scheduling).
+This document describes a clean-room reimplementation of awfulclaw in Python, targeting a dedicated Mac Mini (Apple Silicon) as the runtime environment. The agent and all MCP servers run as native macOS processes, supervised by launchd. No Docker, no containers.
 
-## Revision: Mac Mini Native Deployment (2026-04-02)
-
-The agent will run natively on a dedicated Mac Mini instead of in Docker containers. This resolves all open architectural gaps and simplifies the deployment model significantly. The rest of this document should be read with the following decisions applied — a full rewrite is pending, but these decisions are authoritative.
-
-### Runtime and deployment
-
-- **No Docker.** The agent and all MCP servers run as native macOS processes. The entire Containerisation section of this document is superseded.
-- **Service management via launchd.** Each service gets a launchd plist (e.g. `ai.awfulclaw.agent`). launchd provides process supervision (`KeepAlive`), logging (`StandardOutPath`/`StandardErrorPath`), resource limits, and environment variable injection. Replaces Docker Compose.
-- **No dedicated user or sandbox-exec.** On a single-purpose Mac Mini, file permissions and app-level governance are sufficient. No sandbox profiles to maintain, no multi-user friction.
-- **Deployment via git pull + file watcher.** A launchd periodic job runs `git pull origin main`. The existing file watcher (`ai.awfulclaw.watcher`) detects changed `.py` files and restarts the agent with a 60s debounce. No Watchtower, no GHCR, no inbound ports.
-- **Graceful shutdown.** The agent handles `SIGTERM` — finishes in-flight Claude invocation, writes pending state to DB, exits cleanly. launchd restarts automatically via `KeepAlive`.
-- **Config immutability via file permissions.** `agent_config/` (PERSONALITY.md, PROTOCOLS.md, USER.md, CHECKIN.md) is chmod 444 — the agent can read but not write. Code files are owned by the host user and not writable by the agent process. `memory/` is writable. `.env` is readable only by launchd at startup; the agent's `env_manager` MCP tool can append but not read.
-
-### Resolved architectural gaps
-
-- **MCP servers and stdio** — resolved. All MCP servers are child processes of the agent. Stdio works natively. No SSE/HTTP bridge needed.
-- **Embedding generation** — resolved. Use `sentence-transformers` with `all-MiniLM-L6-v2` (~80MB) running locally on the M-series chip. Embeddings stored as BLOBs in SQLite via `sqlite-vec`. Used for semantic search of facts and people during context assembly.
-- **CLI session mechanics** — resolved. One-shot per turn: `claude --print --output-format stream-json`. No persistent subprocess. The agent manages conversation history via the Store and assembles context fresh each turn. `stream-json` gives structured output (text deltas, tool use, stop reason) without stdout scraping.
-
-### Resolved errors and inconsistencies
-
-- **SDK references** → all replaced with CLI subprocess. The Mermaid diagram node should read `CLI` not `SDK`.
-- **`~/.claude/`** → just a directory on disk, not a named volume. OAuth tokens live there natively.
-- **`SOUL`** → `PERSONALITY` throughout.
-- **`CHECKIN.md`** → added to all enumerations (already fixed in PHILOSOPHY.md).
-- **Phase 3 "SOUL, tasks"** → should reference PERSONALITY, people, facts, schedules.
-- **`tasks` table** → removed from schema and Store API. Tasks live externally in user's task manager, accessed via MCP.
-- **`USER.md`** → moved to read-only config row in PHILOSOPHY.md sensitivity table (already fixed).
-- **`middleware/invoke.py`** → renamed to `middleware/invoke.py` to avoid collision with top-level `agent.py`.
-- **Data philosophy section** → removed from this document; lives in PHILOSOPHY.md only.
-- **`env_manager.py`** — MCP server for secure credential storage. The agent registers a pending key name, `SecretCaptureMiddleware` intercepts the user's next message as the value, and `env_manager` appends the key=value to `.env`. Write-only — no read tool exposed. Prevents exfiltration because the agent never has read access to `.env`. Values become available after the next launchd restart.
-- **`skills.py`** — read-only MCP server that reads prompt fragments from `config/skills/*.md`. Allows the agent to lazy-load skill definitions at runtime (e.g. a specialised writing style, a debugging checklist) without stuffing everything into the system prompt. Read-only — the agent cannot create or modify skills.
-
-### What stays the same
-
-The entire application architecture is unchanged: event bus, middleware pipeline, connectors, store, context assembler, scheduler, MCP servers. The package layout is unchanged (with the `invoke.py` rename). Design principles are unchanged (with principle 4 updated to remove "persistent session" language). All component interfaces are unchanged. The only thing that changed is how the system is deployed and run.
+The goal is a significantly more elegant, extensible, and correct system while preserving everything that works well (MCP tooling, the connector abstraction, the memory model, cron scheduling). For data philosophy and design values, see `PHILOSOPHY.md`.
 
 ---
 
