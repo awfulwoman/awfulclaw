@@ -257,7 +257,7 @@ async def search_facts(query: str, limit: int = 10) -> list[Fact]:
 
 **Responsibility:** Adapter between a messaging platform and the event bus.
 
-**Design:** Keep the `Connector` ABC from the original — it's good. Make it fully async. Each connector runs its own async task (not a background thread).
+**Design:** The `Connector` ABC defines a clean boundary between transport and application logic. Fully async — each connector runs its own async task, no threads.
 
 ```python
 class Connector(ABC):
