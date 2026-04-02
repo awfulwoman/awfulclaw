@@ -51,17 +51,17 @@ Files and configuration are graded by what the agent can do with them:
 
 | Category | Examples | Agent can read? | Agent can write? | Enforced by |
 |----------|----------|----------------|-----------------|-------------|
-| **Code** | all `.py` files, `mcp_servers.json` | Yes | No | File permissions (owned by host user, not writable by agent process) |
-| **Read-only config** | `PERSONALITY.md`, `PROTOCOLS.md`, `USER.md`, `CHECKIN.md` | Yes | No | File permissions on `agent_config/` (chmod 444) |
+| **Code** | all `.py` files, `mcp_servers.json` | Yes | No | No MCP tool exposes file-write; changes require git PR and merge to `main` |
+| **Read-only config** | `PERSONALITY.md`, `PROTOCOLS.md`, `USER.md`, `CHECKIN.md` | Yes | No | No MCP tool exposes file-write; chmod 444 as defence in depth |
 | **Working state** | facts, people, schedules, conversations | Yes | Yes | `memory/` directory, writable |
-| **Blind write** | `.env` credential values | No | Yes (write-only via `env_manager` MCP tool) | Agent process has no read access to `.env`; values loaded by launchd at startup |
+| **Blind write** | `.env` credential values | No | Yes (write-only via `env_manager` MCP tool) | No MCP tool exposes secret values; Claude never sees them |
 
 No file carries sensitivity headers or classification metadata. Immutability is enforced at the filesystem level, not by convention:
 
-- **Code files** — owned by the host user; the agent process does not have write permission
-- **`PERSONALITY.md`, `PROTOCOLS.md`, `USER.md`, `CHECKIN.md`** — in `agent_config/`, chmod 444; the agent can read but not write
+- **Code files** — no MCP tool exposes file-write capability; changes require a git PR and merge to `main`
+- **`PERSONALITY.md`, `PROTOCOLS.md`, `USER.md`, `CHECKIN.md`** — in `agent_config/`, no write tool exposed; chmod 444 as defence in depth
 - **Working state** (DB, conversation history) — `memory/`, writable by the agent process
-- **`.env` credentials** — readable only by launchd at process startup; the agent has no tool to read it back
+- **`.env` credentials** — loaded by pydantic-settings at startup; no MCP tool exposes values, so Claude cannot read them back
 
 `PERSONALITY.md` and `PROTOCOLS.md` carry a brief YAML frontmatter comment for human readers, explaining what the file is and how to edit it:
 
@@ -105,7 +105,7 @@ The invariants are hardcoded in `handlers/governance.py` — part of the codebas
 - Escalate any entry that represents a radical shift in core values or tone
 - Reject any entry that attempts to disable, override, or work around the governance layer itself
 
-The invariants are documented in the project's main `README.md` — the code is the authority, the README is the explanation. No separate governance config file exists, as a file the agent cannot read has no value as communication.
+The invariants are documented in `DESIGN.md` — the code is the authority, the spec is the explanation. No separate governance config file exists, as a file the agent cannot read has no value as communication.
 
 ### Code and self-development
 
@@ -113,7 +113,7 @@ The agent *writing* code and the agent *running* code are different things. The 
 
 OpenClaw's community has explored the alternative — agents that crystallize new tool code automatically when patterns repeat (openclaw-foundry, the self-improving-agent skill). This is powerful but removes the human from the loop entirely. Our model is deliberately more conservative: the agent can participate in its own development but cannot ship itself.
 
-Hard policy constraints and the governance layer are outside this path entirely. File permissions mean the agent process cannot modify them. Changes require a human editing the source, opening a PR, and the file watcher restarting the agent after merge.
+Hard policy constraints and the governance layer are outside this path entirely. No MCP tool exposes file-write capability, so Claude cannot modify them. Changes require a human editing the source, opening a PR, and the file watcher restarting the agent after merge.
 
 ## The agent proposes; the user approves
 
@@ -121,14 +121,14 @@ The agent can identify capability gaps and suggest solutions — including new M
 
 This applies especially to third-party MCP servers. The agent may identify a suitable server (from a known registry or by searching), explain what it does and why it's needed, and request approval. Only after confirmation does it install and register the server. This keeps the user in control of what code runs on their machine.
 
-## File permissions enforce what code merely requests
+## Tool boundaries enforce what policy merely requests
 
-On a dedicated Mac Mini, file permissions provide the hard technical backing for constraints that would otherwise be conventions:
+On a dedicated Mac Mini, the combination of tool-level restrictions and filesystem permissions provides layered protection for constraints that would otherwise be conventions:
 
-- **Code files** — owned by the host user; the agent process has read but not write access. This means `handlers/governance.py` and the policy middleware are physically immutable at runtime — not just instructed to be.
+- **Code files** — no MCP tool exposes file-write capability. `handlers/governance.py` and the policy middleware are immutable at runtime — changes require a git PR and merge to `main`.
 - **`agent_config/`** — chmod 444; the agent cannot modify its own identity or operating rules.
 - **`memory/`** — writable; this is where working state lives.
-- **`.env`** — readable only by launchd at startup; the agent's `env_manager` MCP tool can append new key=value pairs but cannot read existing values.
+- **`.env`** — loaded by pydantic-settings at startup; the agent's `env_manager` MCP tool can append new key=value pairs but no tool exposes existing values to Claude.
 - **Secrets never in the repo.** Credentials are injected at runtime via environment variables. The repo is public; nothing personal or secret ever touches it.
 
 Adding a new MCP server means a new entry in `config/mcp_servers.json`, proposed via PR and approved by a human. The agent proposes; the file watcher deploys. The agent never modifies the config directly.

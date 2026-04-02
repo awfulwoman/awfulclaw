@@ -19,7 +19,7 @@ The goal is a significantly more elegant, extensible, and correct system while p
 
 The package uses subdirectories to group files by role. Each directory is a Python package with an `__init__.py` that exports its public interface.
 
-No file carries sensitivity headers or classification metadata — immutability is enforced at the filesystem level (file permissions). See `PHILOSOPHY.md` for the full model.
+No file carries sensitivity headers or classification metadata — immutability is enforced at the tool level (no MCP tool exposes file-write outside `memory/`), with filesystem permissions as defence in depth. See `PHILOSOPHY.md` for the full model.
 
 ```
 agent/
@@ -52,7 +52,7 @@ agent/
     schedule.py        # ScheduleHandler
     checkin.py         # CheckinHandler
     knowledge_flush.py # Daily flush of facts/people/summaries to Obsidian
-    governance.py      # Invariant checks for all autonomous instruction writes (personality_log + schedule prompts)
+    governance.py      # Invariant checks for autonomous instruction writes (personality_log + schedule prompts)
   mcp/
     README.md          # What MCP servers are, how to add a new one, config/mcp_servers.json format
     __init__.py        # MCPClient
@@ -124,6 +124,7 @@ The key change from the current design: **the loop no longer owns logic**. It on
 
 ```python
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="AWFULCLAW_")
     model: str = "claude-sonnet-4-6"
     governance_model: str = "claude-haiku-4-5-20251001"  # classification only — no need for full model
     memory_path: Path = Path("memory")                   # SQLite DB, working state
@@ -432,21 +433,22 @@ class ContextAssembler:
 
 **Authentication:** This app uses a Claude subscription (OAuth), not an API key. The Anthropic Python SDK is not used — it requires API key auth. The `claude` CLI binary handles OAuth transparently, storing and refreshing tokens in `~/.claude/`.
 
-**Design:** One-shot invocation per turn: `claude --print --output-format stream-json`. The agent manages conversation history via the Store and passes it as context each turn. MCP servers are attached via `--mcp-config` as today. Exponential backoff on non-zero exit codes.
+**Design:** One-shot invocation per turn. The system prompt and conversation history are assembled into a single prompt string by `ContextAssembler` and passed to the CLI via `--print --output-format stream-json`. The prompt is provided via stdin (piped to the subprocess) to avoid argument length limits. MCP servers are attached via `--mcp-config`. Exponential backoff on non-zero exit codes.
+
+The CLI does not manage multi-turn state — the agent replays relevant history each invocation as part of the assembled prompt. This is intentional: it keeps conversation management in the Store and gives the `ContextAssembler` full control over what context is included.
 
 ```python
 class ClaudeClient:
     async def complete(
         self,
-        messages: list[Turn],
-        system: str,
+        prompt: str,         # assembled by ContextAssembler (system + history + current turn)
         mcp_config: Path,
     ) -> str: ...
 ```
 
 The `stream-json` output format emits newline-delimited JSON events (text deltas, tool use, stop reason), replacing the fragile sentinel-marker approach in the current implementation.
 
-**Design notes:** Structured `stream-json` output for reliable parsing. Exponential backoff on failure. CLI-based auth — OAuth subscription, no API key required.
+**Design notes:** Prompt passed via stdin to avoid shell argument limits. Structured `stream-json` output for reliable parsing. Exponential backoff on failure. CLI-based auth — OAuth subscription, no API key required. The exact CLI flags should be verified against the installed `claude` version during Phase 1 implementation.
 
 ---
 
@@ -488,7 +490,7 @@ The flow:
 5. `env_manager` appends `IMAP_PASSWORD=<value>` to `.env`
 6. On next restart, the new env var is available to the relevant MCP server
 
-**Security property:** Write-only. No `env_get` tool exists — the agent can store credentials but never read them back. The `.env` file is loaded by the process environment at startup, so values are available to MCP servers and subprocesses, but the agent itself never sees the raw file contents. This prevents credential exfiltration if a prompt injection attack is successful.
+**Security property:** Write-only from Claude's perspective. No `env_get` tool exists — Claude can store credentials but never read them back. The `.env` file is loaded by pydantic-settings at startup, so values are available to the Python process (which needs them to connect to Telegram, IMAP, etc.), but no MCP tool exposes secret values to Claude. This prevents credential exfiltration if a prompt injection attack is successful.
 
 ---
 
@@ -533,20 +535,42 @@ Example skill content (like the daily briefing) is a markdown file describing in
 
 ```python
 class Scheduler:
+    def __init__(self):
+        self._wake = asyncio.Event()
+
+    def wake(self):
+        """Signal the scheduler to re-evaluate. Called by Store on schedule changes."""
+        self._wake.set()
+
     async def run(self, bus: Bus, store: Store) -> None:
         while True:
             schedules = await store.list_schedules()
             next_due = earliest_due(schedules)
-            if next_due:
-                sleep_until(next_due.fire_time)
+            delay = (next_due.fire_time - now()).seconds if next_due else 60
+            self._wake.clear()
+            with contextlib.suppress(asyncio.TimeoutError):
+                await asyncio.wait_for(self._wake.wait(), timeout=delay)
+            if next_due and now() >= next_due.fire_time:
                 await bus.post(ScheduleEvent(next_due))
-            else:
-                await asyncio.sleep(60)
 ```
+
+`Store.upsert_schedule()` and `Store.delete_schedule()` call `scheduler.wake()` so dynamically created schedules are picked up immediately rather than waiting for the current sleep to expire.
 
 Schedule events are handled by `handlers/schedule.py` (not in the message pipeline) which invokes `agent.invoke(schedule.prompt)` and optionally posts the reply as an `OutboundEvent`. Periodic ambient check-ins are handled by `handlers/checkin.py` — distinct from schedules, which fire blindly at a set time. The check-in reads `agent_config/CHECKIN.md` (a short patrol checklist maintained by the user), invokes Claude, and sends a reply only if Claude determines something warrants attention. If nothing does, it stays silent. `checkin_interval` in Settings controls frequency.
 
+**Output routing for handlers:** Handlers have no inbound event to reply to, so they route output to the last-used connector (tracked in `kv`). If that connector is unavailable, they fall through to the next available one. This applies to both schedule handlers and check-in handlers.
+
 **Design notes:** Event-driven — sleeps until next due time rather than polling. Schedules stored in SQLite, consistent with all other state.
+
+---
+
+### Governance (`handlers/governance.py`)
+
+**Responsibility:** Invariant checks for all autonomous instruction writes — personality_log entries and schedule prompt changes.
+
+**Design:** When the agent writes to a governed field, the governance handler invokes a separate `claude` CLI subprocess using a fast classification model (`governance_model` in Settings, default haiku). The classifier reviews the proposed write and returns a verdict: `approved` (silent), `rejected` (discarded), or `escalated` (applied but user notified).
+
+Governed writes are infrequent — personality adaptations and schedule prompt changes, not per-message operations. The governance call is async and does not block the response to the user, so subprocess overhead is negligible.
 
 ---
 
@@ -650,11 +674,11 @@ reason: Operating rules and procedures. The agent reads this on every turn but c
 
 - Learn preferences passively. When the user corrects you or expresses a preference, save it as a fact so you remember next time. Don't announce that you're saving it.
 - Don't over-note. Save recurring preferences and important context, not every passing detail.
-- Update USER.md fields when the user shares relevant profile information (name, timezone, preferences).
+- When the user shares relevant profile information (name, timezone, preferences), save it as a fact in the database. USER.md is seed data maintained by the user — the agent cannot modify it.
 
 ## Timezones and travel
 
-- When the user mentions travelling or changing location, update the Timezone field in USER.md to the correct IANA timezone immediately.
+- When the user mentions travelling or changing location, save the new IANA timezone as a fact in the database.
 - Review existing cron schedules and ask which should follow the user versus stay anchored to a fixed timezone.
 - When creating new schedules, ask whether they should follow the user or stay fixed. Default to the user's current timezone.
 
@@ -775,6 +799,7 @@ This is a clean-room reimplementation, not a refactor. The old codebase (in `leg
 - Orientation briefing — on first startup, the agent sends a brief message summarising its current state (known schedules, recent context, available tools) so it can pick up coherently rather than starting cold
 
 ### Phase 8: Migration
+- Import scripts read from a backup of the legacy data (not from the repo — `legacy/` was deleted in Phase 1)
 - Import script: read `schedules.json` → insert into new DB
 - Import script: read `conversations/YYYY-MM-DD.md` → insert turns into new DB
 - PERSONALITY.md, PROTOCOLS.md, USER.md, and CHECKIN.md copied into `agent_config/`
@@ -826,7 +851,7 @@ Two launchd plists manage the system:
 
 Environment variables are loaded from `.env` by the agent at startup (via `pydantic-settings`), not injected by launchd. This keeps secrets out of the plist.
 
-**`ai.awfulclaw.watcher`** — monitors `app/` for changed `.py` files on the `main` branch and restarts the agent with a 60s debounce. Already exists in `scripts/`.
+**`ai.awfulclaw.watcher`** — monitors `agent/` for changed `.py` files on the `main` branch and restarts the agent with a 60s debounce. Created fresh during implementation.
 
 ### File permissions
 
@@ -839,7 +864,7 @@ chmod 600 .env                                     # secrets — readable only b
 # MEMORY_PATH is writable by default — no special permissions needed
 ```
 
-Code files are owned by the host user. The agent process runs as the same user but the governance layer (`handlers/governance.py`) and middleware are protected by being part of the git-managed codebase — changes require a PR, human approval, and merge to `main`.
+The agent process runs as the same user who owns the code files. Protection is tool-level, not OS-level: no MCP tool exposes file-write capability, so Claude cannot modify code or config. Defence in depth: code changes also require a git PR, human approval, and merge to `main`. chmod 444 on `agent_config/` prevents accidental writes but is not a hard security boundary (same-user ownership means the owner can override it).
 
 ### MCP servers
 
