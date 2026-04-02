@@ -73,16 +73,16 @@ agent/
     tui.py             # TUIConnector (Textual)
   middleware/
     README.md          # What middleware is, execution order, how to add a new one
-    __init__.py
-    rate_limit.py
-    secret.py
-    location.py
-    slash.py
-    typing.py
+    __init__.py        # Middleware Protocol, Next type alias
+    rate_limit.py      # Per-sender rate limiting
+    secret.py          # Intercepts next message as a pending secret value
+    location.py        # Detects [Location: lat, lon] tag; writes to store, strips from message
+    slash.py           # Handles /schedules, /restart and other slash commands
+    typing.py          # Sends typing indicator before passing through
     invoke.py          # InvokeMiddleware (terminal middleware — invokes the agent)
   handlers/
     README.md          # What handlers are, difference from middleware, how to add one
-    __init__.py
+    __init__.py        # Handler ABC, handler registry
     schedule.py        # ScheduleHandler
     checkin.py         # CheckinHandler
     knowledge_flush.py # Daily flush of facts/people/summaries to Obsidian
