@@ -516,7 +516,7 @@ See `PHILOSOPHY.md` for the full data philosophy. In brief: the agent is a coord
 - `agent_config/USER.md` — user profile
 - `agent_config/CHECKIN.md` — ambient check-in checklist; short, human-maintained patrol prompt
 
-These live in `agent_config/` on the Mac Mini, chmod 444. The agent reads them; it cannot write to them. The user edits them directly.
+These live in `agent_config/` on the Mac Mini, chmod 444. The agent reads them; it cannot write to them. The user edits them directly. Example files with documentation and customisation notes are provided in `config/agent_config_examples/`.
 
 ---
 
