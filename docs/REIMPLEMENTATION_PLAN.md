@@ -729,22 +729,27 @@ The repo is public. Nothing personal or secret ever touches it.
 
 All mutable state lives in two places: `memory/` (SQLite DB) and `agent_config/` (markdown config). Both are plain files on disk, easily backed up with Time Machine, rsync, or restic. No volume mounts, no container filesystems to extract from.
 
-## What to Reuse
+## What to Learn From
 
-| Component | Verdict | Notes |
-|-----------|---------|-------|
-| `connector.py` Connector ABC | Reuse, adapt | Make async; becomes `connectors/__init__.py` |
-| `telegram.py` | Reuse, adapt | Move to `connectors/telegram.py`; replace `requests` with `httpx.AsyncClient` |
-| `scheduler.py` cron logic | Reuse | Extract `get_due` / `should_wake` into `scheduler.py` |
-| `context.py` prompt sections | Reuse text | Replace assembly logic; keep in `context.py` |
-| MCP server implementations | Reuse, move | Move into `mcp/` subdirectory (`mcp/imap.py`, `mcp/gcal.py`, etc.) |
-| `config/mcp_servers.json` | Reuse as-is | Format unchanged |
-| `memory/PERSONALITY.md`, `USER.md` | Reuse as-is | Move to `AGENT_CONFIG_PATH` on host |
-| `env_utils.py` | Reuse as-is | |
-| `location.py` | Reuse as-is | |
-| `loop.py` | Discard | Logic extracted into pipeline middleware |
-| `gateway.py` | Discard | Replaced by bus + async connectors |
-| `claude.py` | Discard | Replaced by `ClaudeClient` with `stream-json` output parsing |
-| `memory.py` | Discard | Replaced by Store |
-| `db.py` | Discard | Replaced by Store |
-| `briefings.py` | Discard | Orientation briefing handled in `main.py` startup; daily briefing is user-configured via the schedule MCP tool |
+The old codebase is deleted on the implementation branch (see Implementation Approach). This table identifies where valuable *logic* lives — not files to copy or adapt, but behaviour worth understanding before reimplementing from scratch. Use `git show main:app/awfulclaw/<file>` to read these when needed.
+
+| Old component | Worth studying | What to take away |
+|---------------|---------------|-------------------|
+| `connector.py` | Connector ABC shape | The `poll` / `send` interface is sound; reimplement as async |
+| `telegram.py` | Offset persistence, long-polling | How Telegram update offsets work; reimplement with `httpx.AsyncClient` |
+| `scheduler.py` | Cron evaluation logic | `get_due` / `should_wake` — the cron matching is correct; reimplement in the new `scheduler.py` |
+| `context.py` | System prompt sections | The prompt structure (identity, user profile, facts, schedules) is good; replace the assembly logic |
+| `awfulclaw_mcp/` | MCP server implementations | The tool definitions and FastMCP patterns are reusable; reimplement in `mcp/` |
+| `env_utils.py` | `.env` file handling | Small utility; understand, then reimplement |
+| `location.py` | Timezone inference from coordinates | The logic for mapping lat/lon to IANA timezone |
+
+These components have no value to study — they are fully replaced by the new architecture:
+
+| Old component | Replaced by |
+|---------------|------------|
+| `loop.py` | Event bus + middleware pipeline |
+| `gateway.py` | Bus + async connectors |
+| `claude.py` | `ClaudeClient` with `stream-json` output |
+| `memory.py` | Store |
+| `db.py` | Store |
+| `briefings.py` | Schedule-triggered skills |
