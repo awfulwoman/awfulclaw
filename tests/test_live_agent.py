@@ -35,13 +35,13 @@ _ERROR_PHRASES = [
     "need permission",
     "cannot access",
     "don't have access",
-    "don't have access",
+    "don\u2019t have access",  # curly apostrophe variant
     "unable to access",
     "access denied",
     "not authorized",
     "unauthorized",
     "can't access",
-    "can't access",
+    "can\u2019t access",  # curly apostrophe variant
     "no permission",
     "permission denied",
     "i'm not able to",
