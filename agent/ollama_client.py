@@ -31,6 +31,7 @@ class OllamaClient:
         )
         json.dump({"mcpServers": stdio_servers}, tmp)
         tmp.flush()
+        tmp.close()
         effective_config = Path(tmp.name)
 
         mcp = MCPClient()
@@ -38,14 +39,17 @@ class OllamaClient:
             await mcp.connect_all(effective_config)
             tools = await mcp.list_tools()
             ollama_tools = [_tool_to_ollama(t) for t in tools]
+            if allowed_tools:
+                ollama_tools = [t for t in ollama_tools if t["function"]["name"] in allowed_tools]
 
             messages: list[dict[str, Any]] = []
             if system_prompt:
                 messages.append({"role": "system", "content": system_prompt})
             messages.append({"role": "user", "content": prompt})
 
+            _MAX_TOOL_ROUNDS = 20
             async with httpx.AsyncClient(timeout=120.0) as http:
-                while True:
+                for _ in range(_MAX_TOOL_ROUNDS):
                     resp = await http.post(
                         f"{self._url}/api/chat",
                         json={
@@ -75,6 +79,9 @@ class OllamaClient:
                             "role": "tool",
                             "content": _extract_content(result),
                         })
+            raise RuntimeError(
+                f"OllamaClient exceeded {_MAX_TOOL_ROUNDS} tool-call rounds without a final response"
+            )
         finally:
             await mcp.disconnect_all()
             effective_config.unlink(missing_ok=True)

@@ -141,3 +141,38 @@ async def test_disconnect_called_even_on_error(
         await client.complete("hi", "sys", config, [])
 
     mcp.disconnect_all.assert_called_once()
+
+
+@patch("agent.ollama_client.MCPClient")
+@patch("httpx.AsyncClient")
+async def test_allowed_tools_filters_tools_sent_to_ollama(
+    mock_http_class: MagicMock, mock_mcp_class: MagicMock, config: Path
+) -> None:
+    """When allowed_tools is set, only those tools are sent to ollama."""
+    tool_a = MagicMock()
+    tool_a.name = "memory_get"
+    tool_a.description = "Get memory"
+    tool_a.inputSchema = {"type": "object", "properties": {}}
+
+    tool_b = MagicMock()
+    tool_b.name = "calendar_list"
+    tool_b.description = "List calendar"
+    tool_b.inputSchema = {"type": "object", "properties": {}}
+
+    mock_mcp_class.return_value = _make_mcp_mock(tools=[tool_a, tool_b])
+
+    resp = MagicMock()
+    resp.raise_for_status = MagicMock()
+    resp.json.return_value = {"message": {"role": "assistant", "content": "ok"}}
+    http_instance = MagicMock()
+    http_instance.post = AsyncMock(return_value=resp)
+    mock_http_class.return_value.__aenter__ = AsyncMock(return_value=http_instance)
+    mock_http_class.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    client = OllamaClient("http://localhost:11434", "llama3.2")
+    await client.complete("Hi", "sys", config, ["memory_get"])
+
+    call_kwargs = http_instance.post.call_args[1]
+    sent_tools = call_kwargs["json"]["tools"]
+    assert len(sent_tools) == 1
+    assert sent_tools[0]["function"]["name"] == "memory_get"
