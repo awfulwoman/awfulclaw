@@ -2,14 +2,17 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import Any, Callable, Coroutine, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, Coroutine, TypeVar
 
 from agent.connectors import InboundEvent, OutboundEvent
+
+if TYPE_CHECKING:
+    from agent.store import Schedule
 
 
 @dataclass
 class ScheduleEvent:
-    schedule: str
+    schedule: "Schedule"
 
 
 Event = InboundEvent | OutboundEvent | ScheduleEvent
