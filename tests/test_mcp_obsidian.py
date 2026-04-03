@@ -137,3 +137,38 @@ def test_note_read_roundtrip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     obs.note_write("Roundtrip", "some body text")
     content = obs.note_read("Roundtrip")
     assert "some body text" in content
+
+
+def test_note_search_matches_title(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    vault = _setup_vault(tmp_path, monkeypatch)
+    (vault / "Berlin Trip.md").write_text("notes about berlin")
+    (vault / "London Notes.md").write_text("notes about london")
+    results = obs.note_search("Berlin")
+    titles = [r["title"] for r in results]
+    assert "Berlin Trip" in titles
+    assert "London Notes" not in titles
+
+
+def test_note_search_matches_content(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    vault = _setup_vault(tmp_path, monkeypatch)
+    (vault / "Random.md").write_text("I saw a penguin today")
+    (vault / "Other.md").write_text("nothing interesting here")
+    results = obs.note_search("penguin")
+    titles = [r["title"] for r in results]
+    assert "Random" in titles
+    assert "Other" not in titles
+
+
+def test_note_search_no_results(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    vault = _setup_vault(tmp_path, monkeypatch)
+    (vault / "Unrelated.md").write_text("completely different")
+    results = obs.note_search("zzznomatchzzz")
+    assert results == []
+
+
+def test_note_search_returns_snippet(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    vault = _setup_vault(tmp_path, monkeypatch)
+    (vault / "Snippet Test.md").write_text("line one\nthe keyword is here\nline three")
+    results = obs.note_search("keyword")
+    assert len(results) == 1
+    assert "keyword" in results[0]["snippet"]

@@ -169,5 +169,42 @@ def note_read(title: str) -> str:
         return f"Error reading note: {e}"
 
 
+@mcp.tool()
+def note_search(query: str) -> list[dict]:
+    """Search Obsidian vault notes by title and content.
+
+    query: Search string (case-insensitive). Use this to find a note before
+           reading or appending when the exact title is uncertain.
+
+    Returns a list of dicts with keys: title, snippet.
+    snippet is the first matching line (content match) or the note title (title match).
+    Returns an empty list if no matches found.
+    """
+    vault = _get_vault_path()
+    query_lower = query.lower()
+    results: list[dict] = []
+    seen: set[str] = set()
+
+    for md_file in sorted(vault.glob("*.md")):
+        title = md_file.stem
+        # Title match
+        if query_lower in title.lower():
+            results.append({"title": title, "snippet": title})
+            seen.add(title)
+            continue
+        # Content match — find first matching line
+        try:
+            for line in md_file.read_text(encoding="utf-8").splitlines():
+                if query_lower in line.lower():
+                    if title not in seen:
+                        results.append({"title": title, "snippet": line.strip()})
+                        seen.add(title)
+                    break
+        except OSError:
+            continue
+
+    return results
+
+
 if __name__ == "__main__":
     mcp.run()
