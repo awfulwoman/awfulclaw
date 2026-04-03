@@ -125,3 +125,7 @@ async def contacts_get(id: str) -> Optional[dict]:
         Contact dict, or None if not found.
     """
     return await asyncio.to_thread(_sync_get, id)
+
+
+if __name__ == "__main__":
+    mcp.run()
