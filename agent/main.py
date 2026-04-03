@@ -13,6 +13,7 @@ from agent.connectors import InboundEvent, OutboundEvent
 from agent.connectors.rest import RESTConnector
 from agent.connectors.telegram import TelegramConnector
 from agent.handlers.checkin import CheckinHandler
+from agent.handlers.orientation import OrientationHandler
 from agent.handlers.schedule import ScheduleHandler
 from agent.middleware.invoke import InvokeMiddleware
 from agent.middleware.location import LocationMiddleware
@@ -155,8 +156,12 @@ async def main() -> None:
         ])
 
         checkin_handler = CheckinHandler(agent, bus, store, settings)
+        orientation_handler = OrientationHandler(agent, bus, store, settings.mcp_config)
         schedule_handler = ScheduleHandler(agent, bus, store)
         scheduler = Scheduler()
+
+        async def orientation_task() -> None:
+            await orientation_handler.run()
 
         async def checkin_loop() -> None:
             while True:
@@ -178,5 +183,6 @@ async def main() -> None:
             tg.create_task(connector.start(on_message))
             tg.create_task(scheduler.run(bus, store))
             tg.create_task(checkin_loop())
+            tg.create_task(orientation_task())
     finally:
         await store.close()
