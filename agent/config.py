@@ -40,7 +40,7 @@ class Settings(BaseSettings):
 
     model: str = "claude-sonnet-4-6"
     governance_model: str = "claude-haiku-4-5-20251001"
-    memory_path: Path = Path("memory")
+    state_path: Path = Path("state")
     agent_config_path: Path = Path("agent_config")
     mcp_config: Path = Path("config/mcp_servers.json")
     poll_interval: int = 5
@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     checkin_interval: int = 86400
     obsidian_vault: Path = Path("obsidian")
 
-    telegram: TelegramSettings
+    telegram: TelegramSettings | None = None
 
     imap: ImapSettings | None = None
     eventkit: EventKitSettings | None = None

@@ -131,7 +131,7 @@ async def main() -> None:
         return
 
     settings = Settings()  # type: ignore[call-arg]
-    store = await Store.connect(settings.memory_path / "store.db")
+    store = await Store.connect(settings.state_path / "store.db")
     mcp = MCPClient()
     try:
         await preflight(settings, store)
@@ -141,6 +141,8 @@ async def main() -> None:
         agent = Agent(client, settings, store)
 
         if args.connector == "telegram":
+            if settings.telegram is None:
+                raise ValueError("AWFULCLAW_TELEGRAM__BOT_TOKEN and AWFULCLAW_TELEGRAM__ALLOWED_CHAT_IDS are required for the telegram connector")
             connector = TelegramConnector(
                 token=settings.telegram.bot_token,
                 allowed_chat_ids=settings.telegram.allowed_chat_ids,
@@ -166,11 +168,17 @@ async def main() -> None:
         scheduler = Scheduler()
 
         async def orientation_task() -> None:
-            await orientation_handler.run()
+            try:
+                await orientation_handler.run()
+            except Exception as exc:
+                print(f"[orientation] failed: {exc}", flush=True)
 
         async def checkin_loop() -> None:
             while True:
-                await checkin_handler.run()
+                try:
+                    await checkin_handler.run()
+                except Exception as exc:
+                    print(f"[checkin] failed: {exc}", flush=True)
                 await asyncio.sleep(60)
 
         async def on_message(event: InboundEvent) -> None:
@@ -202,3 +210,9 @@ async def main() -> None:
     finally:
         await mcp.disconnect_all()
         await store.close()
+
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(main())
+

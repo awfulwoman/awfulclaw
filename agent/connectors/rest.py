@@ -52,7 +52,13 @@ class RESTConnector(Connector):
             await self._on_message(event)
 
         try:
-            reply = await asyncio.wait_for(asyncio.shield(future), timeout=30.0)
+            reply = await asyncio.wait_for(asyncio.shield(future), timeout=120.0)
+        except (asyncio.TimeoutError, TimeoutError):
+            self._pending.pop(channel, None)
+            return JSONResponse({"error": "timeout"}, status_code=504)
+        except asyncio.CancelledError:
+            self._pending.pop(channel, None)
+            return JSONResponse({"error": "cancelled"}, status_code=503)
         finally:
             self._pending.pop(channel, None)
 

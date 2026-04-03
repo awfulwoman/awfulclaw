@@ -82,6 +82,7 @@ class GovernanceHandler(Handler):
             claude_bin,
             "--print",
             "--output-format", "stream-json",
+            "--verbose",
             "--model", self.governance_model,
             "--allowedTools", "",
         ]

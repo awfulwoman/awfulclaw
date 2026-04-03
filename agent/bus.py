@@ -37,5 +37,8 @@ class Bus:
             event = await self._queue.get()
             handlers = self._subscribers.get(type(event), [])
             for handler in handlers:
-                await handler(event)
+                try:
+                    await handler(event)
+                except Exception as exc:
+                    print(f"[bus] handler error: {exc}", flush=True)
             self._queue.task_done()

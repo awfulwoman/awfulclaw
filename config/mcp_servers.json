@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "memory": {
+      "command": "/opt/homebrew/bin/uv",
+      "args": ["run", "python", "-m", "agent.mcp.memory"],
+      "env": {
+        "DB_PATH": "state/store.db"
+      }
+    },
+    "schedule": {
+      "command": "/opt/homebrew/bin/uv",
+      "args": ["run", "python", "-m", "agent.mcp.schedule"],
+      "env": {
+        "DB_PATH": "state/store.db"
+      }
+    },
+    "skills": {
+      "command": "/opt/homebrew/bin/uv",
+      "args": ["run", "python", "-m", "agent.mcp.skills"]
+    }
+  }
+}

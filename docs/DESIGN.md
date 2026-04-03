@@ -19,7 +19,7 @@ The goal is a significantly more elegant, extensible, and correct system while p
 
 The package uses subdirectories to group files by role. Each directory is a Python package with an `__init__.py` that exports its public interface.
 
-No file carries sensitivity headers or classification metadata — immutability is enforced at the tool level (`--allowedTools` blocks `Bash`/`Edit`/`Write`; no MCP tool exposes file-write outside `memory/`), with filesystem permissions as defence in depth. See `PHILOSOPHY.md` for the full model.
+No file carries sensitivity headers or classification metadata — immutability is enforced at the tool level (`--allowedTools` blocks `Bash`/`Edit`/`Write`; no MCP tool exposes file-write outside `state/`), with filesystem permissions as defence in depth. See `PHILOSOPHY.md` for the full model.
 
 ```
 agent/
@@ -132,7 +132,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="AWFULCLAW_")
     model: str = "claude-sonnet-4-6"
     governance_model: str = "claude-haiku-4-5-20251001"  # classification only — no need for full model
-    memory_path: Path = Path("memory")                   # SQLite DB, working state
+    state_path: Path = Path("memory")                   # SQLite DB, working state
     agent_config_path: Path = Path("agent_config")       # PERSONALITY.md, PROTOCOLS.md, USER.md, CHECKIN.md
     telegram: TelegramSettings
     imap: ImapSettings | None = None
@@ -144,7 +144,7 @@ class Settings(BaseSettings):
     checkin_interval: int = 86400  # seconds between ambient check-ins (default 24h)
 ```
 
-Paths default to directories relative to the working directory but can be overridden via environment variables (`MEMORY_PATH`, `AGENT_CONFIG_PATH`). This allows mounting mutable state on a separate filesystem — e.g. a ZFS dataset with snapshots and replication — while keeping the code checkout on the boot volume.
+Paths default to directories relative to the working directory but can be overridden via environment variables (`STATE_PATH`, `AGENT_CONFIG_PATH`). This allows mounting mutable state on a separate filesystem — e.g. a ZFS dataset with snapshots and replication — while keeping the code checkout on the boot volume.
 
 **Rationale:** One settings object passed through DI eliminates scattered `get_*()` functions and makes configuration testable.
 
@@ -1127,7 +1127,7 @@ On a single-purpose Mac Mini, file permissions provide config immutability witho
 # Run once during initial setup — paths shown are defaults; override via .env
 chmod -R 444 ${AGENT_CONFIG_PATH:-agent_config}/  # PERSONALITY.md, PROTOCOLS.md, USER.md, CHECKIN.md — read-only
 chmod 600 .env                                     # secrets — readable only by the host user
-# MEMORY_PATH is writable by default — no special permissions needed
+# STATE_PATH is writable by default — no special permissions needed
 ```
 
 The agent process runs as the same user who owns the code files. The primary security boundary is tool-level: `--allowedTools` blocks `Bash`, `Edit`, and `Write` (see the allowlist table under MCP Client), and no MCP tool exposes general file-write capability. This means Claude can only act through scoped MCP tools and read-only CLI built-ins. Defence in depth: code changes also require a git PR, human approval, and merge to `main`. chmod 444 on `agent_config/` guards against accidental writes by non-Claude processes but is not the security boundary — tool scoping is.
@@ -1181,11 +1181,11 @@ The repo is public. Nothing personal or secret ever touches it.
 |----------|----------|
 | **Repo** | Application code, `config/mcp_servers.json`, `config/skills/*.md`, launchd plists, scripts |
 | **`AGENT_CONFIG_PATH`** (default: `agent_config/`, read-only via chmod) | `PERSONALITY.md`, `PROTOCOLS.md`, `USER.md`, `CHECKIN.md` — human-authored config. Back this up. |
-| **`MEMORY_PATH`** (default: `memory/`, read-write) | SQLite DB, conversation history, facts, schedules. Back this up. |
+| **`STATE_PATH`** (default: `state/`, read-write) | SQLite DB, conversation history, facts, schedules. Back this up. |
 | **`.env`** (gitignored, chmod 600) | Runtime secrets — Telegram token, IMAP credentials, API keys. |
 | **`~/.claude/`** | OAuth tokens for the `claude` CLI. Writable for token refresh; never in repo. |
 
 ### Backups
 
-All mutable state lives in two places: `MEMORY_PATH` (SQLite DB) and `AGENT_CONFIG_PATH` (markdown config). Both are plain files on disk, easily backed up with Time Machine, rsync, restic, or ZFS snapshots. Because the paths are configurable, these directories can live on a separate filesystem — e.g. a ZFS dataset with its own snapshot and replication schedule — while the code checkout remains on the boot volume.
+All mutable state lives in two places: `STATE_PATH` (SQLite DB) and `AGENT_CONFIG_PATH` (markdown config). Both are plain files on disk, easily backed up with Time Machine, rsync, restic, or ZFS snapshots. Because the paths are configurable, these directories can live on a separate filesystem — e.g. a ZFS dataset with its own snapshot and replication schedule — while the code checkout remains on the boot volume.
 

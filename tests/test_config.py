@@ -23,7 +23,7 @@ def test_defaults_applied(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert settings.model == "claude-sonnet-4-6"
     assert settings.governance_model == "claude-haiku-4-5-20251001"
-    assert settings.memory_path == Path("memory")
+    assert settings.state_path == Path("state")
     assert settings.agent_config_path == Path("agent_config")
     assert settings.mcp_config == Path("config/mcp_servers.json")
     assert settings.poll_interval == 5
@@ -39,7 +39,7 @@ def test_env_vars_override_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     env = make_telegram_env()
     env["AWFULCLAW_MODEL"] = "claude-opus-4-6"
     env["AWFULCLAW_POLL_INTERVAL"] = "10"
-    env["AWFULCLAW_MEMORY_PATH"] = "/tmp/memory"
+    env["AWFULCLAW_STATE_PATH"] = "/tmp/state"
     for k, v in env.items():
         monkeypatch.setenv(k, v)
 
@@ -47,7 +47,7 @@ def test_env_vars_override_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert settings.model == "claude-opus-4-6"
     assert settings.poll_interval == 10
-    assert settings.memory_path == Path("/tmp/memory")
+    assert settings.state_path == Path("/tmp/state")
 
 
 def test_missing_required_telegram_raises() -> None:

@@ -27,10 +27,13 @@ class ClaudeClient:
             claude_bin,
             "--print",
             "--output-format", "stream-json",
+            "--verbose",
             "--model", self.model,
         ]
         if allowed_tools:
             cmd += ["--allowedTools", ",".join(allowed_tools)]
+        else:
+            cmd += ["--dangerously-skip-permissions"]
         cmd += ["--mcp-config", str(mcp_config_path)]
 
         full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt

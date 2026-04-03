@@ -63,7 +63,8 @@ class MCPClient:
         self._config_path = config_path
         self._config_mtime = config_path.stat().st_mtime
         raw: dict[str, Any] = json.loads(config_path.read_text())
-        for name, spec in raw.items():
+        servers = raw.get("mcpServers", raw)
+        for name, spec in servers.items():
             await self._connect_server(name, spec)
 
     async def reload_if_changed(self) -> None:
@@ -79,15 +80,16 @@ class MCPClient:
 
         self._config_mtime = current_mtime
         raw: dict[str, Any] = json.loads(self._config_path.read_text())
+        servers = raw.get("mcpServers", raw)
 
         old_names = set(self._server_sessions.keys())
-        new_names = set(raw.keys())
+        new_names = set(servers.keys())
 
         for name in old_names - new_names:
             await self._disconnect_server(name)
 
         for name in new_names - old_names:
-            await self._connect_server(name, raw[name])
+            await self._connect_server(name, servers[name])
 
     async def watch_config(self, path: Path, interval: float = 10.0) -> None:
         """Async task: periodically check config for changes and reload."""
