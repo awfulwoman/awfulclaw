@@ -6,6 +6,9 @@ import datetime
 import signal
 import threading
 
+from dotenv import load_dotenv
+load_dotenv()
+
 
 class _ShutdownRequested(Exception):
     """Raised by the shutdown watcher task to exit the TaskGroup cleanly on SIGTERM."""

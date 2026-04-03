@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import Any
@@ -58,6 +59,14 @@ class MCPClient:
         if stack is not None:
             await stack.aclose()
 
+    @staticmethod
+    def _expand_env(spec: dict[str, Any]) -> dict[str, Any]:
+        """Expand ${VAR} references in env values using os.environ."""
+        env = spec.get("env")
+        if not env:
+            return spec
+        return {**spec, "env": {k: os.path.expandvars(v) for k, v in env.items()}}
+
     async def connect_all(self, config_path: Path) -> None:
         """Spawn and initialise all MCP servers defined in config_path."""
         self._config_path = config_path
@@ -65,7 +74,7 @@ class MCPClient:
         raw: dict[str, Any] = json.loads(config_path.read_text())
         servers = raw.get("mcpServers", raw)
         for name, spec in servers.items():
-            await self._connect_server(name, spec)
+            await self._connect_server(name, self._expand_env(spec))
 
     async def reload_if_changed(self) -> None:
         """Check config mtime; if changed, disconnect removed servers and connect new ones."""
@@ -89,7 +98,7 @@ class MCPClient:
             await self._disconnect_server(name)
 
         for name in new_names - old_names:
-            await self._connect_server(name, servers[name])
+            await self._connect_server(name, self._expand_env(servers[name]))
 
     async def watch_config(self, path: Path, interval: float = 10.0) -> None:
         """Async task: periodically check config for changes and reload."""

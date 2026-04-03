@@ -52,7 +52,7 @@
       "args": ["run", "python", "-m", "agent.mcp.owntracks"],
       "env": {
         "DB_PATH": "state/store.db",
-        "OWNTRACKS_URL": "https://owntracks-recorder.ewwww.eu"
+        "OWNTRACKS_URL": "${AWFULCLAW_OWNTRACKS_URL}"
       }
     },
     "obsidian": {
