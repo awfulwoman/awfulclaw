@@ -28,11 +28,15 @@ def _get_governance_model() -> str:
     return os.environ.get("GOVERNANCE_MODEL", "claude-haiku-4-5-20251001")
 
 
+def _get_state_path() -> str:
+    return str(Path(os.environ.get("DB_PATH", "agent.db")).parent.resolve())
+
+
 async def _check_governance(write_type: str, value: str) -> str:
     """Run governance check. Returns verdict value string."""
     from agent.handlers.governance import GovernanceHandler
 
-    handler = GovernanceHandler(_get_governance_model())
+    handler = GovernanceHandler(_get_governance_model(), state_path=_get_state_path())
     verdict = await handler.check(write_type, value)
     return verdict.value
 
