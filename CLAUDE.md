@@ -8,26 +8,55 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-This project is being reimplemented from scratch. The design spec is complete; implementation has not started.
+Implementation is complete. `DESIGN.md` is kept as a historical reference showing the original architecture spec; the actual source of truth is the code in `agent/`.
 
 ## Layout
 
 ```
-DESIGN.md          # complete design spec — the primary reference for implementation
-PHILOSOPHY.md      # design values and principles
-CLAUDE.md          # this file
-legacy/            # old codebase — do not reference during implementation (see DESIGN.md)
+agent/              # main application (19 modules)
+agent_config/       # human-editable config: PERSONALITY.md, PROTOCOLS.md, USER.md, CHECKIN.md
+config/             # MCP server definitions and skill files
+tests/              # pytest test suite
+DESIGN.md           # historical architecture spec (do not treat as authoritative)
+PHILOSOPHY.md       # design values and principles
+CLAUDE.md           # this file
 ```
 
 ## Key documents
 
-- **`DESIGN.md`** — the implementation spec. Read this first. It covers the full architecture: package layout, component breakdown, middleware pipeline, MCP servers, skills, service management, deployment, and implementation phases.
-- **`PHILOSOPHY.md`** — design values: data philosophy, policy layers, governance model, self-modification limits.
+- **`PHILOSOPHY.md`** — design values: data philosophy, policy layers, governance model, self-modification limits. Still authoritative for design decisions.
+- **`DESIGN.md`** — the original implementation spec. Useful historical context but may diverge from the actual implementation.
 
-## Implementation
+## Architecture
 
-This is a clean-room reimplementation. See the "Implementation Approach" section in `DESIGN.md` for the rules:
+```
+User (Telegram/REST)
+    → Connector → Bus → Pipeline → Agent → Claude CLI
+                                        ↓
+                                   MCP Servers → Store (SQLite)
+```
 
-1. Delete `legacy/` on the implementation branch before writing any new code
-2. Build `agent/` from scratch using `DESIGN.md` as the spec
-3. Do not reference the old codebase — if something is unclear, improve the spec
+**Core modules:**
+
+| Module | Role |
+|--------|------|
+| `agent/main.py` | Entry point; wires all components |
+| `agent/agent.py` | Claude invocation, context assembly, turn storage |
+| `agent/bus.py` | Async pub-sub event bus |
+| `agent/pipeline.py` | Middleware chain |
+| `agent/store.py` | SQLite layer (facts, people, conversations, schedules, kv) |
+| `agent/context.py` | Dynamic system prompt assembly with semantic search |
+| `agent/scheduler.py` | Cron + one-shot scheduling |
+| `agent/claude_client.py` | `claude` CLI subprocess wrapper |
+| `agent/connectors/` | Telegram + REST transports |
+| `agent/middleware/` | Rate limit, secret capture, location, slash commands, typing, invoke |
+| `agent/handlers/` | Check-in, orientation, governance, knowledge flush |
+| `agent/mcp/` | Tool servers: memory, schedule, calendar, contacts, email, weather, location, skills, file read |
+
+## Working in this codebase
+
+- Read the code directly — it's the source of truth.
+- Run tests with `uv run pytest`.
+- macOS-specific features (EventKit, Contacts) require `pyobjc` and TCC permissions; use `--tcc-setup` to request them.
+- The `claude` CLI must be installed and authenticated for agent invocation to work.
+- `.env` is blocked at the MCP capability level — the agent cannot read it.
