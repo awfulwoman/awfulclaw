@@ -5,9 +5,11 @@ from agent.middleware import Next
 
 
 class TypingMiddleware:
-    def __init__(self, connector: Connector) -> None:
-        self._connector = connector
+    def __init__(self, connectors: dict[str, Connector]) -> None:
+        self._connectors = connectors
 
     async def __call__(self, event: InboundEvent, next: Next) -> None:
-        await self._connector.send_typing(event.channel)
+        c = self._connectors.get(event.connector_name)
+        if c:
+            await c.send_typing(event.channel)
         await next(event)

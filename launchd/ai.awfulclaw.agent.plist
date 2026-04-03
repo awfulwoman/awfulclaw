@@ -14,6 +14,7 @@
         <string>agent.main</string>
         <string>--connector</string>
         <string>telegram</string>
+        <string>rest</string>
     </array>
 
     <key>WorkingDirectory</key>

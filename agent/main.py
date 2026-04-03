@@ -11,7 +11,7 @@ from agent.bus import Bus, ScheduleEvent
 from agent.claude_client import ClaudeClient
 from agent.config import Settings
 from agent.mcp import MCPClient
-from agent.connectors import InboundEvent, OutboundEvent
+from agent.connectors import Connector, InboundEvent, OutboundEvent
 from agent.connectors.rest import RESTConnector
 from agent.connectors.telegram import TelegramConnector
 from agent.handlers.checkin import CheckinHandler
@@ -118,7 +118,13 @@ async def preflight(settings: Settings, store: Store) -> None:
 
 async def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--connector", choices=["telegram", "rest"], default="telegram")
+    parser.add_argument(
+        "--connector",
+        choices=["telegram", "rest"],
+        nargs="+",
+        default=["telegram"],
+        dest="connectors",
+    )
     parser.add_argument(
         "--tcc-setup",
         action="store_true",
@@ -140,23 +146,24 @@ async def main() -> None:
         client = ClaudeClient(settings.model)
         agent = Agent(client, settings, store)
 
-        if args.connector == "telegram":
+        connectors: dict[str, "Connector"] = {}
+        if "telegram" in args.connectors:
             if settings.telegram is None:
                 raise ValueError("AWFULCLAW_TELEGRAM__BOT_TOKEN and AWFULCLAW_TELEGRAM__ALLOWED_CHAT_IDS are required for the telegram connector")
-            connector = TelegramConnector(
+            connectors["telegram"] = TelegramConnector(
                 token=settings.telegram.bot_token,
                 allowed_chat_ids=settings.telegram.allowed_chat_ids,
                 store=store,
             )
-        else:
-            connector = RESTConnector()
+        if "rest" in args.connectors:
+            connectors["rest"] = RESTConnector()
 
         pipeline = Pipeline([
             RateLimitMiddleware(),
             SecretCaptureMiddleware(store),
             LocationMiddleware(store),
-            SlashCommandMiddleware(connector, store),
-            TypingMiddleware(connector),
+            SlashCommandMiddleware(connectors, store),
+            TypingMiddleware(connectors),
             InvokeMiddleware(agent, bus, store),
         ])
 
@@ -185,7 +192,12 @@ async def main() -> None:
             await bus.post(event)
 
         async def handle_outbound(event: OutboundEvent) -> None:
-            await connector.send(event.to, event.message)
+            c = connectors.get(event.connector_name)
+            if c is None:
+                # Fall back to first available connector
+                c = next(iter(connectors.values()), None)
+            if c is not None:
+                await c.send(event.to, event.message)
 
         bus.subscribe(InboundEvent, pipeline.run)
         bus.subscribe(OutboundEvent, handle_outbound)
@@ -202,7 +214,8 @@ async def main() -> None:
 
         async with asyncio.TaskGroup() as tg:
             tg.create_task(bus.run())
-            tg.create_task(connector.start(on_message))
+            for c in connectors.values():
+                tg.create_task(c.start(on_message))
             tg.create_task(scheduler.run(bus, store))
             tg.create_task(checkin_loop())
             tg.create_task(orientation_task())

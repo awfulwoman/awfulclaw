@@ -31,6 +31,7 @@ class OutboundEvent:
     channel: str
     to: str
     message: OutboundMessage
+    connector_name: str = ""
 
 
 OnMessage = Callable[[InboundEvent], Coroutine[Any, Any, None]]

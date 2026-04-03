@@ -71,11 +71,13 @@ class CheckinHandler:
 
         channel = await self._store.kv_get("last_channel")
         sender = await self._store.kv_get("last_sender")
+        connector_name = await self._store.kv_get("last_connector") or ""
         if channel and sender:
             await self._bus.post(
                 OutboundEvent(
                     channel=channel,
                     to=sender,
                     message=OutboundMessage(text=reply),
+                    connector_name=connector_name,
                 )
             )

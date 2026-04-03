@@ -28,10 +28,12 @@ class InvokeMiddleware:
         if self._store is not None:
             await self._store.kv_set("last_channel", event.channel)
             await self._store.kv_set("last_sender", event.message.sender)
+            await self._store.kv_set("last_connector", event.connector_name)
         reply_text = await self._agent.reply(event)
         outbound = OutboundEvent(
             channel=event.channel,
             to=event.message.sender,
             message=OutboundMessage(text=reply_text),
+            connector_name=event.connector_name,
         )
         await self._bus.post(outbound)

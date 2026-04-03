@@ -13,11 +13,11 @@ from agent.store import Store
 class SlashCommandMiddleware:
     def __init__(
         self,
-        connector: Connector,
+        connectors: dict[str, Connector],
         store: Store,
         restart_fn: Callable[[], None] | None = None,
     ) -> None:
-        self._connector = connector
+        self._connectors = connectors
         self._store = store
         self._restart_fn = restart_fn or (lambda: os.kill(os.getpid(), signal.SIGTERM))
 
@@ -37,11 +37,15 @@ class SlashCommandMiddleware:
                 reply = "Schedules:\n" + "\n".join(lines)
             else:
                 reply = "No schedules."
-            await self._connector.send(event.channel, OutboundMessage(text=reply))
+            c = self._connectors.get(event.connector_name)
+            if c:
+                await c.send(event.channel, OutboundMessage(text=reply))
             return
 
         if command == "/restart":
-            await self._connector.send(event.channel, OutboundMessage(text="Restarting..."))
+            c = self._connectors.get(event.connector_name)
+            if c:
+                await c.send(event.channel, OutboundMessage(text="Restarting..."))
             asyncio.get_running_loop().call_later(0.1, self._restart_fn)
             return
 
