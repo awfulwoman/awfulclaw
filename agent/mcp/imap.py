@@ -50,7 +50,7 @@ async def _connect() -> aioimaplib.IMAP4_SSL:
     host, port, username, password = _get_settings()
     if not host or not username or not password:
         raise ValueError("IMAP credentials not configured (IMAP_HOST, IMAP_USERNAME, IMAP_PASSWORD)")
-    client = aioimaplib.IMAP4_SSL(host=host, port=port)
+    client = aioimaplib.IMAP4_SSL(host=host, port=port, timeout=15)
     await client.wait_hello_from_server()
     await client.login(username, password)
     await client.select("INBOX")
