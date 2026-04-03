@@ -17,9 +17,6 @@ scripts/install_service.sh
 # Remove the service
 scripts/uninstall_service.sh
 
-# Request macOS TCC permissions (Calendar, Reminders, Contacts)
-uv run python -m agent.main --tcc-setup
-
 # Run directly (dev/debug)
 scripts/start_agent.sh
 ```

@@ -106,7 +106,7 @@ async def test_fires_due_schedule() -> None:
 
     store = MagicMock()
     store.list_schedules = list_schedules
-    store.upsert_schedule = AsyncMock()
+    store.update_schedule_last_run = AsyncMock()
 
     scheduler = Scheduler()
     task = asyncio.create_task(scheduler.run(bus, store))
@@ -122,10 +122,11 @@ async def test_fires_due_schedule() -> None:
     assert isinstance(event, ScheduleEvent)
     assert event.schedule is schedule
 
-    # Verify last_run was updated via upsert
-    store.upsert_schedule.assert_called_once()
-    updated: Schedule = store.upsert_schedule.call_args[0][0]
-    assert updated.last_run is not None
+    # Verify last_run was updated
+    store.update_schedule_last_run.assert_called_once()
+    call_id, call_last_run = store.update_schedule_last_run.call_args[0]
+    assert call_id == schedule.id
+    assert call_last_run is not None
 
 
 @pytest.mark.asyncio
@@ -139,7 +140,7 @@ async def test_skips_not_yet_due() -> None:
 
     store = MagicMock()
     store.list_schedules = AsyncMock(return_value=[schedule])
-    store.upsert_schedule = AsyncMock()
+    store.update_schedule_last_run = AsyncMock()
 
     scheduler = Scheduler()
 
@@ -150,7 +151,7 @@ async def test_skips_not_yet_due() -> None:
     await asyncio.gather(task, return_exceptions=True)
 
     assert bus._queue.empty(), "ScheduleEvent was posted but should not have been"
-    store.upsert_schedule.assert_not_called()
+    store.update_schedule_last_run.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -174,7 +175,7 @@ async def test_wake_interrupts_sleep() -> None:
 
     store = MagicMock()
     store.list_schedules = list_schedules
-    store.upsert_schedule = AsyncMock()
+    store.update_schedule_last_run = AsyncMock()
 
     scheduler = Scheduler()
     task = asyncio.create_task(scheduler.run(bus, store))

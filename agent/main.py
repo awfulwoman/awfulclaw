@@ -4,7 +4,6 @@ import argparse
 import asyncio
 import datetime
 import signal
-import sys
 import threading
 
 from agent.agent import Agent
@@ -58,51 +57,28 @@ def _request_contacts_access(store: object) -> bool:
     return granted_holder[0] if granted_holder else False
 
 
-def tcc_setup() -> None:
-    """Request macOS TCC permissions for Calendar, Reminders, and Contacts."""
+def _request_tcc_permissions() -> dict[str, str]:
+    """Request macOS TCC permissions; returns name→status map. Non-blocking on subsequent runs."""
     results: dict[str, str] = {}
 
-    # --- EventKit (Calendar + Reminders) ---
     try:
         import EventKit as _EK  # type: ignore[import-not-found]
 
         ek_store = _EK.EKEventStore.alloc().init()
-
-        cal_granted = _request_eventkit_access("Calendar", _EK.EKEntityTypeEvent, ek_store)
-        results["Calendar"] = "granted" if cal_granted else "DENIED"
-
-        rem_granted = _request_eventkit_access("Reminders", _EK.EKEntityTypeReminder, ek_store)
-        results["Reminders"] = "granted" if rem_granted else "DENIED"
-
+        results["Calendar"] = "granted" if _request_eventkit_access("Calendar", _EK.EKEntityTypeEvent, ek_store) else "DENIED"
+        results["Reminders"] = "granted" if _request_eventkit_access("Reminders", _EK.EKEntityTypeReminder, ek_store) else "DENIED"
     except ImportError:
-        results["Calendar"] = "ERROR (pyobjc-framework-EventKit not installed)"
-        results["Reminders"] = "ERROR (pyobjc-framework-EventKit not installed)"
+        results["Calendar"] = results["Reminders"] = "unavailable (pyobjc-framework-EventKit not installed)"
 
-    # --- Contacts ---
     try:
         import Contacts as _CN  # type: ignore[import-not-found]
 
         cn_store = _CN.CNContactStore.alloc().init()
-        cn_granted = _request_contacts_access(cn_store)
-        results["Contacts"] = "granted" if cn_granted else "DENIED"
-
+        results["Contacts"] = "granted" if _request_contacts_access(cn_store) else "DENIED"
     except ImportError:
-        results["Contacts"] = "ERROR (pyobjc-framework-Contacts not installed)"
+        results["Contacts"] = "unavailable (pyobjc-framework-Contacts not installed)"
 
-    # --- Report ---
-    print("TCC Permission Status:")
-    all_ok = True
-    for name, status in results.items():
-        icon = "✓" if status == "granted" else "✗"
-        print(f"  {icon} {name}: {status}")
-        if status != "granted":
-            all_ok = False
-
-    if all_ok:
-        print("\nAll permissions granted.")
-    else:
-        print("\nSome permissions missing — grant access in System Settings > Privacy & Security.")
-        sys.exit(1)
+    return results
 
 
 async def preflight(settings: Settings, store: Store) -> None:
@@ -126,16 +102,12 @@ async def main() -> None:
         default=["telegram"],
         dest="connectors",
     )
-    parser.add_argument(
-        "--tcc-setup",
-        action="store_true",
-        help="Request macOS Calendar, Reminders, and Contacts permissions, then exit.",
-    )
     args = parser.parse_args()
 
-    if args.tcc_setup:
-        tcc_setup()
-        return
+    tcc = _request_tcc_permissions()
+    for name, status in tcc.items():
+        if status != "granted":
+            print(f"[tcc] WARNING: {name}: {status}", flush=True)
 
     settings = Settings()  # type: ignore[call-arg]
     store = await Store.connect(settings.state_path / "store.db")
