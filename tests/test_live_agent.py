@@ -196,3 +196,77 @@ async def test_general_fact_read() -> None:
         assert "awfulton" in reply.lower(), f"Expected 'awfulton' in reply: {reply!r}"
     finally:
         await agent.aclose()
+
+
+# ===========================================================================
+# Schedules
+# ===========================================================================
+
+_SCHEDULE_NAME = "test-heartbeat"
+
+
+@pytest.mark.asyncio
+async def test_schedule_create() -> None:
+    """Agent creates a recurring schedule."""
+    agent = LiveAgent()
+    try:
+        reply = await agent.chat(
+            f"create a schedule called {_SCHEDULE_NAME} that runs every minute"
+            f" and checks that 1+1=2" + ACTION_SUFFIX
+        )
+        assert_no_errors(reply)
+        assert_ok(reply)
+    finally:
+        await agent.aclose()
+
+
+@pytest.mark.asyncio
+async def test_schedule_list() -> None:
+    """The /schedules slash command lists the created schedule."""
+    agent = LiveAgent()
+    try:
+        reply = await agent.chat("/schedules")
+        assert _SCHEDULE_NAME in reply, (
+            f"Expected {_SCHEDULE_NAME!r} in /schedules reply: {reply!r}"
+        )
+    finally:
+        await agent.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(120)
+async def test_schedule_fires() -> None:
+    """The scheduler executes test-heartbeat within 90 seconds of creation."""
+    agent = LiveAgent()
+    try:
+        deadline = asyncio.get_event_loop().time() + 90
+        _not_run_phrases = ("never", "null", "hasn't run", "not run", "no record", "not yet")
+
+        while asyncio.get_event_loop().time() < deadline:
+            reply = await agent.chat(
+                f"what is the last run time of the schedule called {_SCHEDULE_NAME}?"
+            )
+            lower = reply.lower()
+            if not any(p in lower for p in _not_run_phrases):
+                return  # last_run timestamp appeared — schedule fired
+            await asyncio.sleep(10)
+
+        pytest.fail(
+            f"{_SCHEDULE_NAME!r} schedule did not fire within 90 seconds"
+        )
+    finally:
+        await agent.aclose()
+
+
+@pytest.mark.asyncio
+async def test_schedule_delete() -> None:
+    """Agent deletes the test schedule."""
+    agent = LiveAgent()
+    try:
+        reply = await agent.chat(
+            f"delete the schedule called {_SCHEDULE_NAME}" + ACTION_SUFFIX
+        )
+        assert_no_errors(reply)
+        assert_ok(reply)
+    finally:
+        await agent.aclose()
