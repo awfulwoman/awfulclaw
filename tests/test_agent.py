@@ -24,7 +24,7 @@ def mock_client() -> AsyncMock:
 
 @pytest.fixture
 def mock_settings(tmp_path: Path) -> MagicMock:
-    cfg = tmp_path / "agent_config"
+    cfg = tmp_path / "profile"
     cfg.mkdir()
     (cfg / "PERSONALITY.md").write_text("I am Ralph.")
     (cfg / "PROTOCOLS.md").write_text("Be concise.")
@@ -32,7 +32,7 @@ def mock_settings(tmp_path: Path) -> MagicMock:
     mcp = tmp_path / "mcp.json"
     mcp.write_text("{}")
     s = MagicMock()
-    s.agent_config_path = cfg
+    s.profile_path = cfg
     s.mcp_config = mcp
     s.model = "claude-sonnet-4-6"
     return s

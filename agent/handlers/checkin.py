@@ -52,7 +52,7 @@ class CheckinHandler:
             if elapsed < self._settings.checkin_interval:
                 return
 
-        checkin_path = self._settings.agent_config_path / "CHECKIN.md"
+        checkin_path = self._settings.profile_path / "CHECKIN.md"
         prompt = checkin_path.read_text(encoding="utf-8")
 
         reply = await self._agent.invoke(prompt)

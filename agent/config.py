@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     model: str = "claude-sonnet-4-6"
     governance_model: str = "claude-haiku-4-5-20251001"
     state_path: Path = Path("state")
-    agent_config_path: Path = Path("agent_config")
+    profile_path: Path = Path("profile")
     mcp_config: Path = Path("config/mcp_servers.json")
     poll_interval: int = 5
     idle_interval: int = 60

@@ -109,7 +109,7 @@ async def preflight(settings: Settings, store: Store) -> None:
     Raises on failure — a clear startup error beats a runtime surprise."""
     await store.check_schema()
     for name in ("PERSONALITY.md", "PROTOCOLS.md", "USER.md"):
-        path = settings.agent_config_path / name
+        path = settings.profile_path / name
         if not path.is_file():
             raise FileNotFoundError(f"Missing required config: {path}")
     if not settings.mcp_config.is_file():

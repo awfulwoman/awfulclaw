@@ -133,7 +133,7 @@ class Settings(BaseSettings):
     model: str = "claude-sonnet-4-6"
     governance_model: str = "claude-haiku-4-5-20251001"  # classification only — no need for full model
     state_path: Path = Path("memory")                   # SQLite DB, working state
-    agent_config_path: Path = Path("agent_config")       # PERSONALITY.md, PROTOCOLS.md, USER.md, CHECKIN.md
+    profile_path: Path = Path("agent_config")       # PERSONALITY.md, PROTOCOLS.md, USER.md, CHECKIN.md
     telegram: TelegramSettings
     imap: ImapSettings | None = None
     eventkit: EventKitSettings | None = None
@@ -144,7 +144,7 @@ class Settings(BaseSettings):
     checkin_interval: int = 86400  # seconds between ambient check-ins (default 24h)
 ```
 
-Paths default to directories relative to the working directory but can be overridden via environment variables (`STATE_PATH`, `AGENT_CONFIG_PATH`). This allows mounting mutable state on a separate filesystem — e.g. a ZFS dataset with snapshots and replication — while keeping the code checkout on the boot volume.
+Paths default to directories relative to the working directory but can be overridden via environment variables (`STATE_PATH`, `PROFILE_PATH`). This allows mounting mutable state on a separate filesystem — e.g. a ZFS dataset with snapshots and replication — while keeping the code checkout on the boot volume.
 
 **Rationale:** One settings object passed through DI eliminates scattered `get_*()` functions and makes configuration testable.
 
@@ -688,7 +688,7 @@ file_read(
 | Path | Readable | Purpose |
 |---|---|---|
 | `agent/*.py` | Yes | Self-knowledge — the agent can read and explain its own code |
-| `agent_config/*.md` | Yes | PERSONALITY.md, PROTOCOLS.md, USER.md, CHECKIN.md |
+| `profile/*.md` | Yes | PERSONALITY.md, PROTOCOLS.md, USER.md, CHECKIN.md |
 | `config/skills/*.md` | Yes | Skill fragments (also accessible via `skill_read`) |
 | `config/mcp_servers.json` | Yes | MCP server config |
 | `DESIGN.md`, `PHILOSOPHY.md` | Yes | Design docs |
@@ -728,7 +728,7 @@ config/skills/
 - **Default: skip and note.** "I don't have email access, so I skipped that part of the briefing." Transparent, no failure — the rest of the skill still runs.
 - **First invocation: suggest the missing tool.** If a skill has never worked because a required server isn't configured, the agent says "This skill wants email access. Want me to set up the IMAP server?" This only happens once — after the user declines, the agent remembers and skips silently.
 
-**Skills are user-authored.** Like `agent_config/`, skill files are human-maintained. The agent can suggest a new skill ("I notice you ask me to triage emails every morning — want me to draft a skill for that?") but cannot create or modify the file. The user writes it and drops it into `config/skills/`.
+**Skills are user-authored.** Like `profile/`, skill files are human-maintained. The agent can suggest a new skill ("I notice you ask me to triage emails every morning — want me to draft a skill for that?") but cannot create or modify the file. The user writes it and drops it into `config/skills/`.
 
 Example skill content (like the daily briefing) is a markdown file describing intent — see `config/skills/` in the implementation.
 
@@ -763,7 +763,7 @@ class Scheduler:
 
 `Store.upsert_schedule()` and `Store.delete_schedule()` call `scheduler.wake()` so dynamically created schedules are picked up immediately rather than waiting for the current sleep to expire.
 
-Schedule events are handled by `handlers/schedule.py` (not in the message pipeline) which invokes `agent.invoke(schedule.prompt)` and optionally posts the reply as an `OutboundEvent`. Periodic ambient check-ins are handled by `handlers/checkin.py` — distinct from schedules, which fire blindly at a set time. The check-in reads `agent_config/CHECKIN.md` (a short patrol checklist maintained by the user), invokes Claude, and sends a reply only if Claude determines something warrants attention. If nothing does, it stays silent. `checkin_interval` in Settings controls frequency.
+Schedule events are handled by `handlers/schedule.py` (not in the message pipeline) which invokes `agent.invoke(schedule.prompt)` and optionally posts the reply as an `OutboundEvent`. Periodic ambient check-ins are handled by `handlers/checkin.py` — distinct from schedules, which fire blindly at a set time. The check-in reads `profile/CHECKIN.md` (a short patrol checklist maintained by the user), invokes Claude, and sends a reply only if Claude determines something warrants attention. If nothing does, it stays silent. `checkin_interval` in Settings controls frequency.
 
 **Output routing for handlers:** Handlers have no inbound event to reply to, so they route output to the last-used connector (tracked in `kv`). If that connector is unavailable, they fall through to the next available one. This applies to both schedule handlers and check-in handlers.
 
@@ -814,7 +814,7 @@ async def preflight(settings: Settings, store: Store) -> None:
     await store.check_schema()
     # agent_config: verify required files are readable
     for name in ("PERSONALITY.md", "PROTOCOLS.md", "USER.md"):
-        path = settings.agent_config_path / name
+        path = settings.profile_path / name
         if not path.is_file():
             raise FileNotFoundError(f"Missing required config: {path}")
     # Telegram: verify bot token is valid (getMe)
@@ -876,12 +876,12 @@ See `PHILOSOPHY.md` for the full data philosophy. In brief: the agent is a coord
 | `.telegram_offset` file | `kv` table |
 
 **What stays as markdown files** (human-edited config, not program state):
-- `agent_config/PERSONALITY.md` — identity, personality, tone, values (*who the agent is*)
-- `agent_config/PROTOCOLS.md` — operating rules, priorities, procedures (*how the agent behaves*)
-- `agent_config/USER.md` — user profile
-- `agent_config/CHECKIN.md` — ambient check-in checklist; short, human-maintained patrol prompt
+- `profile/PERSONALITY.md` — identity, personality, tone, values (*who the agent is*)
+- `profile/PROTOCOLS.md` — operating rules, priorities, procedures (*how the agent behaves*)
+- `profile/USER.md` — user profile
+- `profile/CHECKIN.md` — ambient check-in checklist; short, human-maintained patrol prompt
 
-These live at `AGENT_CONFIG_PATH` (default: `agent_config/`), chmod 444. The agent reads them; it cannot write to them. The user edits them directly.
+These live at `PROFILE_PATH` (default: `profile/`), chmod 444. The agent reads them; it cannot write to them. The user edits them directly.
 
 #### Example: PERSONALITY.md
 
@@ -1002,7 +1002,7 @@ This is a clean-room reimplementation, not a refactor. The old codebase (in `leg
 
 - `config/mcp_servers.json` — same format as before, created from the spec in this document
 - `config/skills/` — skill prompt fragments, created as needed
-- `agent_config/` — PERSONALITY.md, PROTOCOLS.md, USER.md, CHECKIN.md from the examples above
+- `profile/` — PERSONALITY.md, PROTOCOLS.md, USER.md, CHECKIN.md from the examples above
 - `scripts/` — launchd helpers, written to match the new package layout
 
 ---
@@ -1068,7 +1068,7 @@ This is a clean-room reimplementation, not a refactor. The old codebase (in `leg
 - Import scripts read from a backup of the legacy data (not from the repo — `legacy/` was deleted in Phase 1)
 - Import script: read `schedules.json` → insert into new DB
 - Import script: read `conversations/YYYY-MM-DD.md` → insert turns into new DB
-- PERSONALITY.md, PROTOCOLS.md, USER.md, and CHECKIN.md copied into `agent_config/`
+- PERSONALITY.md, PROTOCOLS.md, USER.md, and CHECKIN.md copied into `profile/`
 - facts/people DB migrated via SQL
 
 ---
@@ -1125,12 +1125,12 @@ On a single-purpose Mac Mini, file permissions provide config immutability witho
 
 ```bash
 # Run once during initial setup — paths shown are defaults; override via .env
-chmod -R 444 ${AGENT_CONFIG_PATH:-agent_config}/  # PERSONALITY.md, PROTOCOLS.md, USER.md, CHECKIN.md — read-only
+chmod -R 444 ${PROFILE_PATH:-agent_config}/  # PERSONALITY.md, PROTOCOLS.md, USER.md, CHECKIN.md — read-only
 chmod 600 .env                                     # secrets — readable only by the host user
 # STATE_PATH is writable by default — no special permissions needed
 ```
 
-The agent process runs as the same user who owns the code files. The primary security boundary is tool-level: `--allowedTools` blocks `Bash`, `Edit`, and `Write` (see the allowlist table under MCP Client), and no MCP tool exposes general file-write capability. This means Claude can only act through scoped MCP tools and read-only CLI built-ins. Defence in depth: code changes also require a git PR, human approval, and merge to `main`. chmod 444 on `agent_config/` guards against accidental writes by non-Claude processes but is not the security boundary — tool scoping is.
+The agent process runs as the same user who owns the code files. The primary security boundary is tool-level: `--allowedTools` blocks `Bash`, `Edit`, and `Write` (see the allowlist table under MCP Client), and no MCP tool exposes general file-write capability. This means Claude can only act through scoped MCP tools and read-only CLI built-ins. Defence in depth: code changes also require a git PR, human approval, and merge to `main`. chmod 444 on `profile/` guards against accidental writes by non-Claude processes but is not the security boundary — tool scoping is.
 
 ### TCC permissions (Calendar, Reminders, Contacts)
 
@@ -1180,12 +1180,12 @@ The repo is public. Nothing personal or secret ever touches it.
 | Location | Contents |
 |----------|----------|
 | **Repo** | Application code, `config/mcp_servers.json`, `config/skills/*.md`, launchd plists, scripts |
-| **`AGENT_CONFIG_PATH`** (default: `agent_config/`, read-only via chmod) | `PERSONALITY.md`, `PROTOCOLS.md`, `USER.md`, `CHECKIN.md` — human-authored config. Back this up. |
+| **`PROFILE_PATH`** (default: `profile/`, read-only via chmod) | `PERSONALITY.md`, `PROTOCOLS.md`, `USER.md`, `CHECKIN.md` — human-authored config. Back this up. |
 | **`STATE_PATH`** (default: `state/`, read-write) | SQLite DB, conversation history, facts, schedules. Back this up. |
 | **`.env`** (gitignored, chmod 600) | Runtime secrets — Telegram token, IMAP credentials, API keys. |
 | **`~/.claude/`** | OAuth tokens for the `claude` CLI. Writable for token refresh; never in repo. |
 
 ### Backups
 
-All mutable state lives in two places: `STATE_PATH` (SQLite DB) and `AGENT_CONFIG_PATH` (markdown config). Both are plain files on disk, easily backed up with Time Machine, rsync, restic, or ZFS snapshots. Because the paths are configurable, these directories can live on a separate filesystem — e.g. a ZFS dataset with its own snapshot and replication schedule — while the code checkout remains on the boot volume.
+All mutable state lives in two places: `STATE_PATH` (SQLite DB) and `PROFILE_PATH` (markdown config). Both are plain files on disk, easily backed up with Time Machine, rsync, restic, or ZFS snapshots. Because the paths are configurable, these directories can live on a separate filesystem — e.g. a ZFS dataset with its own snapshot and replication schedule — while the code checkout remains on the boot volume.
 

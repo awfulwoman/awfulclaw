@@ -19,8 +19,8 @@ async def store(tmp_path: Path) -> Store:  # type: ignore[misc]
 
 
 @pytest.fixture
-def agent_config(tmp_path: Path) -> Path:
-    cfg = tmp_path / "agent_config"
+def profile(tmp_path: Path) -> Path:
+    cfg = tmp_path / "profile"
     cfg.mkdir()
     for name in ("PERSONALITY.md", "PROTOCOLS.md", "USER.md"):
         (cfg / name).write_text(f"# {name}\n")
@@ -38,10 +38,10 @@ _FAKE_TELEGRAM = TelegramSettings(bot_token="fake:token", allowed_chat_ids=[1])
 
 
 @pytest.fixture
-def settings(tmp_path: Path, agent_config: Path, mcp_config: Path) -> Settings:
+def settings(tmp_path: Path, profile: Path, mcp_config: Path) -> Settings:
     return Settings(  # type: ignore[call-arg]
         telegram=_FAKE_TELEGRAM,
-        agent_config_path=agent_config,
+        profile_path=profile,
         mcp_config=mcp_config,
     )
 
@@ -53,35 +53,35 @@ async def test_preflight_passes_with_valid_setup(
 
 
 async def test_preflight_raises_on_missing_personality(
-    settings: Settings, store: Store, agent_config: Path
+    settings: Settings, store: Store, profile: Path
 ) -> None:
-    (agent_config / "PERSONALITY.md").unlink()
+    (profile / "PERSONALITY.md").unlink()
     with pytest.raises(FileNotFoundError, match="PERSONALITY.md"):
         await preflight(settings, store)
 
 
 async def test_preflight_raises_on_missing_protocols(
-    settings: Settings, store: Store, agent_config: Path
+    settings: Settings, store: Store, profile: Path
 ) -> None:
-    (agent_config / "PROTOCOLS.md").unlink()
+    (profile / "PROTOCOLS.md").unlink()
     with pytest.raises(FileNotFoundError, match="PROTOCOLS.md"):
         await preflight(settings, store)
 
 
 async def test_preflight_raises_on_missing_user(
-    settings: Settings, store: Store, agent_config: Path
+    settings: Settings, store: Store, profile: Path
 ) -> None:
-    (agent_config / "USER.md").unlink()
+    (profile / "USER.md").unlink()
     with pytest.raises(FileNotFoundError, match="USER.md"):
         await preflight(settings, store)
 
 
 async def test_preflight_raises_on_missing_mcp_config(
-    store: Store, tmp_path: Path, agent_config: Path
+    store: Store, tmp_path: Path, profile: Path
 ) -> None:
     s = Settings(  # type: ignore[call-arg]
         telegram=_FAKE_TELEGRAM,
-        agent_config_path=agent_config,
+        profile_path=profile,
         mcp_config=tmp_path / "nonexistent.json",
     )
     with pytest.raises(FileNotFoundError, match="(?i)mcp"):

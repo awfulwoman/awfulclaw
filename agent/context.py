@@ -23,7 +23,7 @@ class ContextAssembler:
         sender: Optional[str],
         channel: str,
     ) -> str:
-        cfg = self._settings.agent_config_path
+        cfg = self._settings.profile_path
 
         # Always-included sections
         personality = await _read_config(cfg / "PERSONALITY.md")

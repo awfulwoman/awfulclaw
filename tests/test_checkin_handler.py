@@ -74,7 +74,7 @@ def mock_bus():
 def mock_settings(tmp_path: Path):
     settings = MagicMock()
     settings.checkin_interval = 3600
-    settings.agent_config_path = tmp_path
+    settings.profile_path = tmp_path
     checkin_file = tmp_path / "CHECKIN.md"
     checkin_file.write_text("Check everything and report if something needs attention.")
     return settings

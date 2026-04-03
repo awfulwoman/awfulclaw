@@ -61,7 +61,7 @@ Files and configuration are graded by what the agent can do with them:
 No file carries sensitivity headers or classification metadata. Immutability is enforced by tool scoping, with filesystem permissions as defence in depth:
 
 - **Code files** — `--allowedTools` blocks `Bash`, `Edit`, `Write`, `Read`; `mcp/file_read.py` allows scoped reads within the project; no MCP tool exposes file-write capability; changes require a git PR and merge to `main`
-- **`PERSONALITY.md`, `PROTOCOLS.md`, `USER.md`, `CHECKIN.md`** — in `agent_config/`, no write tool exposed; chmod 444 as defence in depth
+- **`PERSONALITY.md`, `PROTOCOLS.md`, `USER.md`, `CHECKIN.md`** — in `profile/`, no write tool exposed; chmod 444 as defence in depth
 - **Working state** (DB, conversation history) — `state/`, writable by the agent process via MCP tools
 - **`.env` credentials** — loaded by pydantic-settings at startup; `mcp/file_read.py` explicitly denies `.env`; CLI `Read` blocked via `--allowedTools`. Hard boundary — no tool can read credential values
 
@@ -141,7 +141,7 @@ On a dedicated Mac Mini, the combination of CLI tool scoping, MCP tool restricti
 
 - **CLI built-in tools** — `--allowedTools` blocks `Bash`, `Edit`, `Write`, and `Read`. Claude cannot execute arbitrary shell commands, write to the filesystem, or read files outside the project directory via CLI built-ins. File reading is handled by `mcp/file_read.py`, which scopes reads to the project directory and explicitly denies `.env`. See the allowlist table in `DESIGN.md` under MCP Client.
 - **Code files** — `--allowedTools` blocks `Bash`, `Edit`, `Write`; no MCP tool exposes file-write capability. `handlers/governance.py` and the policy middleware are immutable at runtime — changes require a git PR and merge to `main`.
-- **`agent_config/`** — chmod 444 as defence in depth; the hard boundary is tool scoping (no write tools exposed), not file permissions.
+- **`profile/`** — chmod 444 as defence in depth; the hard boundary is tool scoping (no write tools exposed), not file permissions.
 - **`state/`** — writable; this is where working state lives. Fact and people writes pass through the governance layer (see below).
 - **`.env`** — loaded by pydantic-settings at startup; the agent's `env_manager` MCP tool can append new key=value pairs. `mcp/file_read.py` explicitly denies `.env`. CLI `Read` is blocked. Hard boundary — no tool can read credential values.
 - **Secrets never in the repo.** Credentials are injected at runtime via environment variables. The repo is public; nothing personal or secret ever touches it.

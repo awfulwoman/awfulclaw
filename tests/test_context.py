@@ -26,13 +26,13 @@ async def store(tmp_path: Path) -> Store:  # type: ignore[misc]
 
 @pytest.fixture
 def settings(tmp_path: Path) -> Settings:
-    cfg = tmp_path / "agent_config"
+    cfg = tmp_path / "profile"
     cfg.mkdir()
     (cfg / "PERSONALITY.md").write_text("You are Ralph.")
     (cfg / "PROTOCOLS.md").write_text("Always be helpful.")
     (cfg / "USER.md").write_text("Charlie is the owner.")
     return Settings(  # type: ignore[call-arg]
-        agent_config_path=cfg,
+        profile_path=cfg,
         telegram={"bot_token": "x", "allowed_chat_ids": [1]},
     )
 
@@ -123,11 +123,11 @@ async def test_build_excludes_rejected_personality_log(store: Store, settings: S
 
 @pytest.mark.asyncio
 async def test_build_missing_config_files(store: Store, tmp_path: Path) -> None:
-    """Missing agent_config files don't crash — just return empty sections."""
+    """Missing profile files don't crash — just return empty sections."""
     empty_cfg = tmp_path / "empty_cfg"
     empty_cfg.mkdir()
     settings = Settings(  # type: ignore[call-arg]
-        agent_config_path=empty_cfg,
+        profile_path=empty_cfg,
         telegram={"bot_token": "x", "allowed_chat_ids": [1]},
     )
     assembler = ContextAssembler(store, settings)

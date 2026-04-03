@@ -24,7 +24,7 @@ def test_defaults_applied(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.model == "claude-sonnet-4-6"
     assert settings.governance_model == "claude-haiku-4-5-20251001"
     assert settings.state_path == Path("state")
-    assert settings.agent_config_path == Path("agent_config")
+    assert settings.profile_path == Path("profile")
     assert settings.mcp_config == Path("config/mcp_servers.json")
     assert settings.poll_interval == 5
     assert settings.idle_interval == 60

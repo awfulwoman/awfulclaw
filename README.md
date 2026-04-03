@@ -48,7 +48,7 @@ AWFULCLAW_TELEGRAM__BOT_TOKEN=...
 AWFULCLAW_TELEGRAM__ALLOWED_CHAT_IDS=...
 ```
 
-Agent personality and protocols live in `agent_config/`:
+Agent personality and protocols live in `profile/`:
 
 | File | Purpose |
 |------|---------|

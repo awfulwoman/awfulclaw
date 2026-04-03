@@ -14,7 +14,7 @@ Implementation is complete. `DESIGN.md` is kept as a historical reference showin
 
 ```
 agent/              # main application (19 modules)
-agent_config/       # human-editable config: PERSONALITY.md, PROTOCOLS.md, USER.md, CHECKIN.md
+profile/       # human-editable config: PERSONALITY.md, PROTOCOLS.md, USER.md, CHECKIN.md
 config/             # MCP server definitions and skill files
 tests/              # pytest test suite
 DESIGN.md           # historical architecture spec (do not treat as authoritative)
