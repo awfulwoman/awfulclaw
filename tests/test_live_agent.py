@@ -270,3 +270,40 @@ async def test_schedule_delete() -> None:
         assert_ok(reply)
     finally:
         await agent.aclose()
+
+
+# ===========================================================================
+# Apple EventKit — reminders and calendar
+# (requires AWFULCLAW_TEST_EVENTKIT=1 and TCC permissions)
+# ===========================================================================
+
+
+@require_eventkit
+@pytest.mark.asyncio
+async def test_reminder_create() -> None:
+    """Agent creates an Apple Reminder."""
+    agent = LiveAgent()
+    try:
+        reply = await agent.chat(
+            "create a reminder called awfulclaw-test-reminder" + ACTION_SUFFIX
+        )
+        assert_no_errors(reply)
+        assert_ok(reply)
+    finally:
+        await agent.aclose()
+
+
+@require_eventkit
+@pytest.mark.asyncio
+async def test_calendar_event_create() -> None:
+    """Agent creates an Apple Calendar event."""
+    agent = LiveAgent()
+    try:
+        reply = await agent.chat(
+            "create a calendar event called awfulclaw-test-event tomorrow at noon"
+            + ACTION_SUFFIX
+        )
+        assert_no_errors(reply)
+        assert_ok(reply)
+    finally:
+        await agent.aclose()
