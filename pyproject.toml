@@ -13,6 +13,7 @@ dependencies = [
     "sqlite-vec>=0.1.9",
     "croniter>=3.0",
     "pyobjc-framework-EventKit>=10.0; sys_platform == 'darwin'",
+    "pyobjc-framework-Contacts>=10.0; sys_platform == 'darwin'",
 ]
 
 [project.optional-dependencies]
