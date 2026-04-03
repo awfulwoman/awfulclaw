@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agent.claude_client import ClaudeClient
+from agent.llm_client import LLMClient
 from agent.config import Settings
 from agent.connectors import InboundEvent
 from agent.context import ContextAssembler
@@ -10,7 +10,7 @@ _HISTORY_TURNS = 20  # number of recent turns to include as history
 
 
 class Agent:
-    def __init__(self, client: ClaudeClient, settings: Settings, store: Store) -> None:
+    def __init__(self, client: LLMClient, settings: Settings, store: Store) -> None:
         self._client = client
         self._settings = settings
         self._store = store

@@ -79,6 +79,18 @@ class ClaudeClient:
             f"Claude CLI failed after 3 attempts: {last_error}"
         )
 
+    async def health_check(self) -> bool:
+        claude_bin = shutil.which("claude")
+        if claude_bin is None:
+            return False
+        proc = await asyncio.create_subprocess_exec(
+            claude_bin, "--version",
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await proc.wait()
+        return proc.returncode == 0
+
 
 def _parse_stream_json(output: str) -> str:
     for line in output.splitlines():
