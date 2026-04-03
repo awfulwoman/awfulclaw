@@ -206,5 +206,32 @@ def note_search(query: str) -> list[dict]:
     return results
 
 
+@mcp.tool()
+def note_list(category: Optional[str] = None) -> list[str]:
+    """List Obsidian vault notes, optionally filtered by category.
+
+    category: If provided, only return notes whose frontmatter categories
+              include [[category]]. Common categories: Meetings, Projects,
+              People, Journal. Categories are the primary organisational
+              structure — there are no subfolders.
+
+    Returns a sorted list of note titles (without .md extension).
+    """
+    vault = _get_vault_path()
+    titles: list[str] = []
+
+    for md_file in sorted(vault.glob("*.md")):
+        if category is not None:
+            try:
+                content = md_file.read_text(encoding="utf-8")
+                if f"[[{category}]]" not in content:
+                    continue
+            except OSError:
+                continue
+        titles.append(md_file.stem)
+
+    return titles
+
+
 if __name__ == "__main__":
     mcp.run()

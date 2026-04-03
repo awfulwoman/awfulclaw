@@ -172,3 +172,31 @@ def test_note_search_returns_snippet(tmp_path: Path, monkeypatch: pytest.MonkeyP
     results = obs.note_search("keyword")
     assert len(results) == 1
     assert "keyword" in results[0]["snippet"]
+
+
+def test_note_list_returns_all_notes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    vault = _setup_vault(tmp_path, monkeypatch)
+    (vault / "Alpha.md").write_text("a")
+    (vault / "Beta.md").write_text("b")
+    results = obs.note_list()
+    assert "Alpha" in results
+    assert "Beta" in results
+
+
+def test_note_list_filters_by_category(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    vault = _setup_vault(tmp_path, monkeypatch)
+    (vault / "Meeting One.md").write_text(
+        '---\ncategories:\n  - "[[Meetings]]"\n---\nbody'
+    )
+    (vault / "Personal Note.md").write_text(
+        '---\ncategories:\n  - "[[Journal]]"\n---\nbody'
+    )
+    results = obs.note_list(category="Meetings")
+    assert "Meeting One" in results
+    assert "Personal Note" not in results
+
+
+def test_note_list_empty_vault(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _setup_vault(tmp_path, monkeypatch)
+    results = obs.note_list()
+    assert results == []
