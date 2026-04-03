@@ -210,3 +210,4 @@ __marimo__/
 
 memory
 mcp_servers/
+*.db
