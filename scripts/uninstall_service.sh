@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PLIST="$HOME/Library/LaunchAgents/ai.awfulclaw.agent.plist"
+launchctl unload "$HOME/Library/LaunchAgents/ai.awfulclaw.agent.plist" 2>/dev/null || true
+rm -f "$HOME/Library/LaunchAgents/ai.awfulclaw.agent.plist"
 
-launchctl unload "$PLIST" 2>/dev/null || true
-rm -f "$PLIST"
+launchctl unload "$HOME/Library/LaunchAgents/ai.awfulclaw.logrotate.plist" 2>/dev/null || true
+rm -f "$HOME/Library/LaunchAgents/ai.awfulclaw.logrotate.plist"
 
 echo "awfulclaw service removed."

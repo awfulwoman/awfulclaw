@@ -8,4 +8,5 @@ export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
 
 cd "$PROJECT_DIR"
 
-exec uv run python -m agent.main --connector telegram rest
+exec uv run python -m agent.main --connector telegram rest \
+    2> >(while IFS= read -r line; do printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$line"; done >> "$PROJECT_DIR/logs/awfulclaw.err.log")
