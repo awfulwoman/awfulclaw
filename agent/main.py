@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import signal
 import sys
 import threading
 
@@ -177,6 +178,15 @@ async def main() -> None:
         bus.subscribe(InboundEvent, pipeline.run)
         bus.subscribe(OutboundEvent, handle_outbound)
         bus.subscribe(ScheduleEvent, schedule_handler.handle)
+
+        loop = asyncio.get_running_loop()
+        main_task = asyncio.current_task()
+
+        def _on_sigterm() -> None:
+            if main_task is not None:
+                main_task.cancel()
+
+        loop.add_signal_handler(signal.SIGTERM, _on_sigterm)
 
         async with asyncio.TaskGroup() as tg:
             tg.create_task(bus.run())

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
@@ -66,14 +67,42 @@ async def test_schedules_lists_items() -> None:
 
 
 @pytest.mark.asyncio
-async def test_restart_short_circuits() -> None:
-    mw, connector, store = make_mw()
+async def test_restart_sends_restarting_message() -> None:
+    restart_fn = MagicMock()
+    connector = MagicMock()
+    connector.send = AsyncMock()
+    store = MagicMock()
+    store.list_schedules = AsyncMock(return_value=[])
+    mw = SlashCommandMiddleware(connector=connector, store=store, restart_fn=restart_fn)
     next_fn: Next = AsyncMock()
 
     await mw(make_event("/restart"), next_fn)
 
     next_fn.assert_not_called()
     connector.send.assert_called_once_with("chan", OutboundMessage(text="Restarting..."))
+
+
+@pytest.mark.asyncio
+async def test_restart_sigterm_sent_after_response() -> None:
+    """Verify restart_fn fires after send, ordered via call_later."""
+    call_order: list[str] = []
+
+    async def mock_send(channel: str, msg: OutboundMessage) -> None:
+        call_order.append("send")
+
+    def mock_restart() -> None:
+        call_order.append("restart")
+
+    connector = MagicMock()
+    connector.send = mock_send
+    store = MagicMock()
+    store.list_schedules = AsyncMock(return_value=[])
+    mw = SlashCommandMiddleware(connector=connector, store=store, restart_fn=mock_restart)
+
+    await mw(make_event("/restart"), AsyncMock())
+    await asyncio.sleep(0.2)  # allow call_later(0.1) to fire
+
+    assert call_order == ["send", "restart"]
 
 
 @pytest.mark.asyncio
