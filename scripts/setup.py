@@ -55,16 +55,16 @@ def create_mcp_config(uv: str) -> None:
 
 
 _SKILL_TEMPLATES: dict[str, str] = {
-    "daily-briefing.md": """\
-# Daily Briefing Skill
+    "briefing.md": """\
+# Briefing Skill
 
-Produce a concise morning briefing. Work through each section below; if a tool is unavailable or returns an error, skip that section silently.
+Produce a concise situational briefing. Work through each section below; if a tool is unavailable or returns an error, skip that section silently.
 
 ## Sections
 
-1. **Calendar** — call `calendar_list_events` for today. List upcoming events with times.
-2. **Reminders** — call `reminders_list` filtered to incomplete items due today or overdue. List each reminder.
-3. **Weather** — call `weather_get_forecast` for the user's location. Include current conditions and today's high/low.
+1. **Calendar** — call `calendar_list_events` for the next 24 hours. List upcoming events with times.
+2. **Reminders** — call `reminders_list` filtered to incomplete items due within the next 24 hours or overdue. List each reminder.
+3. **Weather** — call `weather_get_forecast` for the user's location. Include current conditions and the forecast.
 4. **Email** — if an email tool is available, summarise unread messages. Skip if unavailable.
 
 ## Format
