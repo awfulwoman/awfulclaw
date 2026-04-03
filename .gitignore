@@ -209,5 +209,6 @@ __marimo__/
 
 
 state
+profile
 mcp_servers/
 *.db
