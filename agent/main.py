@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import signal
 import sys
 import threading
 
@@ -9,10 +10,12 @@ from agent.agent import Agent
 from agent.bus import Bus, ScheduleEvent
 from agent.claude_client import ClaudeClient
 from agent.config import Settings
+from agent.mcp import MCPClient
 from agent.connectors import InboundEvent, OutboundEvent
 from agent.connectors.rest import RESTConnector
 from agent.connectors.telegram import TelegramConnector
 from agent.handlers.checkin import CheckinHandler
+from agent.handlers.orientation import OrientationHandler
 from agent.handlers.schedule import ScheduleHandler
 from agent.middleware.invoke import InvokeMiddleware
 from agent.middleware.location import LocationMiddleware
@@ -129,6 +132,7 @@ async def main() -> None:
 
     settings = Settings()  # type: ignore[call-arg]
     store = await Store.connect(settings.memory_path / "store.db")
+    mcp = MCPClient()
     try:
         await preflight(settings, store)
 
@@ -154,9 +158,15 @@ async def main() -> None:
             InvokeMiddleware(agent, bus, store),
         ])
 
+        await mcp.connect_all(settings.mcp_config)
+
         checkin_handler = CheckinHandler(agent, bus, store, settings)
+        orientation_handler = OrientationHandler(agent, bus, store, settings.mcp_config)
         schedule_handler = ScheduleHandler(agent, bus, store)
         scheduler = Scheduler()
+
+        async def orientation_task() -> None:
+            await orientation_handler.run()
 
         async def checkin_loop() -> None:
             while True:
@@ -173,10 +183,22 @@ async def main() -> None:
         bus.subscribe(OutboundEvent, handle_outbound)
         bus.subscribe(ScheduleEvent, schedule_handler.handle)
 
+        loop = asyncio.get_running_loop()
+        main_task = asyncio.current_task()
+
+        def _on_sigterm() -> None:
+            if main_task is not None:
+                main_task.cancel()
+
+        loop.add_signal_handler(signal.SIGTERM, _on_sigterm)
+
         async with asyncio.TaskGroup() as tg:
             tg.create_task(bus.run())
             tg.create_task(connector.start(on_message))
             tg.create_task(scheduler.run(bus, store))
             tg.create_task(checkin_loop())
+            tg.create_task(orientation_task())
+            tg.create_task(mcp.watch_config(settings.mcp_config))
     finally:
+        await mcp.disconnect_all()
         await store.close()
