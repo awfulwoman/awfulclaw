@@ -3,9 +3,25 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import aiosqlite
+import sqlite_vec  # type: ignore[import-untyped]
+
+_embedding_model: Any = None
+
+
+def embed(text: str) -> bytes:
+    """Encode text as raw float32 bytes using all-MiniLM-L6-v2 (384 dims)."""
+    global _embedding_model
+    if _embedding_model is None:
+        from sentence_transformers import SentenceTransformer  # type: ignore[import-untyped]
+
+        _embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+    import numpy as np
+
+    vec = _embedding_model.encode(text, convert_to_numpy=True)
+    return vec.astype(np.float32).tobytes()
 
 if TYPE_CHECKING:
     from agent.handlers import Handler, Verdict
@@ -116,6 +132,9 @@ class Store:
     async def connect(cls, db_path: Path, governance: "Optional[Handler]" = None) -> "Store":
         db_path.parent.mkdir(parents=True, exist_ok=True)
         db = await aiosqlite.connect(db_path)
+        await db.enable_load_extension(True)
+        await db.load_extension(sqlite_vec.loadable_path())
+        await db.enable_load_extension(False)
         await db.executescript(_SCHEMA)
         await db.commit()
         return cls(db, governance=governance)
@@ -182,14 +201,27 @@ class Store:
 
         verdict = await self._govern("fact", value)
         now = datetime.now(timezone.utc).isoformat()
+        emb = embed(f"{key}: {value}")
         await self._db.execute(
-            "INSERT INTO facts (key, value, updated_at) VALUES (?, ?, ?) "
-            "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
-            (key, value, now),
+            "INSERT INTO facts (key, value, embedding, updated_at) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value, embedding = excluded.embedding, updated_at = excluded.updated_at",
+            (key, value, emb, now),
         )
         await self._db.commit()
         if verdict == Verdict.escalated:
             await self._flag_escalation("fact", value)
+
+    async def search_facts(self, query: str, limit: int = 10) -> list[Fact]:
+        query_emb = embed(query)
+        cursor = await self._db.execute(
+            "SELECT key, value, updated_at FROM facts "
+            "WHERE embedding IS NOT NULL "
+            "ORDER BY vec_distance_cosine(embedding, ?) "
+            "LIMIT ?",
+            (query_emb, limit),
+        )
+        rows = await cursor.fetchall()
+        return [Fact(key=r[0], value=r[1], updated_at=r[2]) for r in rows]
 
     async def list_facts(self) -> list[Fact]:
         cursor = await self._db.execute("SELECT key, value, updated_at FROM facts ORDER BY key")
@@ -210,15 +242,28 @@ class Store:
 
         verdict = await self._govern("person", content)
         now = datetime.now(timezone.utc).isoformat()
+        emb = embed(f"{name}: {content}")
         await self._db.execute(
-            "INSERT INTO people (id, name, phone, content, updated_at) VALUES (?, ?, ?, ?, ?) "
+            "INSERT INTO people (id, name, phone, content, embedding, updated_at) VALUES (?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(id) DO UPDATE SET name = excluded.name, phone = excluded.phone, "
-            "content = excluded.content, updated_at = excluded.updated_at",
-            (id, name, phone, content, now),
+            "content = excluded.content, embedding = excluded.embedding, updated_at = excluded.updated_at",
+            (id, name, phone, content, emb, now),
         )
         await self._db.commit()
         if verdict == Verdict.escalated:
             await self._flag_escalation("person", content)
+
+    async def search_people(self, query: str, limit: int = 10) -> list[Person]:
+        query_emb = embed(query)
+        cursor = await self._db.execute(
+            "SELECT id, name, phone, content, updated_at FROM people "
+            "WHERE embedding IS NOT NULL "
+            "ORDER BY vec_distance_cosine(embedding, ?) "
+            "LIMIT ?",
+            (query_emb, limit),
+        )
+        rows = await cursor.fetchall()
+        return [Person(id=r[0], name=r[1], phone=r[2], content=r[3], updated_at=r[4]) for r in rows]
 
     async def list_people(self) -> list[Person]:
         cursor = await self._db.execute(

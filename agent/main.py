@@ -44,7 +44,7 @@ async def main() -> None:
 
         bus = Bus()
         client = ClaudeClient(settings.model)
-        agent = Agent(client, settings)
+        agent = Agent(client, settings, store)
 
         if args.connector == "telegram":
             connector = TelegramConnector(

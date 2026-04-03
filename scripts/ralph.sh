@@ -4,7 +4,7 @@
 # Passes all ralph:todo issues to a fresh agent instance, which chooses
 # the best one to work on. Repeats until all issues are done.
 #
-# Usage: ./scripts/ralph.sh [--milestone <name>] [--iterations <n>]
+# Usage: ./scripts/ralph.sh [--milestone <name>] [--iterations <n>] [--auto-merge]
 
 set -e
 
@@ -14,6 +14,7 @@ MILESTONE=""
 MAX_ITERATIONS=10
 MODEL="claude-sonnet-4-6"
 VERBOSE=false
+AUTO_MERGE=false
 TOOL_COMMAND="claude"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKING_PATH="$(pwd)"
@@ -21,14 +22,15 @@ PROGRESS_FILE="$SCRIPT_DIR/progress.txt"
 
 while [[ $# -gt 0 ]]; do
   case $1 in
---verbose|-v)  VERBOSE=true;              shift   ;;
-    --milestone)   MILESTONE="$2";           shift 2 ;;
-    --milestone=*) MILESTONE="${1#*=}";      shift   ;;
-    --iterations)  MAX_ITERATIONS="$2";      shift 2 ;;
-    --iterations=*) MAX_ITERATIONS="${1#*=}"; shift   ;;
-    --model)       MODEL="$2";              shift 2 ;;
-    --model=*)     MODEL="${1#*=}";         shift   ;;
-    *)             shift ;;
+    --verbose|-v)   VERBOSE=true;              shift   ;;
+    --auto-merge)   AUTO_MERGE=true;           shift   ;;
+    --milestone)    MILESTONE="$2";            shift 2 ;;
+    --milestone=*)  MILESTONE="${1#*=}";       shift   ;;
+    --iterations)   MAX_ITERATIONS="$2";       shift 2 ;;
+    --iterations=*) MAX_ITERATIONS="${1#*=}";  shift   ;;
+    --model)        MODEL="$2";               shift 2 ;;
+    --model=*)      MODEL="${1#*=}";          shift   ;;
+    *)              shift ;;
   esac
 done
 
@@ -199,6 +201,19 @@ PRBODY
 
   echo "Switching back to main..."
   git checkout main
+
+  # Auto-merge and pull if requested (only when complete, not WIP)
+  if [[ "$AUTO_MERGE" == true && "$STATUS" == "complete" ]]; then
+    echo "Auto-merging PR..."
+    PR_NUMBER=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number' 2>/dev/null || true)
+    if [[ -n "$PR_NUMBER" ]]; then
+      gh pr merge "$PR_NUMBER" --merge --delete-branch 2>/dev/null || true
+      echo "Pulling merged changes to local main..."
+      git pull
+    else
+      echo "Warning: No open PR found to merge."
+    fi
+  fi
 
   echo ""
   echo "==============================================================="
