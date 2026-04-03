@@ -87,3 +87,32 @@ def test_note_write_returns_error_string_on_failure(
     finally:
         # Restore permissions for cleanup
         vault.chmod(0o755)
+
+
+def test_note_append_adds_to_existing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    vault = _setup_vault(tmp_path, monkeypatch)
+    (vault / "Running Log.md").write_text("# Running Log\n\nFirst entry.")
+    result = obs.note_append("Running Log", "\nSecond entry.")
+    assert result == "Appended to: Running Log.md"
+    content = (vault / "Running Log.md").read_text()
+    assert "First entry." in content
+    assert "Second entry." in content
+
+
+def test_note_append_creates_if_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    vault = _setup_vault(tmp_path, monkeypatch)
+    result = obs.note_append("Brand New", "first content")
+    assert "Brand New.md" in result
+    assert (vault / "Brand New.md").exists()
+    assert "first content" in (vault / "Brand New.md").read_text()
+
+
+def test_note_append_preserves_original_content(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    vault = _setup_vault(tmp_path, monkeypatch)
+    obs.note_write("My Note", "original body")
+    obs.note_append("My Note", "\nextra line")
+    content = (vault / "My Note.md").read_text()
+    assert "original body" in content
+    assert "extra line" in content

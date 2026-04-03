@@ -112,5 +112,39 @@ def note_write(title: str, body: str, category: Optional[str] = None) -> str:
     return f"Written: {title}.md"
 
 
+@mcp.tool()
+def note_append(title: str, body: str) -> str:
+    """Append text to an existing Obsidian vault note.
+
+    title: Note title (without .md extension).
+    body:  Markdown text to append. Use [[Wikilinks]] for internal references.
+           Dates in YYYY-MM-DD. British English. Standard Markdown only.
+           Good for: adding entries to a daily note, appending to a running log.
+
+    If the note does not exist, creates it with default Journal Template frontmatter.
+    Returns a confirmation string.
+    """
+    path = _note_path(title)
+    # Path traversal guard
+    vault = _get_vault_path()
+    try:
+        Path(os.path.realpath(path)).relative_to(vault)
+    except ValueError:
+        return f"Rejected: path traversal detected in title {title!r}"
+    if not path.exists():
+        content = _build_note(title, body, category=None)
+        try:
+            _atomic_write(path, content)
+        except Exception as e:
+            return f"Error writing note: {e}"
+        return f"Created and written: {title}.md"
+    try:
+        with path.open("a", encoding="utf-8") as f:
+            f.write(body)
+    except Exception as e:
+        return f"Error appending to note: {e}"
+    return f"Appended to: {title}.md"
+
+
 if __name__ == "__main__":
     mcp.run()
