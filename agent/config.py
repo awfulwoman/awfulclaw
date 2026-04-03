@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     poll_interval: int = 5
     idle_interval: int = 60
     checkin_interval: int = 86400
+    obsidian_vault: Path = Path("obsidian")
 
     telegram: TelegramSettings
 
