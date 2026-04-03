@@ -1,0 +1,58 @@
+{
+  "mcpServers": {
+    "memory": {
+      "command": "/opt/homebrew/bin/uv",
+      "args": ["run", "python", "-m", "agent.mcp.memory"],
+      "env": {
+        "DB_PATH": "state/store.db"
+      }
+    },
+    "schedule": {
+      "command": "/opt/homebrew/bin/uv",
+      "args": ["run", "python", "-m", "agent.mcp.schedule"],
+      "env": {
+        "DB_PATH": "state/store.db"
+      }
+    },
+    "skills": {
+      "command": "/opt/homebrew/bin/uv",
+      "args": ["run", "python", "-m", "agent.mcp.skills"]
+    },
+    "eventkit": {
+      "command": "/opt/homebrew/bin/uv",
+      "args": ["run", "python", "-m", "agent.mcp.eventkit"]
+    },
+    "contacts": {
+      "command": "/opt/homebrew/bin/uv",
+      "args": ["run", "python", "-m", "agent.mcp.contacts"]
+    },
+    "weather": {
+      "command": "/opt/homebrew/bin/uv",
+      "args": ["run", "python", "-m", "agent.mcp.weather"],
+      "env": {
+        "DB_PATH": "state/store.db"
+      }
+    },
+    "file_read": {
+      "command": "/opt/homebrew/bin/uv",
+      "args": ["run", "python", "-m", "agent.mcp.file_read"]
+    },
+    "imap": {
+      "command": "/opt/homebrew/bin/uv",
+      "args": ["run", "python", "-m", "agent.mcp.imap"],
+      "env": {
+        "IMAP_HOST": "imap.mailbox.org",
+        "IMAP_PORT": "993",
+        "IMAP_USERNAME": "charlie@whalecoiner.com",
+        "IMAP_PASSWORD": "Unspoiled-Masses-Dude-Coil-Upstate6"
+      }
+    },
+    "obsidian": {
+      "command": "/opt/homebrew/bin/uv",
+      "args": ["run", "python", "-m", "agent.mcp.obsidian"],
+      "env": {
+        "VAULT_PATH": "/Users/charlie/Code/obsidian"
+      }
+    }
+  }
+}
