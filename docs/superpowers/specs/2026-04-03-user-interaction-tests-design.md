@@ -49,7 +49,30 @@ class LiveAgent:
 
 Timeout is 180s to accommodate claude CLI tool calls (typically 60-90s).
 
+## Status Token Convention
+
+Action messages (write, create, delete) append the instruction:
+
+> "If you succeeded, end your reply with STATUS: OK. If anything went wrong, end with STATUS: ERROR."
+
+This makes success/failure assertions deterministic regardless of LLM phrasing variation. Retrieval messages do not use this convention — they assert on expected values in the reply instead.
+
+```python
+ACTION_SUFFIX = (
+    " If you succeeded, end your reply with STATUS: OK."
+    " If anything went wrong, end with STATUS: ERROR."
+)
+
+def assert_ok(reply: str) -> None:
+    assert "STATUS: OK" in reply, f"Expected STATUS: OK in reply: {reply!r}"
+
+def assert_not_error_status(reply: str) -> None:
+    assert "STATUS: ERROR" not in reply, f"Agent reported STATUS: ERROR: {reply!r}"
+```
+
 ## Error Phrase Detection
+
+Used as a secondary check on all replies (action and retrieval) to catch cases where the agent fails without using the status token:
 
 ```python
 ERROR_PHRASES = [
@@ -81,20 +104,20 @@ def assert_no_errors(reply: str) -> None:
 
 Tests run in file order. Write tests precede their corresponding read tests.
 
-| Test | Message(s) | Assertions |
+| Test | Message | Assertions |
 |---|---|---|
-| `test_basic_ping` | "respond with only the word pong" | reply contains "pong" |
+| `test_basic_ping` | "respond with only the word pong" | contains "pong" |
 | `test_web_fact` | "in one sentence, who was the first person to walk on the moon?" | no errors, non-empty |
-| `test_user_fact_write` | "remember that my favourite colour is indigo" | no errors |
+| `test_user_fact_write` | "remember that my favourite colour is indigo" + ACTION_SUFFIX | STATUS: OK, no errors |
 | `test_user_fact_read` | "what is my favourite colour?" | no errors, contains "indigo" |
-| `test_general_fact_write` | "remember that the capital of awfulworld is Awfulton" | no errors |
+| `test_general_fact_write` | "remember that the capital of awfulworld is Awfulton" + ACTION_SUFFIX | STATUS: OK, no errors |
 | `test_general_fact_read` | "what is the capital of awfulworld?" | no errors, contains "awfulton" |
-| `test_schedule_create` | "create a schedule called test-heartbeat that runs every minute and checks that 1+1=2" | no errors |
+| `test_schedule_create` | "create a schedule called test-heartbeat that runs every minute and checks that 1+1=2" + ACTION_SUFFIX | STATUS: OK, no errors |
 | `test_schedule_list` | "/schedules" | contains "test-heartbeat" |
-| `test_schedule_fires` | (poll after create, timeout 90s) | agent ran the schedule (last_run visible) |
-| `test_schedule_delete` | "delete the schedule called test-heartbeat" | no errors |
-| `test_reminder_create` *(eventkit)* | "create a reminder called awfulclaw-test-reminder" | no errors |
-| `test_calendar_event` *(eventkit)* | "create a calendar event called awfulclaw-test-event tomorrow at noon" | no errors |
+| `test_schedule_fires` | (poll every 10s, timeout 90s) | last_run visible via MCP |
+| `test_schedule_delete` | "delete the schedule called test-heartbeat" + ACTION_SUFFIX | STATUS: OK, no errors |
+| `test_reminder_create` *(eventkit)* | "create a reminder called awfulclaw-test-reminder" + ACTION_SUFFIX | STATUS: OK, no errors |
+| `test_calendar_event` *(eventkit)* | "create a calendar event called awfulclaw-test-event tomorrow at noon" + ACTION_SUFFIX | STATUS: OK, no errors |
 | `test_contact_lookup` *(contacts)* | "look up my contacts and tell me how many you can see" | no errors, contains a digit |
 | `test_email_read` *(imap)* | "check my recent emails and tell me how many unread messages you can see" | no errors, contains a digit |
 
