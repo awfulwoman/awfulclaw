@@ -63,3 +63,16 @@ def test_telegram_settings_parsed(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert settings.telegram.bot_token == "test-token"
     assert settings.telegram.allowed_chat_ids == [123456]
+
+
+def test_new_backend_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    for k, v in make_telegram_env().items():
+        monkeypatch.setenv(k, v)
+
+    s = Settings()  # type: ignore[call-arg]
+    assert s.primary_backend == "claude"
+    assert s.fallback_backend == "ollama"
+    assert s.ollama_url == "http://localhost:11434"
+    assert s.ollama_model == "llama3.2"
+    assert s.fallback_failure_threshold == 3
+    assert s.fallback_probe_interval == 600

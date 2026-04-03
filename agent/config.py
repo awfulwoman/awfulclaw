@@ -47,6 +47,12 @@ class Settings(BaseSettings):
     idle_interval: int = 60
     checkin_interval: int = 86400
     obsidian_vault: Path = Path("obsidian")
+    primary_backend: str = "claude"
+    fallback_backend: str = "ollama"
+    ollama_url: str = "http://localhost:11434"
+    ollama_model: str = "llama3.2"
+    fallback_failure_threshold: int = 3
+    fallback_probe_interval: int = 600
 
     telegram: TelegramSettings | None = None
 
