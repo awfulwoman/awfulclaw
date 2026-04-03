@@ -371,3 +371,299 @@ async def test_calendar_delete_event_remove_error(monkeypatch: pytest.MonkeyPatc
 
     result = await ek.calendar_delete_event(id="e1")
     assert result.startswith("Error")
+
+
+# ---------------------------------------------------------------------------
+# Reminder mock helpers
+# ---------------------------------------------------------------------------
+
+
+def _make_reminder(
+    id: str = "rem-1",
+    title: str = "Buy milk",
+    completed: bool = False,
+    due_components: Any = None,
+    notes: str | None = None,
+    priority: int = 0,
+    cal: MagicMock | None = None,
+) -> MagicMock:
+    r = MagicMock()
+    r.calendarItemIdentifier.return_value = id
+    r.title.return_value = title
+    r.isCompleted.return_value = completed
+    r.dueDateComponents.return_value = due_components
+    r.notes.return_value = notes
+    r.priority.return_value = priority
+    r.calendar.return_value = cal or _make_calendar(id="list-1", title="Reminders")
+    return r
+
+
+def _make_reminder_store(
+    lists: list[Any] | None = None,
+    reminders: list[Any] | None = None,
+    save_ok: bool = True,
+    remove_ok: bool = True,
+) -> MagicMock:
+    store = MagicMock()
+    store.calendarsForEntityType_.return_value = lists or []
+    store.remindersMatchingPredicate_.return_value = reminders or []
+    store.predicateForIncompleteRemindersWithDueDateStarting_ending_calendars_.return_value = MagicMock()
+    store.predicateForCompletedRemindersWithCompletionDateStarting_ending_calendars_.return_value = MagicMock()
+    store.saveReminder_commit_error_.return_value = (save_ok, None if save_ok else "save error")
+    store.removeReminder_commit_error_.return_value = (remove_ok, None if remove_ok else "remove error")
+    store.defaultCalendarForNewReminders.return_value = _make_calendar()
+    return store
+
+
+def _patch_datecomponents(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stub _str_to_datecomponents to return the string as-is."""
+    monkeypatch.setattr(ek, "_str_to_datecomponents", lambda s: s)
+
+
+# ---------------------------------------------------------------------------
+# reminders_lists
+# ---------------------------------------------------------------------------
+
+
+async def test_reminders_lists_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = _make_reminder_store(lists=[])
+    _patch_store(monkeypatch, store)
+    import agent.mcp.eventkit as eventkit_mod
+    mock_ek = MagicMock()
+    mock_ek.EKEntityTypeReminder = 1
+    monkeypatch.setattr(eventkit_mod, "_EK", mock_ek)
+
+    result = await ek.reminders_lists()
+    assert result == []
+
+
+async def test_reminders_lists_returns_lists(monkeypatch: pytest.MonkeyPatch) -> None:
+    list1 = _make_calendar(id="l1", title="Reminders")
+    list2 = _make_calendar(id="l2", title="Work")
+    store = _make_reminder_store(lists=[list1, list2])
+    _patch_store(monkeypatch, store)
+    import agent.mcp.eventkit as eventkit_mod
+    mock_ek = MagicMock()
+    mock_ek.EKEntityTypeReminder = 1
+    monkeypatch.setattr(eventkit_mod, "_EK", mock_ek)
+
+    result = await ek.reminders_lists()
+    assert len(result) == 2
+    assert result[0]["id"] == "l1"
+    assert result[1]["title"] == "Work"
+
+
+# ---------------------------------------------------------------------------
+# reminders_incomplete
+# ---------------------------------------------------------------------------
+
+
+async def test_reminders_incomplete_returns_reminders(monkeypatch: pytest.MonkeyPatch) -> None:
+    r1 = _make_reminder(id="r1", title="Buy milk")
+    r2 = _make_reminder(id="r2", title="Call dentist")
+    store = _make_reminder_store(reminders=[r1, r2])
+    _patch_store(monkeypatch, store)
+    _patch_date(monkeypatch)
+    import agent.mcp.eventkit as eventkit_mod
+    mock_ek = MagicMock()
+    mock_ek.EKEntityTypeReminder = 1
+    monkeypatch.setattr(eventkit_mod, "_EK", mock_ek)
+
+    result = await ek.reminders_incomplete()
+    assert len(result) == 2
+    assert result[0]["id"] == "r1"
+    assert result[0]["title"] == "Buy milk"
+    assert result[0]["completed"] is False
+
+
+async def test_reminders_incomplete_filter_by_list(monkeypatch: pytest.MonkeyPatch) -> None:
+    lst = _make_calendar(id="l1", title="Work")
+    r1 = _make_reminder(id="r1", title="Send report", cal=lst)
+    store = _make_reminder_store(lists=[lst], reminders=[r1])
+    _patch_store(monkeypatch, store)
+    _patch_date(monkeypatch)
+    import agent.mcp.eventkit as eventkit_mod
+    mock_ek = MagicMock()
+    mock_ek.EKEntityTypeReminder = 1
+    monkeypatch.setattr(eventkit_mod, "_EK", mock_ek)
+
+    result = await ek.reminders_incomplete(list="Work")
+    assert len(result) == 1
+    assert result[0]["id"] == "r1"
+
+
+async def test_reminders_incomplete_unknown_list_returns_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+    lst = _make_calendar(id="l1", title="Work")
+    store = _make_reminder_store(lists=[lst])
+    _patch_store(monkeypatch, store)
+    _patch_date(monkeypatch)
+    import agent.mcp.eventkit as eventkit_mod
+    mock_ek = MagicMock()
+    mock_ek.EKEntityTypeReminder = 1
+    monkeypatch.setattr(eventkit_mod, "_EK", mock_ek)
+
+    result = await ek.reminders_incomplete(list="nonexistent")
+    assert result == []
+
+
+# ---------------------------------------------------------------------------
+# reminders_completed
+# ---------------------------------------------------------------------------
+
+
+async def test_reminders_completed_returns_reminders(monkeypatch: pytest.MonkeyPatch) -> None:
+    r1 = _make_reminder(id="r1", title="Done task", completed=True)
+    store = _make_reminder_store(reminders=[r1])
+    _patch_store(monkeypatch, store)
+    _patch_date(monkeypatch)
+    import agent.mcp.eventkit as eventkit_mod
+    mock_ek = MagicMock()
+    mock_ek.EKEntityTypeReminder = 1
+    monkeypatch.setattr(eventkit_mod, "_EK", mock_ek)
+
+    result = await ek.reminders_completed()
+    assert len(result) == 1
+    assert result[0]["completed"] is True
+
+
+# ---------------------------------------------------------------------------
+# reminder_create
+# ---------------------------------------------------------------------------
+
+
+async def test_reminder_create_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    new_r = _make_reminder(id="new-rem-1", title="Groceries")
+    store = _make_reminder_store(save_ok=True)
+    import agent.mcp.eventkit as eventkit_mod
+    mock_ek = MagicMock()
+    mock_ek.EKEntityTypeReminder = 1
+    mock_ek.EKReminder.reminderWithEventStore_.return_value = new_r
+    monkeypatch.setattr(eventkit_mod, "_EK", mock_ek)
+    _patch_store(monkeypatch, store)
+    _patch_datecomponents(monkeypatch)
+
+    result = await ek.reminder_create(title="Groceries")
+    assert result == "new-rem-1"
+    new_r.setTitle_.assert_called_once_with("Groceries")
+
+
+async def test_reminder_create_with_due_and_notes(monkeypatch: pytest.MonkeyPatch) -> None:
+    new_r = _make_reminder(id="rem-due", title="Report")
+    store = _make_reminder_store(save_ok=True)
+    import agent.mcp.eventkit as eventkit_mod
+    mock_ek = MagicMock()
+    mock_ek.EKEntityTypeReminder = 1
+    mock_ek.EKReminder.reminderWithEventStore_.return_value = new_r
+    monkeypatch.setattr(eventkit_mod, "_EK", mock_ek)
+    _patch_store(monkeypatch, store)
+    _patch_datecomponents(monkeypatch)
+
+    await ek.reminder_create(title="Report", due="2026-04-05T09:00:00", notes="Quarterly")
+    new_r.setDueDateComponents_.assert_called_once_with("2026-04-05T09:00:00")
+    new_r.setNotes_.assert_called_once_with("Quarterly")
+
+
+async def test_reminder_create_save_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    new_r = _make_reminder(id="rem-err", title="Bad")
+    store = _make_reminder_store(save_ok=False)
+    import agent.mcp.eventkit as eventkit_mod
+    mock_ek = MagicMock()
+    mock_ek.EKEntityTypeReminder = 1
+    mock_ek.EKReminder.reminderWithEventStore_.return_value = new_r
+    monkeypatch.setattr(eventkit_mod, "_EK", mock_ek)
+    _patch_store(monkeypatch, store)
+    _patch_datecomponents(monkeypatch)
+
+    result = await ek.reminder_create(title="Bad")
+    assert result.startswith("Error")
+
+
+# ---------------------------------------------------------------------------
+# reminder_complete
+# ---------------------------------------------------------------------------
+
+
+async def test_reminder_complete_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    r = _make_reminder(id="r1", completed=False)
+    store = _make_reminder_store(save_ok=True)
+    store.calendarItemWithIdentifier_.return_value = r
+    _patch_store(monkeypatch, store)
+
+    result = await ek.reminder_complete(id="r1")
+    assert "r1" in result
+    assert "complete" in result
+    r.setCompleted_.assert_called_once_with(True)
+
+
+async def test_reminder_complete_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = _make_reminder_store()
+    store.calendarItemWithIdentifier_.return_value = None
+    _patch_store(monkeypatch, store)
+
+    result = await ek.reminder_complete(id="ghost")
+    assert "Error" in result
+    assert "ghost" in result
+
+
+# ---------------------------------------------------------------------------
+# reminder_update
+# ---------------------------------------------------------------------------
+
+
+async def test_reminder_update_title(monkeypatch: pytest.MonkeyPatch) -> None:
+    r = _make_reminder(id="r1", title="Old")
+    store = _make_reminder_store(save_ok=True)
+    store.calendarItemWithIdentifier_.return_value = r
+    _patch_store(monkeypatch, store)
+    _patch_datecomponents(monkeypatch)
+
+    result = await ek.reminder_update(id="r1", title="New")
+    assert "r1" in result
+    r.setTitle_.assert_called_once_with("New")
+
+
+async def test_reminder_update_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = _make_reminder_store()
+    store.calendarItemWithIdentifier_.return_value = None
+    _patch_store(monkeypatch, store)
+    _patch_datecomponents(monkeypatch)
+
+    result = await ek.reminder_update(id="ghost", title="Nope")
+    assert "Error" in result
+    assert "ghost" in result
+
+
+# ---------------------------------------------------------------------------
+# reminder_delete
+# ---------------------------------------------------------------------------
+
+
+async def test_reminder_delete_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    r = _make_reminder(id="r1")
+    store = _make_reminder_store(remove_ok=True)
+    store.calendarItemWithIdentifier_.return_value = r
+    _patch_store(monkeypatch, store)
+
+    result = await ek.reminder_delete(id="r1")
+    assert "r1" in result
+    assert "deleted" in result
+
+
+async def test_reminder_delete_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = _make_reminder_store()
+    store.calendarItemWithIdentifier_.return_value = None
+    _patch_store(monkeypatch, store)
+
+    result = await ek.reminder_delete(id="missing")
+    assert "Error" in result
+    assert "missing" in result
+
+
+async def test_reminder_delete_remove_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    r = _make_reminder(id="r1")
+    store = _make_reminder_store(remove_ok=False)
+    store.calendarItemWithIdentifier_.return_value = r
+    _patch_store(monkeypatch, store)
+
+    result = await ek.reminder_delete(id="r1")
+    assert result.startswith("Error")
