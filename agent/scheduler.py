@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import dataclasses
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
@@ -43,8 +42,7 @@ class Scheduler:
                 now = datetime.now(tz=timezone.utc)
                 if now >= fire_time:
                     await bus.post(ScheduleEvent(schedule=next_due))
-                    updated = dataclasses.replace(next_due, last_run=now.isoformat())
-                    await store.upsert_schedule(updated)
+                    await store.update_schedule_last_run(next_due.id, now.isoformat())
 
 
 def _earliest_due(schedules: list["Schedule"]) -> tuple["Schedule | None", datetime | None]:

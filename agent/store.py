@@ -322,6 +322,13 @@ class Store:
         if verdict == Verdict.escalated:
             await self._flag_escalation("schedule_prompt", schedule.prompt)
 
+    async def update_schedule_last_run(self, id: str, last_run: str) -> None:
+        """Update last_run only — does nothing if the schedule was deleted."""
+        await self._db.execute(
+            "UPDATE schedules SET last_run = ? WHERE id = ?", (last_run, id)
+        )
+        await self._db.commit()
+
     async def delete_schedule(self, id: str) -> None:
         await self._db.execute("DELETE FROM schedules WHERE id = ?", (id,))
         await self._db.commit()
