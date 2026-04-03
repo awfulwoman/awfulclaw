@@ -9,7 +9,11 @@ You have been given a list of available GitHub issues under "Available Issues" a
 1. Review all available todo issues and the list of completed issues
 2. Read `scripts/progress.txt` if it exists (check Codebase Patterns section first)
 3. **Choose the best issue to work on next** — consider dependencies between issues (e.g., if issue B builds on issue A, do A first), logical ordering, and what's already been completed
-4. Announce your choice by printing this exact line (replace with actual values): `RALPH_WORKING_ON: #<number> <title>`
+4. **CRITICAL — your very first output must be this exact line (no other text before it):**
+   ```
+   RALPH_WORKING_ON: #<number> <title>
+   ```
+   Replace `<number>` and `<title>` with the actual issue number and title. This line is machine-parsed by the loop harness and must appear before anything else.
 5. Claim the issue by labeling it `ralph:in-progress` (see below)
 6. Ensure you're on the correct branch (specified in the issue context)
 7. Implement the story described in the issue
