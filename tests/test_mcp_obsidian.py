@@ -59,3 +59,31 @@ def test_note_write_overwrites_existing(
     obs.note_write("Existing", "new content")
     assert "new content" in (vault / "Existing.md").read_text()
     assert "old content" not in (vault / "Existing.md").read_text()
+
+
+def test_note_write_rejects_path_traversal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Path traversal attempts should be rejected."""
+    vault = _setup_vault(tmp_path, monkeypatch)
+    result = obs.note_write("../../etc/passwd", "malicious")
+    assert isinstance(result, str)
+    assert "Rejected" in result
+    # File should NOT be created outside vault
+    assert not (tmp_path.parent / "etc" / "passwd.md").exists()
+
+
+def test_note_write_returns_error_string_on_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Write failures should return error string, not raise exception."""
+    vault = _setup_vault(tmp_path, monkeypatch)
+    # Make vault read-only to trigger write failure
+    vault.chmod(0o555)
+    try:
+        result = obs.note_write("Test Note", "body")
+        assert isinstance(result, str)
+        assert "Error" in result
+    finally:
+        # Restore permissions for cleanup
+        vault.chmod(0o755)

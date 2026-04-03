@@ -89,11 +89,26 @@ def note_write(title: str, body: str, category: Optional[str] = None) -> str:
               Written as [[category]] wikilink. This is the primary organisational
               mechanism — do not use subfolders.
 
-    Returns a confirmation string.
+    Returns a confirmation string, or error message if validation fails or write fails.
     """
+    vault_root = _get_vault_path()
     path = _note_path(title)
+
+    # Validate path doesn't escape vault root via path traversal
+    try:
+        resolved = Path(os.path.realpath(path))
+        resolved.relative_to(vault_root)
+    except ValueError:
+        return f"Rejected: path traversal detected in title {title!r}"
+
     content = _build_note(title, body, category)
-    _atomic_write(path, content)
+
+    # Wrap atomic write in try/except to return error string on failure
+    try:
+        _atomic_write(path, content)
+    except Exception as e:
+        return f"Error writing note: {e}"
+
     return f"Written: {title}.md"
 
 
