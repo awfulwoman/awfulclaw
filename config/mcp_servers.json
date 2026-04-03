@@ -47,6 +47,14 @@
         "IMAP_PASSWORD": "Unspoiled-Masses-Dude-Coil-Upstate6"
       }
     },
+    "owntracks": {
+      "command": "/opt/homebrew/bin/uv",
+      "args": ["run", "python", "-m", "agent.mcp.owntracks"],
+      "env": {
+        "DB_PATH": "state/store.db",
+        "OWNTRACKS_URL": "https://owntracks-recorder.ewwww.eu"
+      }
+    },
     "obsidian": {
       "command": "/opt/homebrew/bin/uv",
       "args": ["run", "python", "-m", "agent.mcp.obsidian"],
