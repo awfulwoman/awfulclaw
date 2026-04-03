@@ -75,6 +75,7 @@ echo "Repo owners: $(echo "$OWNERS_JSON" | jq -r 'join(", ")')"
 
 find_oldest_milestone() {
   gh api repos/{owner}/{repo}/milestones \
+    --paginate \
     --jq 'sort_by(.created_at) | .[].title' 2>/dev/null \
   | while IFS= read -r ms; do
       [[ -z "$ms" ]] && continue
@@ -129,6 +130,7 @@ gh label create "ralph:failed"      --color "D93F0B" --description "Story failed
 # ── Verify milestone exists ──────────────────────────────────────
 
 MILESTONE_COUNT=$(gh api repos/{owner}/{repo}/milestones \
+  --paginate \
   --jq "[.[] | select(.title == \"$MILESTONE\")] | length" 2>/dev/null || echo "0")
 
 if [[ "$MILESTONE_COUNT" -eq 0 ]]; then
