@@ -116,3 +116,24 @@ def test_note_append_preserves_original_content(
     content = (vault / "My Note.md").read_text()
     assert "original body" in content
     assert "extra line" in content
+
+
+def test_note_read_existing_note(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    vault = _setup_vault(tmp_path, monkeypatch)
+    (vault / "Hello.md").write_text("# Hello\n\ncontent here")
+    result = obs.note_read("Hello")
+    assert result == "# Hello\n\ncontent here"
+
+
+def test_note_read_missing_note(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _setup_vault(tmp_path, monkeypatch)
+    result = obs.note_read("Does Not Exist")
+    assert "Not found" in result
+
+
+def test_note_read_roundtrip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Write then read should return the same content."""
+    _setup_vault(tmp_path, monkeypatch)
+    obs.note_write("Roundtrip", "some body text")
+    content = obs.note_read("Roundtrip")
+    assert "some body text" in content

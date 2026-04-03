@@ -146,5 +146,28 @@ def note_append(title: str, body: str) -> str:
     return f"Appended to: {title}.md"
 
 
+@mcp.tool()
+def note_read(title: str) -> str:
+    """Read an Obsidian vault note by title.
+
+    title: Note title (without .md extension). If unsure of the exact title,
+           use note_search first to find it.
+
+    Returns the full file contents including frontmatter, or an error message if not found.
+    """
+    path = _note_path(title)
+    vault = _get_vault_path()
+    try:
+        Path(os.path.realpath(path)).relative_to(vault)
+    except ValueError:
+        return f"Rejected: path traversal detected in title {title!r}"
+    if not path.exists():
+        return f"Not found: {title!r}"
+    try:
+        return path.read_text(encoding="utf-8")
+    except Exception as e:
+        return f"Error reading note: {e}"
+
+
 if __name__ == "__main__":
     mcp.run()
