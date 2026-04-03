@@ -35,11 +35,17 @@ _ERROR_PHRASES = [
     "need permission",
     "cannot access",
     "don't have access",
+    "don't have access",
     "unable to access",
     "access denied",
     "not authorized",
+    "unauthorized",
+    "can't access",
     "can't access",
     "no permission",
+    "permission denied",
+    "i'm not able to",
+    "i don't have the ability",
 ]
 
 # ---------------------------------------------------------------------------
@@ -132,6 +138,7 @@ async def test_web_fact() -> None:
         )
         assert reply.strip(), "Reply was empty"
         assert_no_errors(reply)
+        assert "armstrong" in reply.lower(), f"Expected 'armstrong' in reply: {reply!r}"
     finally:
         await agent.aclose()
 
@@ -155,6 +162,7 @@ async def test_user_fact_write() -> None:
         await agent.aclose()
 
 
+# NOTE: depends on test_user_fact_write having run first in this session
 @pytest.mark.asyncio
 async def test_user_fact_read() -> None:
     """Agent recalls the fact written by test_user_fact_write."""
@@ -186,6 +194,7 @@ async def test_general_fact_write() -> None:
         await agent.aclose()
 
 
+# NOTE: depends on test_general_fact_write having run first in this session
 @pytest.mark.asyncio
 async def test_general_fact_read() -> None:
     """Agent recalls the general fact written by test_general_fact_write."""
@@ -234,20 +243,21 @@ async def test_schedule_list() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(240)
 async def test_schedule_fires() -> None:
     """The scheduler executes test-heartbeat within 90 seconds of creation."""
     agent = LiveAgent()
     try:
-        deadline = asyncio.get_event_loop().time() + 90
+        deadline = asyncio.get_running_loop().time() + 90
         _not_run_phrases = ("never", "null", "hasn't run", "not run", "no record", "not yet")
 
-        while asyncio.get_event_loop().time() < deadline:
+        while asyncio.get_running_loop().time() < deadline:
             reply = await agent.chat(
                 f"what is the last run time of the schedule called {_SCHEDULE_NAME}?"
             )
             lower = reply.lower()
             if not any(p in lower for p in _not_run_phrases):
+                assert_contains_digit(reply)  # verify an actual timestamp is present
                 return  # last_run timestamp appeared — schedule fired
             await asyncio.sleep(10)
 
@@ -278,8 +288,8 @@ async def test_schedule_delete() -> None:
 # ===========================================================================
 
 
-@require_eventkit
 @pytest.mark.asyncio
+@require_eventkit
 async def test_reminder_create() -> None:
     """Agent creates an Apple Reminder."""
     agent = LiveAgent()
@@ -293,8 +303,8 @@ async def test_reminder_create() -> None:
         await agent.aclose()
 
 
-@require_eventkit
 @pytest.mark.asyncio
+@require_eventkit
 async def test_calendar_event_create() -> None:
     """Agent creates an Apple Calendar event."""
     agent = LiveAgent()
@@ -315,16 +325,17 @@ async def test_calendar_event_create() -> None:
 # ===========================================================================
 
 
-@require_contacts
 @pytest.mark.asyncio
+@require_contacts
 async def test_contact_lookup() -> None:
     """Agent can query Apple Contacts and return a count."""
     agent = LiveAgent()
     try:
         reply = await agent.chat(
-            "look up my contacts and tell me how many you can see"
+            "look up my contacts and tell me how many you can see" + ACTION_SUFFIX
         )
         assert_no_errors(reply)
+        assert_ok(reply)
         assert_contains_digit(reply)
     finally:
         await agent.aclose()
@@ -336,16 +347,18 @@ async def test_contact_lookup() -> None:
 # ===========================================================================
 
 
-@require_imap
 @pytest.mark.asyncio
+@require_imap
 async def test_email_read() -> None:
     """Agent can check recent emails and return an unread count."""
     agent = LiveAgent()
     try:
         reply = await agent.chat(
             "check my recent emails and tell me how many unread messages you can see"
+            + ACTION_SUFFIX
         )
         assert_no_errors(reply)
+        assert_ok(reply)
         assert_contains_digit(reply)
     finally:
         await agent.aclose()
