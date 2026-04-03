@@ -37,8 +37,12 @@ class Bus:
             event = await self._queue.get()
             handlers = self._subscribers.get(type(event), [])
             for handler in handlers:
-                try:
-                    await handler(event)
-                except Exception as exc:
-                    print(f"[bus] handler error: {exc}", flush=True)
+                asyncio.create_task(self._run_handler(handler, event))
             self._queue.task_done()
+
+    @staticmethod
+    async def _run_handler(handler: Handler, event: Any) -> None:
+        try:
+            await handler(event)
+        except Exception as exc:
+            print(f"[bus] handler error: {exc}", flush=True)
