@@ -23,11 +23,15 @@ scripts/start_agent.sh
 
 ## Architecture
 
-```
-User (Telegram/REST)
-    → Connector → Bus → Pipeline → Agent → Claude CLI
-                                        ↓
-                                   MCP Servers → Store (SQLite)
+```mermaid
+flowchart LR
+    User -->|message| Connector
+    Connector --> Bus
+    Bus --> Pipeline
+    Pipeline --> Agent
+    Agent -->|invoke| Claude["Claude CLI"]
+    Agent -->|tools| MCP["MCP Servers"]
+    MCP --> Store["Store (SQLite)"]
 ```
 
 **Packages:**
