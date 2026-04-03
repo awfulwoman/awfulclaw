@@ -3,9 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import aiosqlite
+
+if TYPE_CHECKING:
+    from agent.handlers import Handler, Verdict
 
 
 _SCHEMA = """
@@ -100,17 +103,22 @@ class Person:
     updated_at: str
 
 
+class GovernanceRejected(Exception):
+    """Raised when governance rejects a proposed write."""
+
+
 class Store:
-    def __init__(self, db: aiosqlite.Connection) -> None:
+    def __init__(self, db: aiosqlite.Connection, governance: "Optional[Handler]" = None) -> None:
         self._db = db
+        self._governance = governance
 
     @classmethod
-    async def connect(cls, db_path: Path) -> "Store":
+    async def connect(cls, db_path: Path, governance: "Optional[Handler]" = None) -> "Store":
         db_path.parent.mkdir(parents=True, exist_ok=True)
         db = await aiosqlite.connect(db_path)
         await db.executescript(_SCHEMA)
         await db.commit()
-        return cls(db)
+        return cls(db, governance=governance)
 
     async def check_schema(self) -> None:
         cursor = await self._db.execute(
@@ -124,6 +132,23 @@ class Store:
 
     async def close(self) -> None:
         await self._db.close()
+
+    async def _govern(self, write_type: str, value: str) -> "Verdict":
+        """Run governance check. Returns verdict. Raises GovernanceRejected if rejected."""
+        from agent.handlers import Verdict
+
+        if self._governance is None:
+            return Verdict.approved
+        verdict = await self._governance.check(write_type, value)
+        if verdict == Verdict.rejected:
+            raise GovernanceRejected(f"Governance rejected {write_type} write")
+        return verdict
+
+    async def _flag_escalation(self, write_type: str, value: str) -> None:
+        """Store a kv notification for escalated writes."""
+        import json
+        notification = json.dumps({"write_type": write_type, "value": value})
+        await self.kv_set("governance_escalation", notification)
 
     # --- kv ---
 
@@ -153,6 +178,9 @@ class Store:
         return Fact(key=row[0], value=row[1], updated_at=row[2]) if row else None
 
     async def set_fact(self, key: str, value: str) -> None:
+        from agent.handlers import Verdict
+
+        verdict = await self._govern("fact", value)
         now = datetime.now(timezone.utc).isoformat()
         await self._db.execute(
             "INSERT INTO facts (key, value, updated_at) VALUES (?, ?, ?) "
@@ -160,6 +188,8 @@ class Store:
             (key, value, now),
         )
         await self._db.commit()
+        if verdict == Verdict.escalated:
+            await self._flag_escalation("fact", value)
 
     async def list_facts(self) -> list[Fact]:
         cursor = await self._db.execute("SELECT key, value, updated_at FROM facts ORDER BY key")
@@ -176,6 +206,9 @@ class Store:
         return Person(id=row[0], name=row[1], phone=row[2], content=row[3], updated_at=row[4]) if row else None
 
     async def set_person(self, id: str, name: str, content: str, phone: Optional[str] = None) -> None:
+        from agent.handlers import Verdict
+
+        verdict = await self._govern("person", content)
         now = datetime.now(timezone.utc).isoformat()
         await self._db.execute(
             "INSERT INTO people (id, name, phone, content, updated_at) VALUES (?, ?, ?, ?, ?) "
@@ -184,6 +217,8 @@ class Store:
             (id, name, phone, content, now),
         )
         await self._db.commit()
+        if verdict == Verdict.escalated:
+            await self._flag_escalation("person", content)
 
     async def list_people(self) -> list[Person]:
         cursor = await self._db.execute(
@@ -226,6 +261,9 @@ class Store:
         ]
 
     async def upsert_schedule(self, schedule: Schedule) -> None:
+        from agent.handlers import Verdict
+
+        verdict = await self._govern("schedule_prompt", schedule.prompt)
         await self._db.execute(
             "INSERT INTO schedules (id, name, cron, fire_at, prompt, silent, tz, created_at, last_run) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
@@ -236,7 +274,38 @@ class Store:
              int(schedule.silent), schedule.tz, schedule.created_at, schedule.last_run),
         )
         await self._db.commit()
+        if verdict == Verdict.escalated:
+            await self._flag_escalation("schedule_prompt", schedule.prompt)
 
     async def delete_schedule(self, id: str) -> None:
         await self._db.execute("DELETE FROM schedules WHERE id = ?", (id,))
         await self._db.commit()
+
+    # --- personality_log ---
+
+    async def add_personality_log(self, entry: str, expires_at: Optional[str] = None) -> None:
+        from agent.handlers import Verdict
+
+        verdict = await self._govern("personality_log", entry)
+        now = datetime.now(timezone.utc).isoformat()
+        await self._db.execute(
+            "INSERT INTO personality_log (entry, verdict, timestamp, expires_at) VALUES (?, ?, ?, ?)",
+            (entry, verdict.value, now, expires_at),
+        )
+        await self._db.commit()
+        if verdict == Verdict.escalated:
+            await self._flag_escalation("personality_log", entry)
+
+    async def list_personality_log(self) -> list[dict[str, Optional[str]]]:
+        now = datetime.now(timezone.utc).isoformat()
+        cursor = await self._db.execute(
+            "SELECT entry, verdict, timestamp, expires_at FROM personality_log "
+            "WHERE verdict IN ('approved', 'escalated') "
+            "AND (expires_at IS NULL OR expires_at > ?) ORDER BY timestamp",
+            (now,),
+        )
+        rows = await cursor.fetchall()
+        return [
+            {"entry": r[0], "verdict": r[1], "timestamp": r[2], "expires_at": r[3]}
+            for r in rows
+        ]
