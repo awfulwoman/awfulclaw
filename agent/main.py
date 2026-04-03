@@ -10,6 +10,7 @@ from agent.config import Settings
 from agent.connectors import InboundEvent, OutboundEvent
 from agent.connectors.rest import RESTConnector
 from agent.connectors.telegram import TelegramConnector
+from agent.handlers.checkin import CheckinHandler
 from agent.handlers.schedule import ScheduleHandler
 from agent.middleware.invoke import InvokeMiddleware
 from agent.middleware.location import LocationMiddleware
@@ -66,8 +67,14 @@ async def main() -> None:
             InvokeMiddleware(agent, bus, store),
         ])
 
+        checkin_handler = CheckinHandler(agent, bus, store, settings)
         schedule_handler = ScheduleHandler(agent, bus, store)
         scheduler = Scheduler()
+
+        async def checkin_loop() -> None:
+            while True:
+                await checkin_handler.run()
+                await asyncio.sleep(60)
 
         async def on_message(event: InboundEvent) -> None:
             await bus.post(event)
@@ -83,5 +90,6 @@ async def main() -> None:
             tg.create_task(bus.run())
             tg.create_task(connector.start(on_message))
             tg.create_task(scheduler.run(bus, store))
+            tg.create_task(checkin_loop())
     finally:
         await store.close()
