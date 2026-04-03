@@ -9,6 +9,8 @@ dependencies = [
     "mcp>=1.0",
     "starlette>=0.40",
     "uvicorn>=0.30",
+    "sentence-transformers>=5.3.0",
+    "sqlite-vec>=0.1.9",
 ]
 
 [project.optional-dependencies]

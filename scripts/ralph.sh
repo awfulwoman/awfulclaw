@@ -338,8 +338,8 @@ ISSUE_EOF
   OUTPUT=$($TOOL_COMMAND $TOOL_ARGS < "$PROMPT_FILE" 2>&1 | tee /dev/stderr) || true
   rm -f "$PROMPT_FILE"
 
-  # Announce which issue the agent picked up
-  WORKING_ON=$(echo "$OUTPUT" | grep -m1 "^RALPH_WORKING_ON:" | sed 's/^RALPH_WORKING_ON:[[:space:]]*//' || true)
+  # Announce which issue the agent picked (emitted as first line of agent output)
+  WORKING_ON=$(echo "$OUTPUT" | grep -m1 "RALPH_WORKING_ON:" | sed 's/.*RALPH_WORKING_ON:[[:space:]]*//' || true)
   if [[ -n "$WORKING_ON" ]]; then
     echo ""
     echo "---------------------------------------------------------------"
