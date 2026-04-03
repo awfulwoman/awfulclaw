@@ -114,3 +114,39 @@ async def test_unknown_slash_command_passes_through() -> None:
 
     next_fn.assert_called_once()
     connector.send.assert_not_called()
+
+
+from agent.backend_manager import BackendManager
+
+
+@pytest.mark.asyncio
+async def test_use_primary_calls_backend_manager() -> None:
+    connector = MagicMock()
+    connector.send = AsyncMock()
+    store = MagicMock()
+    store.list_schedules = AsyncMock(return_value=[])
+    backend = MagicMock(spec=BackendManager)
+    backend.switch_to_primary = AsyncMock()
+    mw = SlashCommandMiddleware(
+        connectors={"test": connector}, store=store, backend_manager=backend
+    )
+
+    await mw(make_event("/use-primary"), AsyncMock())
+
+    backend.switch_to_primary.assert_called_once()
+    connector.send.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_use_primary_no_backend_manager_does_not_raise() -> None:
+    connector = MagicMock()
+    connector.send = AsyncMock()
+    store = MagicMock()
+    store.list_schedules = AsyncMock(return_value=[])
+    mw = SlashCommandMiddleware(connectors={"test": connector}, store=store)
+    next_fn: Next = AsyncMock()
+
+    await mw(make_event("/use-primary"), next_fn)
+
+    next_fn.assert_not_called()
+    connector.send.assert_called_once()
