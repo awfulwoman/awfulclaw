@@ -281,3 +281,16 @@ class Store:
     async def delete_schedule(self, id: str) -> None:
         await self._db.execute("DELETE FROM schedules WHERE id = ?", (id,))
         await self._db.commit()
+
+    async def list_personality_log(self) -> list[str]:
+        """Return non-expired approved/escalated personality log entries."""
+        now = datetime.now(timezone.utc).isoformat()
+        async with self._db.execute(
+            "SELECT entry FROM personality_log "
+            "WHERE verdict IN ('approved', 'escalated') "
+            "AND (expires_at IS NULL OR expires_at > ?) "
+            "ORDER BY timestamp DESC",
+            (now,),
+        ) as cursor:
+            rows = await cursor.fetchall()
+        return [r[0] for r in rows]
