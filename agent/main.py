@@ -4,12 +4,13 @@ import argparse
 import asyncio
 
 from agent.agent import Agent
-from agent.bus import Bus
+from agent.bus import Bus, ScheduleEvent
 from agent.claude_client import ClaudeClient
 from agent.config import Settings
 from agent.connectors import InboundEvent, OutboundEvent
 from agent.connectors.rest import RESTConnector
 from agent.connectors.telegram import TelegramConnector
+from agent.handlers.schedule import ScheduleHandler
 from agent.middleware.invoke import InvokeMiddleware
 from agent.middleware.location import LocationMiddleware
 from agent.middleware.rate_limit import RateLimitMiddleware
@@ -17,6 +18,7 @@ from agent.middleware.secret import SecretCaptureMiddleware
 from agent.middleware.slash import SlashCommandMiddleware
 from agent.middleware.typing import TypingMiddleware
 from agent.pipeline import Pipeline
+from agent.scheduler import Scheduler
 from agent.store import Store
 
 
@@ -61,8 +63,11 @@ async def main() -> None:
             LocationMiddleware(store),
             SlashCommandMiddleware(connector, store),
             TypingMiddleware(connector),
-            InvokeMiddleware(agent, bus),
+            InvokeMiddleware(agent, bus, store),
         ])
+
+        schedule_handler = ScheduleHandler(agent, bus, store)
+        scheduler = Scheduler()
 
         async def on_message(event: InboundEvent) -> None:
             await bus.post(event)
@@ -72,9 +77,11 @@ async def main() -> None:
 
         bus.subscribe(InboundEvent, pipeline.run)
         bus.subscribe(OutboundEvent, handle_outbound)
+        bus.subscribe(ScheduleEvent, schedule_handler.handle)
 
         async with asyncio.TaskGroup() as tg:
             tg.create_task(bus.run())
             tg.create_task(connector.start(on_message))
+            tg.create_task(scheduler.run(bus, store))
     finally:
         await store.close()
