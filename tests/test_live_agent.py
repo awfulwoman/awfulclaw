@@ -307,3 +307,45 @@ async def test_calendar_event_create() -> None:
         assert_ok(reply)
     finally:
         await agent.aclose()
+
+
+# ===========================================================================
+# Apple Contacts
+# (requires AWFULCLAW_TEST_CONTACTS=1 and TCC permissions)
+# ===========================================================================
+
+
+@require_contacts
+@pytest.mark.asyncio
+async def test_contact_lookup() -> None:
+    """Agent can query Apple Contacts and return a count."""
+    agent = LiveAgent()
+    try:
+        reply = await agent.chat(
+            "look up my contacts and tell me how many you can see"
+        )
+        assert_no_errors(reply)
+        assert_contains_digit(reply)
+    finally:
+        await agent.aclose()
+
+
+# ===========================================================================
+# Email via IMAP
+# (requires AWFULCLAW_TEST_IMAP=1 and IMAP credentials configured)
+# ===========================================================================
+
+
+@require_imap
+@pytest.mark.asyncio
+async def test_email_read() -> None:
+    """Agent can check recent emails and return an unread count."""
+    agent = LiveAgent()
+    try:
+        reply = await agent.chat(
+            "check my recent emails and tell me how many unread messages you can see"
+        )
+        assert_no_errors(reply)
+        assert_contains_digit(reply)
+    finally:
+        await agent.aclose()
