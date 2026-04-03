@@ -8,24 +8,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Status
 
-Implementation is complete. `DESIGN.md` is kept as a historical reference showing the original architecture spec; the actual source of truth is the code in `agent/`.
+Implementation is complete. `docs/DESIGN.md` is kept as a historical reference showing the original architecture spec; the actual source of truth is the code in `agent/`.
 
 ## Layout
 
 ```
-agent/              # main application (19 modules)
-profile/       # human-editable config: PERSONALITY.md, PROTOCOLS.md, USER.md, CHECKIN.md
+agent/              # main application
+profile/            # human-editable config: PERSONALITY.md, PROTOCOLS.md, USER.md, CHECKIN.md
 config/             # MCP server definitions and skill files
+docs/               # DESIGN.md (historical spec), PHILOSOPHY.md (design values)
 tests/              # pytest test suite
-DESIGN.md           # historical architecture spec (do not treat as authoritative)
-PHILOSOPHY.md       # design values and principles
 CLAUDE.md           # this file
 ```
 
 ## Key documents
 
-- **`PHILOSOPHY.md`** — design values: data philosophy, policy layers, governance model, self-modification limits. Still authoritative for design decisions.
-- **`DESIGN.md`** — the original implementation spec. Useful historical context but may diverge from the actual implementation.
+- **`docs/PHILOSOPHY.md`** — design values: data philosophy, policy layers, governance model, self-modification limits. Still authoritative for design decisions.
+- **`docs/DESIGN.md`** — the original implementation spec. Useful historical context but may diverge from the actual implementation.
 
 ## Architecture
 
@@ -47,11 +46,13 @@ User (Telegram/REST)
 | `agent/store.py` | SQLite layer (facts, people, conversations, schedules, kv) |
 | `agent/context.py` | Dynamic system prompt assembly with semantic search |
 | `agent/scheduler.py` | Cron + one-shot scheduling |
+| `agent/cron.py` | Cron expression parsing / scheduling helpers |
+| `agent/config.py` | Config loading |
 | `agent/claude_client.py` | `claude` CLI subprocess wrapper |
 | `agent/connectors/` | Telegram + REST transports |
 | `agent/middleware/` | Rate limit, secret capture, location, slash commands, typing, invoke |
-| `agent/handlers/` | Check-in, orientation, governance, knowledge flush |
-| `agent/mcp/` | Tool servers: memory, schedule, calendar, contacts, email, weather, location, skills, file read |
+| `agent/handlers/` | Check-in, orientation, governance, knowledge flush, schedule |
+| `agent/mcp/` | Tool servers: memory, schedule, eventkit (calendar), contacts, imap (email), weather, owntracks (location), skills, file_read, env_manager |
 
 ## Working in this codebase
 
