@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from mcp import ClientSession
+from mcp.client.streamable_http import streamablehttp_client
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.types import CallToolResult, Tool
 
@@ -25,12 +26,16 @@ class MCPClient:
     async def _connect_server(self, name: str, spec: dict[str, Any]) -> None:
         """Connect a single MCP server and register its tools."""
         stack = AsyncExitStack()
-        params = StdioServerParameters(
-            command=spec["command"],
-            args=spec.get("args", []),
-            env=spec.get("env") or None,
-        )
-        read, write = await stack.enter_async_context(stdio_client(params))
+        if "url" in spec:
+            headers = spec.get("headers") or {}
+            read, write, _ = await stack.enter_async_context(streamablehttp_client(spec["url"], headers=headers))
+        else:
+            params = StdioServerParameters(
+                command=spec["command"],
+                args=spec.get("args", []),
+                env=spec.get("env") or None,
+            )
+            read, write = await stack.enter_async_context(stdio_client(params))
         session: ClientSession = await stack.enter_async_context(ClientSession(read, write))
         await session.initialize()
 
@@ -61,11 +66,15 @@ class MCPClient:
 
     @staticmethod
     def _expand_env(spec: dict[str, Any]) -> dict[str, Any]:
-        """Expand ${VAR} references in env values using os.environ."""
-        env = spec.get("env")
-        if not env:
-            return spec
-        return {**spec, "env": {k: os.path.expandvars(v) for k, v in env.items()}}
+        """Expand ${VAR} references in env and headers values using os.environ."""
+        result = dict(spec)
+        if result.get("env"):
+            result["env"] = {k: os.path.expandvars(v) for k, v in result["env"].items()}
+        if result.get("headers"):
+            result["headers"] = {k: os.path.expandvars(v) for k, v in result["headers"].items()}
+        if isinstance(result.get("url"), str):
+            result["url"] = os.path.expandvars(result["url"])
+        return result
 
     async def connect_all(self, config_path: Path) -> None:
         """Spawn and initialise all MCP servers defined in config_path."""

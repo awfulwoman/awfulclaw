@@ -61,6 +61,12 @@
       "env": {
         "VAULT_PATH": "${AWFULCLAW_OBSIDIAN_VAULT_PATH}"
       }
+    },
+    "homeassistant": {
+      "url": "${AWFULCLAW_HASS_URL}",
+      "headers": {
+        "Authorization": "Bearer ${AWFULCLAW_HASS_TOKEN}"
+      }
     }
   }
 }

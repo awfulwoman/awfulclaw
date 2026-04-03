@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import shutil
+import tempfile
 from pathlib import Path
 
 
@@ -34,26 +35,45 @@ class ClaudeClient:
             cmd += ["--allowedTools", ",".join(allowed_tools)]
         else:
             cmd += ["--dangerously-skip-permissions"]
-        cmd += ["--mcp-config", str(mcp_config_path)]
+        # The claude CLI only supports stdio (command-based) MCP servers.
+        # Filter out url-based servers (e.g. remote SSE/HTTP) to avoid schema errors.
+        raw = json.loads(mcp_config_path.read_text())
+        servers = raw.get("mcpServers", raw)
+        stdio_servers = {k: v for k, v in servers.items() if "command" in v}
+        if len(stdio_servers) < len(servers):
+            filtered = {"mcpServers": stdio_servers}
+            tmp = tempfile.NamedTemporaryFile(
+                mode="w", suffix=".json", delete=False, dir=mcp_config_path.parent
+            )
+            json.dump(filtered, tmp)
+            tmp.flush()
+            effective_config = Path(tmp.name)
+        else:
+            effective_config = mcp_config_path
+        cmd += ["--mcp-config", str(effective_config)]
 
         full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
 
         last_error: str = ""
-        for attempt in range(3):
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, stderr = await proc.communicate(full_prompt.encode())
+        try:
+            for attempt in range(3):
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdin=asyncio.subprocess.PIPE,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                stdout, stderr = await proc.communicate(full_prompt.encode())
 
-            if proc.returncode == 0:
-                return _parse_stream_json(stdout.decode())
+                if proc.returncode == 0:
+                    return _parse_stream_json(stdout.decode())
 
-            last_error = stderr.decode().strip()
-            if attempt < 2:
-                await asyncio.sleep(2**attempt)
+                last_error = stderr.decode().strip()
+                if attempt < 2:
+                    await asyncio.sleep(2**attempt)
+        finally:
+            if effective_config != mcp_config_path:
+                effective_config.unlink(missing_ok=True)
 
         raise RuntimeError(
             f"Claude CLI failed after 3 attempts: {last_error}"
