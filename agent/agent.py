@@ -24,7 +24,7 @@ class Agent:
         # Store user turn before assembly so it's in history for next call
         await self._store.add_turn(channel, "user", text)
 
-        system_prompt = await self._assembler.build(text, sender, channel)
+        system_prompt = await self._assembler.build(text, sender, channel, connector=event.connector_name)
         history = await self._store.recent_turns(channel, _HISTORY_TURNS)
 
         prompt = _format_history(history[:-1]) + text  # exclude just-added user turn duplicate

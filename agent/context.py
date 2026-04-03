@@ -22,6 +22,7 @@ class ContextAssembler:
         message: str,
         sender: Optional[str],
         channel: str,
+        connector: str = "",
     ) -> str:
         cfg = self._settings.profile_path
 
@@ -52,7 +53,10 @@ class ContextAssembler:
         sections.append(f"# Identity\n{personality}")
         sections.append(f"# Protocols\n{protocols}")
         sections.append(f"# User Profile\n{user_profile}")
-        sections.append(f"# Current Time\n{now}")
+        channel_info = f"channel: {channel}"
+        if connector:
+            channel_info += f", connector: {connector}"
+        sections.append(f"# Current Time\n{now}\n{channel_info}")
 
         if skill_names:
             sections.append(f"# Available Skills\n" + "\n".join(f"- {s}" for s in skill_names))
