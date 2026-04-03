@@ -48,6 +48,23 @@ def create_mcp_config(uv: str) -> None:
                 "command": uv,
                 "args": ["run", "python", "-m", "agent.mcp.skills"],
             },
+            "eventkit": {
+                "command": uv,
+                "args": ["run", "python", "-m", "agent.mcp.eventkit"],
+            },
+            "contacts": {
+                "command": uv,
+                "args": ["run", "python", "-m", "agent.mcp.contacts"],
+            },
+            "weather": {
+                "command": uv,
+                "args": ["run", "python", "-m", "agent.mcp.weather"],
+                "env": {"DB_PATH": "state/store.db"},
+            },
+            "file_read": {
+                "command": uv,
+                "args": ["run", "python", "-m", "agent.mcp.file_read"],
+            },
         }
     }
     path.write_text(json.dumps(config, indent=2) + "\n")
