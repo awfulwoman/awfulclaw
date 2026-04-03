@@ -104,3 +104,33 @@ def assert_ok(reply: str) -> None:
 def assert_contains_digit(reply: str) -> None:
     """Fail if the reply contains no digit (used for count responses)."""
     assert re.search(r"\d", reply), f"Expected a number in reply: {reply!r}"
+
+
+# ===========================================================================
+# Basic connectivity
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+async def test_basic_ping() -> None:
+    """Agent responds with 'pong' when asked."""
+    agent = LiveAgent()
+    try:
+        reply = await agent.chat("respond with only the word pong")
+        assert "pong" in reply.lower(), f"Expected 'pong' in reply: {reply!r}"
+    finally:
+        await agent.aclose()
+
+
+@pytest.mark.asyncio
+async def test_web_fact() -> None:
+    """Agent can answer a factual question that requires external knowledge."""
+    agent = LiveAgent()
+    try:
+        reply = await agent.chat(
+            "in one sentence, who was the first person to walk on the moon?"
+        )
+        assert reply.strip(), "Reply was empty"
+        assert_no_errors(reply)
+    finally:
+        await agent.aclose()
