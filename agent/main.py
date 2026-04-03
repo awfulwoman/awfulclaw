@@ -11,6 +11,11 @@ from agent.connectors import InboundEvent, OutboundEvent
 from agent.connectors.rest import RESTConnector
 from agent.connectors.telegram import TelegramConnector
 from agent.middleware.invoke import InvokeMiddleware
+from agent.middleware.location import LocationMiddleware
+from agent.middleware.rate_limit import RateLimitMiddleware
+from agent.middleware.secret import SecretCaptureMiddleware
+from agent.middleware.slash import SlashCommandMiddleware
+from agent.middleware.typing import TypingMiddleware
 from agent.pipeline import Pipeline
 from agent.store import Store
 
@@ -50,7 +55,14 @@ async def main() -> None:
         else:
             connector = RESTConnector()
 
-        pipeline = Pipeline([InvokeMiddleware(agent, bus)])
+        pipeline = Pipeline([
+            RateLimitMiddleware(),
+            SecretCaptureMiddleware(store),
+            LocationMiddleware(store),
+            SlashCommandMiddleware(connector, store),
+            TypingMiddleware(connector),
+            InvokeMiddleware(agent, bus),
+        ])
 
         async def on_message(event: InboundEvent) -> None:
             await bus.post(event)
