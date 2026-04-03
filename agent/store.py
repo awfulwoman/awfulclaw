@@ -139,6 +139,10 @@ class Store:
         )
         await self._db.commit()
 
+    async def kv_delete(self, key: str) -> None:
+        await self._db.execute("DELETE FROM kv WHERE key = ?", (key,))
+        await self._db.commit()
+
     # --- facts ---
 
     async def get_fact(self, key: str) -> Optional[Fact]:
