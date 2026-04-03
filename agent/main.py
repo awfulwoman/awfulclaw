@@ -6,6 +6,10 @@ import datetime
 import signal
 import threading
 
+
+class _ShutdownRequested(Exception):
+    """Raised by the shutdown watcher task to exit the TaskGroup cleanly on SIGTERM."""
+
 from agent.agent import Agent
 from agent.bus import Bus, ScheduleEvent
 from agent.claude_client import ClaudeClient
@@ -185,24 +189,38 @@ async def main() -> None:
         bus.subscribe(OutboundEvent, handle_outbound)
         bus.subscribe(ScheduleEvent, schedule_handler.handle)
 
-        loop = asyncio.get_running_loop()
-        main_task = asyncio.current_task()
+        shutdown_event = asyncio.Event()
 
         def _on_sigterm() -> None:
-            if main_task is not None:
-                main_task.cancel()
+            shutdown_event.set()
 
+        loop = asyncio.get_running_loop()
         loop.add_signal_handler(signal.SIGTERM, _on_sigterm)
 
-        async with asyncio.TaskGroup() as tg:
-            tg.create_task(bus.run())
-            for c in connectors.values():
-                tg.create_task(c.start(on_message))
-            tg.create_task(scheduler.run(bus, store))
-            tg.create_task(checkin_loop())
-            tg.create_task(orientation_task())
-            tg.create_task(mcp.watch_config(settings.mcp_config))
+        async def _shutdown_watcher() -> None:
+            await shutdown_event.wait()
+            raise _ShutdownRequested()
+
+        try:
+            async with asyncio.TaskGroup() as tg:
+                tg.create_task(bus.run())
+                for c in connectors.values():
+                    tg.create_task(c.start(on_message))
+                tg.create_task(scheduler.run(bus, store))
+                tg.create_task(checkin_loop())
+                tg.create_task(orientation_task())
+                tg.create_task(mcp.watch_config(settings.mcp_config))
+                tg.create_task(_shutdown_watcher())
+        except* _ShutdownRequested:
+            pass  # Normal SIGTERM shutdown — main task not cancelled, cleanup runs cleanly
     finally:
+        # Clear any pending asyncio cancellations so async teardown can proceed.
+        # asyncio.TaskGroup internally calls parent_task.cancel() when a child raises;
+        # leftover cancellations cause anyio cancel scope errors inside disconnect_all().
+        task = asyncio.current_task()
+        if task is not None:
+            while task.cancelling():
+                task.uncancel()
         await mcp.disconnect_all()
         await store.close()
 

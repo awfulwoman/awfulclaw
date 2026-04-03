@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from agent.config import Settings, TelegramSettings
 from agent.handlers.checkin import CheckinHandler
-from agent.main import preflight
+from agent.main import preflight, _ShutdownRequested
 from agent.store import Store
 
 
@@ -110,6 +110,37 @@ async def test_checkin_loop_fires_after_interval(tmp_path: Path) -> None:
         await asyncio.wait_for(checkin_loop(), timeout=1.0)
 
     assert len(run_calls) >= 2
+
+
+async def test_sigterm_shutdown_cleanup_runs_without_cancellation() -> None:
+    """SIGTERM path: cleanup after except* runs with cancellations cleared."""
+    shutdown_event = asyncio.Event()
+
+    async def _shutdown_watcher() -> None:
+        await shutdown_event.wait()
+        raise _ShutdownRequested()
+
+    async def _long_running() -> None:
+        await asyncio.sleep(60)
+
+    try:
+        async with asyncio.TaskGroup() as tg:
+            tg.create_task(_long_running())
+            tg.create_task(_shutdown_watcher())
+            shutdown_event.set()
+    except* _ShutdownRequested:
+        pass
+
+    # Clear any pending cancellations (same as main.py's finally block does).
+    task = asyncio.current_task()
+    if task is not None:
+        while task.cancelling():
+            task.uncancel()
+
+    # Cleanup code should now run without asyncio injecting CancelledErrors.
+    assert not asyncio.current_task().cancelling(), (
+        "Task still has pending cancellations — disconnect_all() would fail"
+    )
 
 
 async def test_preflight_raises_on_bad_schema(

@@ -23,7 +23,7 @@ def make_mw() -> tuple[SlashCommandMiddleware, MagicMock, MagicMock]:
     connector.send = AsyncMock()
     store = MagicMock()
     store.list_schedules = AsyncMock(return_value=[])
-    mw = SlashCommandMiddleware(connector=connector, store=store)
+    mw = SlashCommandMiddleware(connectors={"test": connector}, store=store)
     return mw, connector, store
 
 
@@ -73,7 +73,7 @@ async def test_restart_sends_restarting_message() -> None:
     connector.send = AsyncMock()
     store = MagicMock()
     store.list_schedules = AsyncMock(return_value=[])
-    mw = SlashCommandMiddleware(connector=connector, store=store, restart_fn=restart_fn)
+    mw = SlashCommandMiddleware(connectors={"test": connector}, store=store, restart_fn=restart_fn)
     next_fn: Next = AsyncMock()
 
     await mw(make_event("/restart"), next_fn)
@@ -97,7 +97,7 @@ async def test_restart_sigterm_sent_after_response() -> None:
     connector.send = mock_send
     store = MagicMock()
     store.list_schedules = AsyncMock(return_value=[])
-    mw = SlashCommandMiddleware(connector=connector, store=store, restart_fn=mock_restart)
+    mw = SlashCommandMiddleware(connectors={"test": connector}, store=store, restart_fn=mock_restart)
 
     await mw(make_event("/restart"), AsyncMock())
     await asyncio.sleep(0.2)  # allow call_later(0.1) to fire
