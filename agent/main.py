@@ -10,6 +10,7 @@ from agent.agent import Agent
 from agent.bus import Bus, ScheduleEvent
 from agent.claude_client import ClaudeClient
 from agent.config import Settings
+from agent.mcp import MCPClient
 from agent.connectors import InboundEvent, OutboundEvent
 from agent.connectors.rest import RESTConnector
 from agent.connectors.telegram import TelegramConnector
@@ -131,6 +132,7 @@ async def main() -> None:
 
     settings = Settings()  # type: ignore[call-arg]
     store = await Store.connect(settings.memory_path / "store.db")
+    mcp = MCPClient()
     try:
         await preflight(settings, store)
 
@@ -155,6 +157,8 @@ async def main() -> None:
             TypingMiddleware(connector),
             InvokeMiddleware(agent, bus, store),
         ])
+
+        await mcp.connect_all(settings.mcp_config)
 
         checkin_handler = CheckinHandler(agent, bus, store, settings)
         orientation_handler = OrientationHandler(agent, bus, store, settings.mcp_config)
@@ -194,5 +198,7 @@ async def main() -> None:
             tg.create_task(scheduler.run(bus, store))
             tg.create_task(checkin_loop())
             tg.create_task(orientation_task())
+            tg.create_task(mcp.watch_config(settings.mcp_config))
     finally:
+        await mcp.disconnect_all()
         await store.close()
