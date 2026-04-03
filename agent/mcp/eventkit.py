@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import threading
 from typing import Any, Optional
 
 from mcp.server.fastmcp import FastMCP
@@ -37,14 +38,34 @@ except ImportError:
 
 
 # ---------------------------------------------------------------------------
-# Internal helpers
+# Shared store — created once, access requested at startup
 # ---------------------------------------------------------------------------
+
+_store: Any = None
+_store_lock = threading.Lock()
+
+
+def _init_store() -> Any:
+    """Create EKEventStore and request access for both calendars and reminders."""
+    if not _HAS_EVENTKIT:
+        raise RuntimeError("pyobjc-framework-EventKit not installed — requires macOS")
+
+    store = _EK.EKEventStore.alloc().init()  # type: ignore[union-attr]
+
+    for entity_type in (_EK.EKEntityTypeEvent, _EK.EKEntityTypeReminder):  # type: ignore[union-attr]
+        done = threading.Event()
+        store.requestAccessToEntityType_completion_(entity_type, lambda granted, err: done.set())
+        done.wait(timeout=10)
+
+    return store
 
 
 def _get_store() -> Any:
-    if not _HAS_EVENTKIT:
-        raise RuntimeError("pyobjc-framework-EventKit not installed — requires macOS")
-    return _EK.EKEventStore.alloc().init()  # type: ignore[union-attr]
+    global _store
+    with _store_lock:
+        if _store is None:
+            _store = _init_store()
+    return _store
 
 
 def _parse_date(s: str) -> Any:
