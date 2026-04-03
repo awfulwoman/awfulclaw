@@ -1,12 +1,12 @@
-# awfulclaw
+# AwfulClaw
 
-An autonomous AI agent that communicates via Telegram (and a REST API), invokes Claude via the `claude` CLI subprocess, and stores working memory in SQLite. Runs natively on a dedicated Mac Mini, supervised by launchd. No Docker, no API key — auth comes from the locally installed `claude` CLI.
+An autonomous AI agent that lives on my Mac Mini and uses claude to do things. Communicates via Telegram, REST API, and more. Integrates directly with the Apple ecosystem of reminders, calendars and contacts. Uses IMAP to read emails.
 
 ## Requirements
 
 - Python 3.12+
 - [`uv`](https://github.com/astral-sh/uv)
-- Claude CLI installed and authenticated (`claude` command available)
+- Claude CLI installed and oauth authenticated (`claude` command available)
 
 ## Running
 

@@ -125,7 +125,10 @@ class MCPClient:
     async def disconnect_all(self) -> None:
         """Close all server connections and clean up resources."""
         for stack in list(self._server_stacks.values()):
-            await stack.aclose()
+            try:
+                await stack.aclose()
+            except RuntimeError:
+                pass  # anyio cancel scope mismatch on shutdown — process is exiting anyway
         self._sessions = []
         self._tool_map = {}
         self._server_stacks = {}

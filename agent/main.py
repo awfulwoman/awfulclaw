@@ -224,7 +224,10 @@ async def main() -> None:
         if task is not None:
             while task.cancelling():
                 task.uncancel()
-        await mcp.disconnect_all()
+        try:
+            await asyncio.wait_for(mcp.disconnect_all(), timeout=3.0)
+        except (RuntimeError, asyncio.TimeoutError):
+            pass  # MCP subprocess hung or cancel scope mismatch — process exiting anyway
         await store.close()
 
 
