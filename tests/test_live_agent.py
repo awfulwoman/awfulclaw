@@ -134,3 +134,65 @@ async def test_web_fact() -> None:
         assert_no_errors(reply)
     finally:
         await agent.aclose()
+
+
+# ===========================================================================
+# Memory — user facts
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+async def test_user_fact_write() -> None:
+    """Agent stores a fact about the user."""
+    agent = LiveAgent()
+    try:
+        reply = await agent.chat(
+            "remember that my favourite colour is indigo" + ACTION_SUFFIX
+        )
+        assert_no_errors(reply)
+        assert_ok(reply)
+    finally:
+        await agent.aclose()
+
+
+@pytest.mark.asyncio
+async def test_user_fact_read() -> None:
+    """Agent recalls the fact written by test_user_fact_write."""
+    agent = LiveAgent()
+    try:
+        reply = await agent.chat("what is my favourite colour?")
+        assert_no_errors(reply)
+        assert "indigo" in reply.lower(), f"Expected 'indigo' in reply: {reply!r}"
+    finally:
+        await agent.aclose()
+
+
+# ===========================================================================
+# Memory — general facts
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+async def test_general_fact_write() -> None:
+    """Agent stores an arbitrary fact."""
+    agent = LiveAgent()
+    try:
+        reply = await agent.chat(
+            "remember that the capital of awfulworld is Awfulton" + ACTION_SUFFIX
+        )
+        assert_no_errors(reply)
+        assert_ok(reply)
+    finally:
+        await agent.aclose()
+
+
+@pytest.mark.asyncio
+async def test_general_fact_read() -> None:
+    """Agent recalls the general fact written by test_general_fact_write."""
+    agent = LiveAgent()
+    try:
+        reply = await agent.chat("what is the capital of awfulworld?")
+        assert_no_errors(reply)
+        assert "awfulton" in reply.lower(), f"Expected 'awfulton' in reply: {reply!r}"
+    finally:
+        await agent.aclose()
