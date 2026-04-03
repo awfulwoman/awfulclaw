@@ -19,6 +19,12 @@
     <key>WorkingDirectory</key>
     <string>__PROJECT_DIR__</string>
 
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+
     <key>RunAtLoad</key>
     <true/>
 
