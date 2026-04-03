@@ -13,10 +13,15 @@ load_dotenv()
 class _ShutdownRequested(Exception):
     """Raised by the shutdown watcher task to exit the TaskGroup cleanly on SIGTERM."""
 
+import os
+
 from agent.agent import Agent
+from agent.backend_manager import BackendManager
 from agent.bus import Bus, ScheduleEvent
 from agent.claude_client import ClaudeClient
 from agent.config import Settings
+from agent.llm_client import LLMClient
+from agent.ollama_client import OllamaClient
 from agent.mcp import MCPClient
 from agent.connectors import Connector, InboundEvent, OutboundEvent
 from agent.connectors.rest import RESTConnector
@@ -88,6 +93,16 @@ def _request_tcc_permissions() -> dict[str, str]:
     return results
 
 
+def build_client(name: str, settings: Settings) -> LLMClient:
+    match name:
+        case "claude":
+            return ClaudeClient(settings.model)
+        case "ollama":
+            return OllamaClient(settings.ollama_url, settings.ollama_model)
+        case _:
+            raise ValueError(f"Unknown backend: {name!r}")
+
+
 async def preflight(settings: Settings, store: Store) -> None:
     """Validate external dependencies before entering the main loop.
     Raises on failure — a clear startup error beats a runtime surprise."""
@@ -123,8 +138,30 @@ async def main() -> None:
         await preflight(settings, store)
 
         bus = Bus()
-        client = ClaudeClient(settings.model)
-        agent = Agent(client, settings, store)
+        forced_backend = os.environ.get("AWFULCLAW_BACKEND")
+        notify_channel: tuple[str, str] | None = None
+        if settings.telegram and settings.telegram.allowed_chat_ids:
+            notify_channel = ("telegram", str(settings.telegram.allowed_chat_ids[0]))
+
+        if forced_backend:
+            backend = BackendManager(
+                primary=build_client(forced_backend, settings),
+                fallback=None,
+                failure_threshold=settings.fallback_failure_threshold,
+                probe_interval=settings.fallback_probe_interval,
+                locked=True,
+            )
+        else:
+            backend = BackendManager(
+                primary=build_client(settings.primary_backend, settings),
+                fallback=build_client(settings.fallback_backend, settings),
+                failure_threshold=settings.fallback_failure_threshold,
+                probe_interval=settings.fallback_probe_interval,
+                bus=bus,
+                notify_channel=notify_channel,
+            )
+
+        agent = Agent(backend, settings, store)
 
         connectors: dict[str, "Connector"] = {}
         if "telegram" in args.connectors:
@@ -145,7 +182,7 @@ async def main() -> None:
             RateLimitMiddleware(),
             SecretCaptureMiddleware(store),
             LocationMiddleware(store),
-            SlashCommandMiddleware(connectors, store),
+            SlashCommandMiddleware(connectors, store, backend_manager=backend),
             TypingMiddleware(connectors),
             InvokeMiddleware(agent, bus, store),
         ])
@@ -216,6 +253,7 @@ async def main() -> None:
                 tg.create_task(checkin_loop())
                 tg.create_task(orientation_task())
                 tg.create_task(mcp.watch_config(settings.mcp_config))
+                tg.create_task(backend.probe_loop())
                 tg.create_task(_shutdown_watcher())
         except* _ShutdownRequested:
             pass  # Normal SIGTERM shutdown — main task not cancelled, cleanup runs cleanly

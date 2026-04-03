@@ -7,7 +7,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from agent.config import Settings, TelegramSettings
 from agent.handlers.checkin import CheckinHandler
-from agent.main import preflight, _ShutdownRequested
+from agent.main import preflight, _ShutdownRequested, build_client
+from agent.claude_client import ClaudeClient
+from agent.ollama_client import OllamaClient
 from agent.store import Store
 
 
@@ -141,6 +143,21 @@ async def test_sigterm_shutdown_cleanup_runs_without_cancellation() -> None:
     assert not asyncio.current_task().cancelling(), (
         "Task still has pending cancellations — disconnect_all() would fail"
     )
+
+
+def test_build_client_returns_claude() -> None:
+    client = build_client("claude", Settings())
+    assert isinstance(client, ClaudeClient)
+
+
+def test_build_client_returns_ollama() -> None:
+    client = build_client("ollama", Settings())
+    assert isinstance(client, OllamaClient)
+
+
+def test_build_client_unknown_raises() -> None:
+    with pytest.raises(ValueError, match="Unknown backend"):
+        build_client("gemini", Settings())
 
 
 async def test_preflight_raises_on_bad_schema(
