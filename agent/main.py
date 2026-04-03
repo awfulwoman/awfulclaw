@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import datetime
 import signal
 import sys
 import threading
@@ -188,10 +189,19 @@ async def main() -> None:
                     print(f"[checkin] failed: {exc}", flush=True)
                 await asyncio.sleep(60)
 
+        def _log(direction: str, connector: str, channel: str, sender: str, text: str) -> None:
+            ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            print(f"[{ts}] {direction} [{connector}/{channel}] {sender}: {text}", flush=True)
+
         async def on_message(event: InboundEvent) -> None:
+            _log("IN ", event.connector_name, event.channel,
+                 event.message.sender_name or event.message.sender,
+                 event.message.text)
             await bus.post(event)
 
         async def handle_outbound(event: OutboundEvent) -> None:
+            _log("OUT", event.connector_name, event.channel,
+                 "agent", event.message.text)
             c = connectors.get(event.connector_name)
             if c is None:
                 # Fall back to first available connector
