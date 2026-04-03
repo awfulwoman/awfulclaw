@@ -210,6 +210,7 @@ __marimo__/
 
 state/*
 !state/README.md
+logs/
 profile/*
 !profile/README.md
 config/*
