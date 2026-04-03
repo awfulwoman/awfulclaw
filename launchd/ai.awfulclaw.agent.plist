@@ -7,24 +7,8 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>__UV_PATH__</string>
-        <string>run</string>
-        <string>python</string>
-        <string>-m</string>
-        <string>agent.main</string>
-        <string>--connector</string>
-        <string>telegram</string>
-        <string>rest</string>
+        <string>__PROJECT_DIR__/scripts/start_agent.sh</string>
     </array>
-
-    <key>WorkingDirectory</key>
-    <string>__PROJECT_DIR__</string>
-
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>PATH</key>
-        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
-    </dict>
 
     <key>RunAtLoad</key>
     <true/>

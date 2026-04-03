@@ -11,9 +11,17 @@ An autonomous AI agent that communicates via Telegram (and a REST API), invokes 
 ## Running
 
 ```bash
-uv run python -m agent --connector telegram
-uv run python -m agent --connector rest
-uv run python -m agent --tcc-setup   # request macOS permissions
+# Install and start as a launchd service (runs at login, restarts on crash)
+scripts/install_service.sh
+
+# Remove the service
+scripts/uninstall_service.sh
+
+# Request macOS TCC permissions (Calendar, Reminders, Contacts)
+uv run python -m agent.main --tcc-setup
+
+# Run directly (dev/debug)
+scripts/start_agent.sh
 ```
 
 ## Architecture
