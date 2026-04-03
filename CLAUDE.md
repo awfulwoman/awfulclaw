@@ -16,15 +16,17 @@ Implementation is complete. `docs/DESIGN.md` is kept as a historical reference s
 agent/              # main application
 profile/            # human-editable config: PERSONALITY.md, PROTOCOLS.md, USER.md, CHECKIN.md
 config/             # MCP server definitions and skill files
-docs/               # DESIGN.md (historical spec), PHILOSOPHY.md (design values)
+docs/               # ARCHITECTURE.md, RUNBOOK.md, PHILOSOPHY.md, DESIGN.md (historical)
 tests/              # pytest test suite
 CLAUDE.md           # this file
 ```
 
 ## Key documents
 
+- **`docs/ARCHITECTURE.md`** — current-state architecture: message flow, component descriptions, MCP server inventory. Keep this updated when adding components or changing how they interact.
+- **`docs/RUNBOOK.md`** — operational reference: setup, start/stop, logs, deployment, slash commands. Keep this updated when operational procedures change.
 - **`docs/PHILOSOPHY.md`** — design values: data philosophy, policy layers, governance model, self-modification limits. Still authoritative for design decisions.
-- **`docs/DESIGN.md`** — the original implementation spec. Useful historical context but may diverge from the actual implementation.
+- **`docs/DESIGN.md`** — the original implementation spec. Historical reference only; do not update.
 
 ## Architecture
 
