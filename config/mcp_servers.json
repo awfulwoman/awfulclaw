@@ -41,10 +41,10 @@
       "command": "/opt/homebrew/bin/uv",
       "args": ["run", "python", "-m", "agent.mcp.imap"],
       "env": {
-        "IMAP_HOST": "imap.mailbox.org",
-        "IMAP_PORT": "993",
-        "IMAP_USERNAME": "charlie@whalecoiner.com",
-        "IMAP_PASSWORD": "Unspoiled-Masses-Dude-Coil-Upstate6"
+        "IMAP_HOST": "${AWFULCLAW_IMAP__HOST}",
+        "IMAP_PORT": "${AWFULCLAW_IMAP__PORT}",
+        "IMAP_USERNAME": "${AWFULCLAW_IMAP__USERNAME}",
+        "IMAP_PASSWORD": "${AWFULCLAW_IMAP__PASSWORD}"
       }
     },
     "owntracks": {
@@ -59,7 +59,7 @@
       "command": "/opt/homebrew/bin/uv",
       "args": ["run", "python", "-m", "agent.mcp.obsidian"],
       "env": {
-        "VAULT_PATH": "/Users/charlie/Code/obsidian"
+        "VAULT_PATH": "${AWFULCLAW_OBSIDIAN_VAULT_PATH}"
       }
     }
   }
