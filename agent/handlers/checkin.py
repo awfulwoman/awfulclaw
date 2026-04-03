@@ -24,6 +24,13 @@ _SILENT_PATTERNS = (
     "everything looks fine",
     "nothing requires attention",
     "silent",
+    "heartbeat ok",
+    "heartbeat: ok",
+    "all systems",
+    "no alerts",
+    "no action required",
+    "status: ok",
+    "status: all clear",
 )
 
 
@@ -55,9 +62,9 @@ class CheckinHandler:
         checkin_path = self._settings.profile_path / "CHECKIN.md"
         prompt = checkin_path.read_text(encoding="utf-8")
 
-        reply = await self._agent.invoke(prompt)
-
         await self._store.kv_set(_LAST_CHECKIN_KEY, str(now))
+
+        reply = await self._agent.invoke(prompt)
 
         if not _warrants_attention(reply):
             return

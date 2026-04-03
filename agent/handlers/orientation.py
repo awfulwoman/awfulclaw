@@ -66,9 +66,9 @@ class OrientationHandler:
             people_count=len(people),
         )
 
-        reply = await self._agent.invoke(prompt)
-
         await self._store.kv_set(_ORIENTATION_SENT_KEY, "1")
+
+        reply = await self._agent.invoke(prompt)
 
         channel = await self._store.kv_get("last_channel")
         sender = await self._store.kv_get("last_sender")
