@@ -14,8 +14,8 @@ class ParakeetTranscriber:
 
     async def transcribe(self, audio: bytes, mime_type: str) -> str:
         with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as f:
-            f.write(audio)
             in_path = f.name
+            f.write(audio)
 
         out_path = in_path[:-4] + ".wav"
 
