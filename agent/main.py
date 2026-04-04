@@ -175,8 +175,12 @@ async def main() -> None:
                 if shutil.which("ffmpeg"):
                     transcriber = ParakeetTranscriber(settings.parakeet_model)
                     print("[startup] Preloading Parakeet model...", flush=True)
-                    await transcriber.preload()
-                    print("[startup] Parakeet model ready.", flush=True)
+                    try:
+                        await transcriber.preload()
+                        print("[startup] Parakeet model ready.", flush=True)
+                    except Exception as exc:
+                        print(f"[startup] WARNING: Parakeet model failed to load: {exc}", flush=True)
+                        transcriber = None
                 else:
                     print("[startup] WARNING: ffmpeg not found — voice transcription disabled", flush=True)
             connectors["telegram"] = TelegramConnector(

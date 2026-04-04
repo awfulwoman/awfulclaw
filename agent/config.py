@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     fallback_failure_threshold: int = 3
     fallback_probe_interval: int = 600
     transcription_enabled: bool = True
-    parakeet_model: str = "nvidia/parakeet-tdt-1.1b-v3"
+    parakeet_model: str = "nvidia/parakeet-tdt-0.6b-v3"
 
     telegram: TelegramSettings | None = None
 
