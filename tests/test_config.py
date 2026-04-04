@@ -85,7 +85,7 @@ def test_transcription_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = Settings()  # type: ignore[call-arg]
 
     assert settings.transcription_enabled is True
-    assert settings.parakeet_model == "nvidia/parakeet-tdt-1.1b-v3"
+    assert settings.parakeet_model == "nvidia/parakeet-tdt-0.6b-v3"
 
 
 def test_transcription_can_be_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
