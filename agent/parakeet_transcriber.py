@@ -45,6 +45,10 @@ class ParakeetTranscriber:
         transcriptions = self._model.transcribe([wav_path])
         return str(transcriptions[0]) if transcriptions else ""
 
+    async def preload(self) -> None:
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, self._ensure_model)
+
     def _ensure_model(self) -> None:
         if self._model is None:
             import nemo.collections.asr as nemo_asr  # deferred: heavy dep
