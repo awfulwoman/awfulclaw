@@ -76,3 +76,35 @@ def test_new_backend_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert s.ollama_model == "llama3.2"
     assert s.fallback_failure_threshold == 3
     assert s.fallback_probe_interval == 600
+
+
+def test_transcription_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    for k, v in make_telegram_env().items():
+        monkeypatch.setenv(k, v)
+
+    settings = Settings()  # type: ignore[call-arg]
+
+    assert settings.transcription_enabled is True
+    assert settings.parakeet_model == "nvidia/parakeet-tdt-1.1b-v3"
+
+
+def test_transcription_can_be_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    env = make_telegram_env()
+    env["AWFULCLAW_TRANSCRIPTION_ENABLED"] = "false"
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+
+    settings = Settings()  # type: ignore[call-arg]
+
+    assert settings.transcription_enabled is False
+
+
+def test_parakeet_model_overridable(monkeypatch: pytest.MonkeyPatch) -> None:
+    env = make_telegram_env()
+    env["AWFULCLAW_PARAKEET_MODEL"] = "nvidia/parakeet-tdt-0.6b-v2"
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+
+    settings = Settings()  # type: ignore[call-arg]
+
+    assert settings.parakeet_model == "nvidia/parakeet-tdt-0.6b-v2"
