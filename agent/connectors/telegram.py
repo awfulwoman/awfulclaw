@@ -111,13 +111,15 @@ class TelegramConnector(Connector):
                 framed = dict(msg)
                 framed["text"] = f"[Voice]: {transcript}"
                 return self._frame(framed)
-            except Exception:
+            except Exception as exc:
+                print(f"[telegram] voice transcription error: {exc}", flush=True)
                 await self.send(str(chat_id), OutboundMessage(text="Sorry, I couldn't transcribe that voice note."))
                 return ""
         return self._frame(msg)
 
     async def _download_voice(self, file_id: str) -> bytes:
-        assert self._client is not None  # always set when called from _poll
+        if self._client is None:
+            raise RuntimeError("_download_voice called outside of polling context")
         resp = await self._client.get(self._url("getFile"), params={"file_id": file_id})
         resp.raise_for_status()
         file_path = resp.json()["result"]["file_path"]
