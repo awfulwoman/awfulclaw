@@ -6,17 +6,19 @@ from typing import Any
 import httpx
 
 from agent.connectors import Connector, InboundEvent, Message, OnMessage, OutboundMessage
+from agent.transcriber import Transcriber
 
 
 _BASE = "https://api.telegram.org/bot{token}/{method}"
 
 
 class TelegramConnector(Connector):
-    def __init__(self, token: str, allowed_chat_ids: list[int], store: Any, owner_id: int | None = None) -> None:
+    def __init__(self, token: str, allowed_chat_ids: list[int], store: Any, owner_id: int | None = None, transcriber: "Transcriber | None" = None) -> None:
         self._token = token
         self._allowed_chat_ids = set(allowed_chat_ids)
         self._store = store
         self._owner_id = owner_id
+        self._transcriber = transcriber
         self._running = False
         self._client: httpx.AsyncClient | None = None
 
@@ -81,7 +83,15 @@ class TelegramConnector(Connector):
         await self._store.kv_set("telegram_offset", str(new_offset))
 
         for chat_id, msgs in batches.items():
-            combined = "\n".join(self._frame(m) for m in msgs)
+            parts: list[str] = []
+            for m in msgs:
+                text = await self._resolve_text(m, chat_id)
+                if text:
+                    parts.append(text)
+            combined = "\n".join(parts)
+            if not combined:
+                continue
+
             first = msgs[0]
             from_user = first.get("from", {})
             sender_id = str(from_user.get("id", chat_id))
@@ -90,6 +100,31 @@ class TelegramConnector(Connector):
             message = Message(text=combined, sender=sender_id, sender_name=sender_name)
             event = InboundEvent(channel=str(chat_id), message=message, connector_name="telegram")
             await on_message(event)
+
+    async def _resolve_text(self, msg: dict[str, Any], chat_id: int) -> str:
+        if "text" in msg:
+            return self._frame(msg)
+        if "voice" in msg and self._transcriber is not None:
+            try:
+                audio = await self._download_voice(msg["voice"]["file_id"])
+                transcript = await self._transcriber.transcribe(audio, "audio/ogg")
+                framed = dict(msg)
+                framed["text"] = f"[Voice]: {transcript}"
+                return self._frame(framed)
+            except Exception:
+                await self.send(str(chat_id), OutboundMessage(text="Sorry, I couldn't transcribe that voice note."))
+                return ""
+        return self._frame(msg)
+
+    async def _download_voice(self, file_id: str) -> bytes:
+        assert self._client is not None  # always set when called from _poll
+        resp = await self._client.get(self._url("getFile"), params={"file_id": file_id})
+        resp.raise_for_status()
+        file_path = resp.json()["result"]["file_path"]
+        file_url = f"https://api.telegram.org/file/bot{self._token}/{file_path}"
+        resp = await self._client.get(file_url)
+        resp.raise_for_status()
+        return resp.content
 
     def _frame(self, msg: dict[str, Any]) -> str:
         text = msg.get("text", "")
