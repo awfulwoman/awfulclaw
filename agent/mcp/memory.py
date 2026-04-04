@@ -161,5 +161,31 @@ async def memory_search(
         await db.close()
 
 
+@mcp.tool()
+async def memory_delete(type: str, key: str) -> str:
+    """Delete a memory entry by key.
+
+    type: 'fact' or 'person'
+    key:  the fact key or person id to delete
+    """
+    if type not in ("fact", "person"):
+        return "Error: type must be 'fact' or 'person'"
+
+    db_path = _get_db_path()
+    db = await _connect(db_path)
+    try:
+        if type == "fact":
+            cur = await db.execute("DELETE FROM facts WHERE key = ?", (key,))
+        else:
+            cur = await db.execute("DELETE FROM people WHERE id = ?", (key,))
+        await db.commit()
+        if cur.rowcount == 0:
+            return f"{type.capitalize()} {key!r} not found"
+    finally:
+        await db.close()
+
+    return f"{type.capitalize()} {key!r} deleted"
+
+
 if __name__ == "__main__":
     mcp.run()

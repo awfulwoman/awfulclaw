@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     profile_path: Path = Path("profile")
     mcp_config: Path = Path("config/mcp_servers.json")
     poll_interval: int = 5
-    idle_interval: int = 60
+    idle_interval: int = 14400
     checkin_interval: int = 86400
     obsidian_vault: Path = Path("obsidian")
     primary_backend: str = "claude"

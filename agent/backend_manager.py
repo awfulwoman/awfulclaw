@@ -67,6 +67,15 @@ class BackendManager:
         self._failures = 0
         await self._notify("Switched back to Claude. I'm fully operational again.")
 
+    async def switch_to_fallback(self) -> None:
+        """Called by /use-fallback. No-op when locked or no fallback configured."""
+        if self._locked or self._fallback is None:
+            return
+        self._active = self._fallback
+        self._on_fallback = True
+        self._failures = 0
+        await self._notify("Manually switched to fallback (Ollama).")
+
     async def probe_loop(self) -> None:
         """Background asyncio task: probe primary backend and notify on recovery."""
         while True:

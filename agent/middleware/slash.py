@@ -63,5 +63,13 @@ class SlashCommandMiddleware:
                 await c.send(event.channel, OutboundMessage(text="Switching to primary backend..."))
             return
 
+        if command == "/use-fallback":
+            if self._backend_manager is not None:
+                await self._backend_manager.switch_to_fallback()
+            c = self._connectors.get(event.connector_name)
+            if c:
+                await c.send(event.channel, OutboundMessage(text="Switching to fallback backend..."))
+            return
+
         # Unknown slash command — pass through to the agent
         await next(event)
