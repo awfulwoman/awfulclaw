@@ -16,6 +16,7 @@ dependencies = [
     "pyobjc-framework-Contacts>=10.0; sys_platform == 'darwin'",
     "timezonefinder>=6.0",
     "aioimaplib>=2.0",
+    "nemo_toolkit[asr]>=2.0",
 ]
 
 [project.optional-dependencies]

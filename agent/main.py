@@ -14,6 +14,7 @@ class _ShutdownRequested(Exception):
     """Raised by the shutdown watcher task to exit the TaskGroup cleanly on SIGTERM."""
 
 import os
+import shutil
 
 from agent.agent import Agent
 from agent.backend_manager import BackendManager
@@ -38,6 +39,8 @@ from agent.middleware.typing import TypingMiddleware
 from agent.pipeline import Pipeline
 from agent.scheduler import Scheduler
 from agent.store import Store
+from agent.parakeet_transcriber import ParakeetTranscriber
+from agent.transcriber import Transcriber
 
 
 def _request_eventkit_access(entity_type_name: str, entity_type: int, store: object) -> bool:
@@ -167,10 +170,17 @@ async def main() -> None:
         if "telegram" in args.connectors:
             if settings.telegram is None:
                 raise ValueError("AWFULCLAW_TELEGRAM__BOT_TOKEN and AWFULCLAW_TELEGRAM__ALLOWED_CHAT_IDS are required for the telegram connector")
+            transcriber: Transcriber | None = None
+            if settings.transcription_enabled:
+                if shutil.which("ffmpeg"):
+                    transcriber = ParakeetTranscriber(settings.parakeet_model)
+                else:
+                    print("[startup] WARNING: ffmpeg not found — voice transcription disabled", flush=True)
             connectors["telegram"] = TelegramConnector(
                 token=settings.telegram.bot_token,
                 allowed_chat_ids=settings.telegram.allowed_chat_ids,
                 store=store,
+                transcriber=transcriber,
             )
         if "rest" in args.connectors:
             push_channel: tuple[str, str] | None = None
