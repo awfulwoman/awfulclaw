@@ -52,7 +52,7 @@ flowchart LR
 Copy `.env.example` to `.env` and fill in:
 
 ```
-AWFULCLAW_MODEL=claude-opus-4-5
+AWFULCLAW_MODEL=claude-sonnet-4-6
 AWFULCLAW_TELEGRAM__BOT_TOKEN=...
 AWFULCLAW_TELEGRAM__ALLOWED_CHAT_IDS=...
 ```

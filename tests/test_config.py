@@ -37,7 +37,7 @@ def test_defaults_applied(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_env_vars_override_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     env = make_telegram_env()
-    env["AWFULCLAW_MODEL"] = "claude-opus-4-6"
+    env["AWFULCLAW_MODEL"] = "claude-sonnet-4-6"
     env["AWFULCLAW_POLL_INTERVAL"] = "10"
     env["AWFULCLAW_STATE_PATH"] = "/tmp/state"
     for k, v in env.items():
@@ -45,7 +45,7 @@ def test_env_vars_override_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
 
     settings = Settings()  # type: ignore[call-arg]
 
-    assert settings.model == "claude-opus-4-6"
+    assert settings.model == "claude-sonnet-4-6"
     assert settings.poll_interval == 10
     assert settings.state_path == Path("/tmp/state")
 
