@@ -57,7 +57,12 @@ class CheckinHandler:
         if last_str is not None:
             elapsed = now - float(last_str)
             if elapsed < self._settings.checkin_interval:
-                return
+                # Also trigger on idle: if no messages received since last check-in
+                if elapsed < self._settings.idle_interval:
+                    return
+                last_msg_str = await self._store.kv_get("last_message_time")
+                if last_msg_str is not None and float(last_msg_str) >= float(last_str):
+                    return  # messages received since last check-in; not idle
 
         checkin_path = self._settings.profile_path / "CHECKIN.md"
         prompt = checkin_path.read_text(encoding="utf-8")

@@ -18,7 +18,7 @@ async def run() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         store = await Store.connect(Path(tmpdir) / "smoke.db")
         try:
-            client = ClaudeClient(model=settings.model)
+            client = ClaudeClient(model=settings.backend.claude_model)
 
             # Use an empty MCP config so no servers are required
             mcp_config = Path(tmpdir) / "mcp.json"

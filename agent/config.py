@@ -24,9 +24,17 @@ class ContactsSettings(BaseModel):
 
 
 class OwnTracksSettings(BaseModel):
-    host: str
-    port: int = 8883
-    topic: str
+    url: str
+
+
+class BackendSettings(BaseModel):
+    provider: str = "claude"
+    fallback: str = "ollama"
+    claude_model: str = "claude-sonnet-4-6"
+    ollama_model: str = "llama3.2"
+    ollama_url: str = "http://localhost:11434"
+    failure_threshold: int = 3
+    probe_interval: int = 600
 
 
 class Settings(BaseSettings):
@@ -38,7 +46,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    model: str = "claude-sonnet-4-6"
+    backend: BackendSettings = BackendSettings()
     governance_model: str = "claude-haiku-4-5-20251001"
     state_path: Path = Path("state")
     profile_path: Path = Path("profile")
@@ -47,12 +55,6 @@ class Settings(BaseSettings):
     idle_interval: int = 14400
     checkin_interval: int = 86400
     obsidian_vault: Path = Path("obsidian")
-    primary_backend: str = "claude"
-    fallback_backend: str = "ollama"
-    ollama_url: str = "http://localhost:11434"
-    ollama_model: str = "llama3.2"
-    fallback_failure_threshold: int = 3
-    fallback_probe_interval: int = 600
     transcription_enabled: bool = True
     parakeet_model: str = "nvidia/parakeet-tdt-0.6b-v3"
 

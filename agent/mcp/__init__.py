@@ -22,6 +22,7 @@ class MCPClient:
         # Config tracking
         self._config_path: Path | None = None
         self._config_mtime: float | None = None
+        self._exclude: frozenset[str] = frozenset()
 
     async def _connect_server(self, name: str, spec: dict[str, Any]) -> None:
         """Connect a single MCP server and register its tools."""
@@ -76,13 +77,16 @@ class MCPClient:
             result["url"] = os.path.expandvars(result["url"])
         return result
 
-    async def connect_all(self, config_path: Path) -> None:
+    async def connect_all(self, config_path: Path, exclude: frozenset[str] = frozenset()) -> None:
         """Spawn and initialise all MCP servers defined in config_path."""
+        self._exclude = exclude
         self._config_path = config_path
         self._config_mtime = config_path.stat().st_mtime
         raw: dict[str, Any] = json.loads(config_path.read_text())
         servers = raw.get("mcpServers", raw)
         for name, spec in servers.items():
+            if name in self._exclude:
+                continue
             await self._connect_server(name, self._expand_env(spec))
 
     async def reload_if_changed(self) -> None:
@@ -107,6 +111,8 @@ class MCPClient:
             await self._disconnect_server(name)
 
         for name in new_names - old_names:
+            if name in self._exclude:
+                continue
             await self._connect_server(name, self._expand_env(servers[name]))
 
     async def watch_config(self, path: Path, interval: float = 10.0) -> None:

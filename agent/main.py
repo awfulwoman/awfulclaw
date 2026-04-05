@@ -13,7 +13,6 @@ load_dotenv()
 class _ShutdownRequested(Exception):
     """Raised by the shutdown watcher task to exit the TaskGroup cleanly on SIGTERM."""
 
-import os
 import shutil
 
 from agent.agent import Agent
@@ -99,9 +98,9 @@ def _request_tcc_permissions() -> dict[str, str]:
 def build_client(name: str, settings: Settings) -> LLMClient:
     match name:
         case "claude":
-            return ClaudeClient(settings.model)
+            return ClaudeClient(settings.backend.claude_model)
         case "ollama":
-            return OllamaClient(settings.ollama_url, settings.ollama_model)
+            return OllamaClient(settings.backend.ollama_url, settings.backend.ollama_model)
         case _:
             raise ValueError(f"Unknown backend: {name!r}")
 
@@ -141,28 +140,19 @@ async def main() -> None:
         await preflight(settings, store)
 
         bus = Bus()
-        forced_backend = os.environ.get("AWFULCLAW_BACKEND")
         notify_channel: tuple[str, str] | None = None
         if settings.telegram and settings.telegram.allowed_chat_ids:
             notify_channel = ("telegram", str(settings.telegram.allowed_chat_ids[0]))
 
-        if forced_backend:
-            backend = BackendManager(
-                primary=build_client(forced_backend, settings),
-                fallback=None,
-                failure_threshold=settings.fallback_failure_threshold,
-                probe_interval=settings.fallback_probe_interval,
-                locked=True,
-            )
-        else:
-            backend = BackendManager(
-                primary=build_client(settings.primary_backend, settings),
-                fallback=build_client(settings.fallback_backend, settings),
-                failure_threshold=settings.fallback_failure_threshold,
-                probe_interval=settings.fallback_probe_interval,
-                bus=bus,
-                notify_channel=notify_channel,
-            )
+        locked = not settings.backend.fallback
+        backend = BackendManager(
+            primary=build_client(settings.backend.provider, settings),
+            fallback=build_client(settings.backend.fallback, settings) if settings.backend.fallback else None,
+            failure_threshold=settings.backend.failure_threshold,
+            probe_interval=settings.backend.probe_interval,
+            locked=locked,
+            **({"bus": bus, "notify_channel": notify_channel} if not locked else {}),
+        )
 
         agent = Agent(backend, settings, store)
 
@@ -204,7 +194,12 @@ async def main() -> None:
             InvokeMiddleware(agent, bus, store),
         ])
 
-        await mcp.connect_all(settings.mcp_config)
+        excluded: set[str] = set()
+        if settings.eventkit is not None and not settings.eventkit.enabled:
+            excluded.add("eventkit")
+        if settings.contacts is not None and not settings.contacts.enabled:
+            excluded.add("contacts")
+        await mcp.connect_all(settings.mcp_config, exclude=frozenset(excluded))
 
         checkin_handler = CheckinHandler(agent, bus, store, settings)
         orientation_handler = OrientationHandler(agent, bus, store, settings.mcp_config)
@@ -223,7 +218,7 @@ async def main() -> None:
                     await checkin_handler.run()
                 except Exception as exc:
                     print(f"[checkin] failed: {exc}", flush=True)
-                await asyncio.sleep(60)
+                await asyncio.sleep(settings.poll_interval)
 
         def _log(direction: str, connector: str, channel: str, sender: str, text: str) -> None:
             ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -233,6 +228,7 @@ async def main() -> None:
             _log("IN ", event.connector_name, event.channel,
                  event.message.sender_name or event.message.sender,
                  event.message.text)
+            await store.kv_set("last_message_time", str(datetime.datetime.now().timestamp()))
             await bus.post(event)
 
         async def handle_outbound(event: OutboundEvent) -> None:

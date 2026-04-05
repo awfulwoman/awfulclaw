@@ -4,14 +4,16 @@
       "command": "/opt/homebrew/bin/uv",
       "args": ["run", "python", "-m", "agent.mcp.memory"],
       "env": {
-        "DB_PATH": "state/store.db"
+        "DB_PATH": "state/store.db",
+        "GOVERNANCE_MODEL": "${AWFULCLAW_GOVERNANCE_MODEL}"
       }
     },
     "schedule": {
       "command": "/opt/homebrew/bin/uv",
       "args": ["run", "python", "-m", "agent.mcp.schedule"],
       "env": {
-        "DB_PATH": "state/store.db"
+        "DB_PATH": "state/store.db",
+        "GOVERNANCE_MODEL": "${AWFULCLAW_GOVERNANCE_MODEL}"
       }
     },
     "skills": {
@@ -52,14 +54,14 @@
       "args": ["run", "python", "-m", "agent.mcp.owntracks"],
       "env": {
         "DB_PATH": "state/store.db",
-        "OWNTRACKS_URL": "${AWFULCLAW_OWNTRACKS_URL}"
+        "OWNTRACKS_URL": "${AWFULCLAW_OWNTRACKS__URL}"
       }
     },
     "obsidian": {
       "command": "/opt/homebrew/bin/uv",
       "args": ["run", "python", "-m", "agent.mcp.obsidian"],
       "env": {
-        "VAULT_PATH": "${AWFULCLAW_OBSIDIAN_VAULT_PATH}"
+        "VAULT_PATH": "${AWFULCLAW_OBSIDIAN_VAULT}"
       }
     },
     "homeassistant": {
