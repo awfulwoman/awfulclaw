@@ -50,6 +50,12 @@ async def proxy_ping(request: Request) -> Response:
         return JSONResponse({"ok": False})
 
 
+async def proxy_history(request: Request) -> Response:
+    limit = request.query_params.get("limit", "50")
+    r = await request.app.state.client.get(f"/api/history?limit={limit}")
+    return JSONResponse(r.json(), status_code=r.status_code)
+
+
 async def proxy_status(request: Request) -> Response:
     r = await request.app.state.client.get("/api/status")
     return JSONResponse(r.json(), status_code=r.status_code)
@@ -67,6 +73,7 @@ app = Starlette(
         Route("/", index),
         Route("/info/{name}", info_page),
         Route("/proxy/ping", proxy_ping),
+        Route("/proxy/api/history", proxy_history),
         Route("/proxy/chat", proxy_chat, methods=["POST"]),
         Route("/proxy/api/status", proxy_status),
         Route("/proxy/api/info/{name}", proxy_info),

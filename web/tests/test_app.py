@@ -76,6 +76,27 @@ async def test_proxy_status_forwards():
 
 @respx.mock
 @pytest.mark.anyio
+async def test_proxy_history_forwards():
+    respx.get(f"{AGENT_BASE}/api/history").mock(
+        return_value=httpx.Response(200, json={"turns": [
+            {
+                "role": "user",
+                "content": "hello",
+                "timestamp": "2026-04-06T09:00:00+00:00",
+                "connector": "telegram",
+            }
+        ]})
+    )
+    async with _web_client() as c:
+        r = await c.get("/proxy/api/history")
+    assert r.status_code == 200
+    turns = r.json()["turns"]
+    assert len(turns) == 1
+    assert turns[0]["connector"] == "telegram"
+
+
+@respx.mock
+@pytest.mark.anyio
 async def test_proxy_info_forwards():
     respx.get(f"{AGENT_BASE}/api/info/user").mock(
         return_value=httpx.Response(200, json={"content": "# User\nCharlie."})
