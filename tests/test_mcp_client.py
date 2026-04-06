@@ -188,3 +188,38 @@ async def test_disconnect_clears_state() -> None:
 
     assert client._sessions == []
     assert client._tool_map == {}
+
+
+def test_server_status_connected_and_disconnected(tmp_path: Path) -> None:
+    """server_status shows {name: connected} for all configured servers."""
+    config = tmp_path / "mcp.json"
+    config.write_text(json.dumps({"mcpServers": {"memory": {}, "weather": {}}}))
+
+    client = MCPClient()
+    client._config_path = config
+    # Simulate only 'memory' being connected
+    client._server_sessions["memory"] = object()  # type: ignore[assignment]
+
+    status = client.server_status()
+    assert status == {"memory": True, "weather": False}
+
+
+def test_server_status_no_config() -> None:
+    """server_status returns {} when no config path is set."""
+    client = MCPClient()
+    assert client.server_status() == {}
+
+
+def test_server_status_excludes_excluded_servers(tmp_path: Path) -> None:
+    """server_status excludes servers in _exclude set."""
+    config = tmp_path / "mcp.json"
+    config.write_text(json.dumps({"mcpServers": {"memory": {}, "eventkit": {}}}))
+
+    client = MCPClient()
+    client._config_path = config
+    client._exclude = frozenset({"eventkit"})
+    client._server_sessions["memory"] = object()  # type: ignore[assignment]
+
+    status = client.server_status()
+    assert "eventkit" not in status
+    assert status["memory"] is True
