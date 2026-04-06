@@ -124,7 +124,7 @@ class RESTConnector(Connector):
             raw_kv = await self._store.kv_list()
             kv = {
                 k: v for k, v in raw_kv
-                if not any(k.startswith(p) or k == p for p in _SENSITIVE_KV_PREFIXES)
+                if not any(k.startswith(p) for p in _SENSITIVE_KV_PREFIXES)
             }
 
         if self._mcp is not None:
