@@ -23,5 +23,12 @@ LOGROTATE_PLIST="$HOME/Library/LaunchAgents/ai.awfulclaw.logrotate.plist"
 cp "$PROJECT_DIR/launchd/ai.awfulclaw.logrotate.plist" "$LOGROTATE_PLIST"
 launchctl load "$LOGROTATE_PLIST"
 
-echo "awfulclaw service installed and started."
+# --- Web service ---
+PLIST_WEB="$HOME/Library/LaunchAgents/ai.awfulclaw.web.plist"
+sed \
+    -e "s|__PROJECT_DIR__|$PROJECT_DIR|g" \
+    "$PROJECT_DIR/launchd/ai.awfulclaw.web.plist" > "$PLIST_WEB"
+launchctl load "$PLIST_WEB"
+
+echo "awfulclaw services installed and started."
 echo "Logs: $PROJECT_DIR/logs/"
