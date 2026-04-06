@@ -39,9 +39,10 @@ web/
   requirements.txt
   Dockerfile
   docker-compose.yml
-  static/
+  pages/
     index.html            # chat + sidebar page
     info.html             # profile content page
+  static/
     style.css
     components/
       agent-chat.js       # <agent-chat> web component
