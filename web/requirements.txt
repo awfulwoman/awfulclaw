@@ -1,0 +1,7 @@
+starlette>=0.46
+uvicorn>=0.34
+httpx>=0.28
+respx>=0.21
+pytest>=8
+pytest-asyncio>=0.24
+anyio[trio]>=4

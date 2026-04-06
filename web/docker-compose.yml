@@ -1,0 +1,11 @@
+services:
+  web:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      AGENT_URL: http://host.docker.internal:8080
+      HOST: 0.0.0.0
+      PORT: 3000
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
