@@ -42,6 +42,28 @@ async def test_proxy_chat_forwards_and_returns_reply():
 
 @respx.mock
 @pytest.mark.anyio
+async def test_proxy_ping_returns_ok_when_agent_reachable():
+    respx.get(f"{AGENT_BASE}/api/status").mock(
+        return_value=httpx.Response(200, json={"mcp": {}, "schedules": [], "kv": {}})
+    )
+    async with _web_client() as c:
+        r = await c.get("/proxy/ping")
+    assert r.status_code == 200
+    assert r.json() == {"ok": True}
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_proxy_ping_returns_not_ok_when_agent_down():
+    respx.get(f"{AGENT_BASE}/api/status").mock(side_effect=httpx.ConnectError("down"))
+    async with _web_client() as c:
+        r = await c.get("/proxy/ping")
+    assert r.status_code == 200
+    assert r.json() == {"ok": False}
+
+
+@respx.mock
+@pytest.mark.anyio
 async def test_proxy_status_forwards():
     respx.get(f"{AGENT_BASE}/api/status").mock(
         return_value=httpx.Response(200, json={"mcp": {}, "schedules": [], "kv": {}})

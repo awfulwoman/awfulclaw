@@ -29,8 +29,19 @@ class AgentSidebar extends HTMLElement {
       .sched { font-size: 12px; color: #aaa; margin-bottom: 4px; display: flex; gap: 6px; flex-wrap: wrap; }
       .expr { color: #555; font-size: 11px; }
       .empty { font-size: 12px; color: #333; }
+      .agent-status { display: flex; align-items: center; gap: 7px; margin-bottom: 14px; }
+      .agent-label { font-size: 11px; color: #555; }
     `;
     this.shadowRoot.appendChild(style);
+
+    // Agent ping indicator
+    const agentRow = _el('div', { cls: 'agent-status' });
+    this._agentDot = _el('div', { cls: 'dot' });
+    this._agentLabel = _el('span', { cls: 'agent-label', text: 'agent' });
+    agentRow.appendChild(this._agentDot);
+    agentRow.appendChild(this._agentLabel);
+    this.shadowRoot.appendChild(agentRow);
+    this.shadowRoot.appendChild(document.createElement('hr'));
 
     // Profile links (static — no dynamic content)
     const profileSection = this._section('Profile');
@@ -82,6 +93,15 @@ class AgentSidebar extends HTMLElement {
   }
 
   async _load() {
+    try {
+      const ping = await fetch('/proxy/ping');
+      const { ok } = await ping.json();
+      this._agentDot.className = 'dot' + (ok ? ' on' : '');
+      if (!ok) return;
+    } catch {
+      this._agentDot.className = 'dot';
+      return;
+    }
     try {
       const r = await fetch('/proxy/api/status');
       if (!r.ok) return;

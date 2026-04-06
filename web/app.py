@@ -42,6 +42,14 @@ async def proxy_chat(request: Request) -> Response:
     return JSONResponse(r.json(), status_code=r.status_code)
 
 
+async def proxy_ping(request: Request) -> Response:
+    try:
+        r = await request.app.state.client.get("/api/status", timeout=3.0)
+        return JSONResponse({"ok": r.is_success})
+    except Exception:
+        return JSONResponse({"ok": False})
+
+
 async def proxy_status(request: Request) -> Response:
     r = await request.app.state.client.get("/api/status")
     return JSONResponse(r.json(), status_code=r.status_code)
@@ -58,6 +66,7 @@ app = Starlette(
     routes=[
         Route("/", index),
         Route("/info/{name}", info_page),
+        Route("/proxy/ping", proxy_ping),
         Route("/proxy/chat", proxy_chat, methods=["POST"]),
         Route("/proxy/api/status", proxy_status),
         Route("/proxy/api/info/{name}", proxy_info),
