@@ -22,7 +22,7 @@ class Agent:
         text = event.message.text
 
         # Store user turn before assembly so it's in history for next call
-        await self._store.add_turn(channel, "user", text)
+        await self._store.add_turn(channel, "user", text, connector=event.connector_name)
 
         system_prompt = await self._assembler.build(text, sender, channel, connector=event.connector_name)
         history = await self._store.recent_turns(channel, _HISTORY_TURNS)
@@ -35,7 +35,7 @@ class Agent:
             allowed_tools=[],
         )
 
-        await self._store.add_turn(channel, "assistant", reply_text)
+        await self._store.add_turn(channel, "assistant", reply_text, connector=event.connector_name)
         return reply_text
 
     async def invoke(self, prompt: str, history: list[Turn] | None = None) -> str:

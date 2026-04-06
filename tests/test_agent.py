@@ -70,9 +70,9 @@ async def test_reply_stores_turns(mock_embed: MagicMock, mock_client: AsyncMock,
 
     assert result == "hello back"
     # user turn stored
-    mock_store.add_turn.assert_any_call("tg", "user", "hello")
+    mock_store.add_turn.assert_any_call("tg", "user", "hello", connector="telegram")
     # assistant turn stored
-    mock_store.add_turn.assert_any_call("tg", "assistant", "hello back")
+    mock_store.add_turn.assert_any_call("tg", "assistant", "hello back", connector="telegram")
 
 
 @pytest.mark.asyncio
@@ -113,6 +113,26 @@ async def test_invoke_uses_assembler(mock_embed: MagicMock, mock_client: AsyncMo
     call_kwargs = mock_client.complete.call_args
     system_prompt = call_kwargs.kwargs.get("system_prompt") or call_kwargs.args[1]
     assert len(system_prompt) > 0
+
+
+@pytest.mark.asyncio
+@patch("agent.store.embed", side_effect=_fake_embed)
+async def test_reply_passes_connector_to_store(mock_embed: MagicMock, mock_store: AsyncMock, mock_client: AsyncMock, mock_settings: MagicMock) -> None:
+    """Agent must pass connector_name from the event to store.add_turn."""
+    agent = Agent(mock_client, mock_settings, mock_store)
+    event = InboundEvent(
+        channel="primary",
+        message=Message(text="hello", sender="u1", sender_name="Alice"),
+        connector_name="telegram",
+    )
+    mock_client.complete = AsyncMock(return_value="hi there")
+    await agent.reply(event)
+
+    calls = mock_store.add_turn.call_args_list
+    assert len(calls) == 2
+    # Both calls should pass connector="telegram"
+    assert calls[0].kwargs.get("connector") == "telegram" or calls[0].args[3:4] == ("telegram",)
+    assert calls[1].kwargs.get("connector") == "telegram" or calls[1].args[3:4] == ("telegram",)
 
 
 def test_format_history_empty() -> None:
