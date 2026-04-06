@@ -39,6 +39,29 @@ async def test_post_chat_returns_reply() -> None:
 
 
 @pytest.mark.asyncio
+async def test_chat_uses_primary_channel() -> None:
+    connector = RESTConnector()
+    received: list[InboundEvent] = []
+
+    async def on_message(event: InboundEvent) -> None:
+        received.append(event)
+        assert event.reply_to is not None
+        await connector.send(event.reply_to, OutboundMessage(text="ok"))
+
+    connector._on_message = on_message
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=connector.app), base_url="http://test"
+    ) as client:
+        r = await client.post("/chat", json={"message": "hi"})
+
+    assert r.status_code == 200
+    assert r.json() == {"reply": "ok"}
+    assert received[0].channel == "primary"
+    assert received[0].reply_to is not None
+
+
+@pytest.mark.asyncio
 async def test_send_typing_is_noop() -> None:
     connector = RESTConnector()
     await connector.send_typing("whoever")  # should not raise

@@ -71,12 +71,17 @@ class RESTConnector(Connector):
 
     async def _handle_chat(self, request: Request) -> JSONResponse:
         data = await request.json()
-        channel = str(uuid4())
+        reply_id = str(uuid4())
         future: asyncio.Future[str] = asyncio.get_event_loop().create_future()
-        self._pending[channel] = future
+        self._pending[reply_id] = future
 
-        msg = Message(text=data["message"], sender=channel, sender_name="api")
-        event = InboundEvent(channel=channel, message=msg, connector_name="rest")
+        msg = Message(text=data["message"], sender=reply_id, sender_name="api")
+        event = InboundEvent(
+            channel="primary",
+            reply_to=reply_id,
+            message=msg,
+            connector_name="rest",
+        )
 
         if self._on_message is not None:
             await self._on_message(event)
@@ -84,13 +89,13 @@ class RESTConnector(Connector):
         try:
             reply = await asyncio.wait_for(asyncio.shield(future), timeout=120.0)
         except (asyncio.TimeoutError, TimeoutError):
-            self._pending.pop(channel, None)
+            self._pending.pop(reply_id, None)
             return JSONResponse({"error": "timeout"}, status_code=504)
         except asyncio.CancelledError:
-            self._pending.pop(channel, None)
+            self._pending.pop(reply_id, None)
             return JSONResponse({"error": "cancelled"}, status_code=503)
         finally:
-            self._pending.pop(channel, None)
+            self._pending.pop(reply_id, None)
 
         return JSONResponse({"reply": reply})
 
