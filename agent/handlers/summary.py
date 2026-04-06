@@ -42,7 +42,6 @@ class SummaryHandler:
         if last_str is not None and (time.time() - float(last_str)) < _SUMMARY_INTERVAL:
             return
 
-        await self._store.kv_set(_LAST_SUMMARY_KEY, str(time.time()))
         self._out_dir.mkdir(parents=True, exist_ok=True)
 
         results = await asyncio.gather(
@@ -53,6 +52,10 @@ class SummaryHandler:
         for name, result in zip(_PROMPTS, results):
             if isinstance(result, Exception):
                 print(f"[summary] failed for {name!r}: {result}", flush=True)
+
+        # Only record completion time if at least some files were written
+        if any(not isinstance(r, Exception) for r in results):
+            await self._store.kv_set(_LAST_SUMMARY_KEY, str(time.time()))
 
     async def _generate(self, name: str, prompt: str) -> None:
         text = await self._agent.invoke(prompt)
