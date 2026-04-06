@@ -8,6 +8,7 @@ function _el(tag, opts = {}) {
 
 class AgentSidebar extends HTMLElement {
   connectedCallback() {
+    if (this.shadowRoot) return;
     this.attachShadow({ mode: 'open' });
 
     const style = document.createElement('style');

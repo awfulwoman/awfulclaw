@@ -81,11 +81,15 @@ class AgentChat extends HTMLElement {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ message: text }),
       });
-      const data = await r.json();
-      if (data.error) {
-        this._messages.push({ role: 'agent', error: true, text: 'Error: ' + data.error });
+      if (!r.ok) {
+        this._messages.push({ role: 'agent', error: true, text: 'Agent returned ' + r.status + '.' });
       } else {
-        this._messages.push({ role: 'agent', text: data.reply });
+        const data = await r.json();
+        if (data.error) {
+          this._messages.push({ role: 'agent', error: true, text: 'Error: ' + data.error });
+        } else {
+          this._messages.push({ role: 'agent', text: data.reply });
+        }
       }
     } catch {
       this._messages.push({ role: 'agent', error: true, text: 'Failed to reach agent.' });

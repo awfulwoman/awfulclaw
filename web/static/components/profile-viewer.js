@@ -53,6 +53,7 @@ function _md(raw) {
 
 class ProfileViewer extends HTMLElement {
   connectedCallback() {
+    if (this.shadowRoot) return;
     this.attachShadow({ mode: 'open' });
 
     const style = document.createElement('style');
