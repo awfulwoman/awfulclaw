@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -53,6 +54,7 @@ def mock_store():
     store = MagicMock()
     store.kv_get = AsyncMock(return_value=None)
     store.kv_set = AsyncMock()
+    store.kv_delete = AsyncMock()
     return store
 
 
@@ -150,3 +152,66 @@ async def test_no_post_when_no_channel(mock_agent, mock_bus, mock_store, mock_se
     handler = CheckinHandler(mock_agent, mock_bus, mock_store, mock_settings)
     await handler.run()
     mock_bus.post.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Email triage integration
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_skips_model_when_only_routine_emails(mock_agent, mock_bus, mock_store, mock_settings):
+    triage = {"newsletters": ["Sale!"], "routine": ["Parcel delivered"], "escalate": []}
+
+    async def kv_get_side(key: str):
+        if key == "email_triage":
+            return json.dumps(triage)
+        if key == "last_channel":
+            return "chan1"
+        if key == "last_sender":
+            return "user1"
+        return None
+
+    mock_store.kv_get = AsyncMock(side_effect=kv_get_side)
+    handler = CheckinHandler(mock_agent, mock_bus, mock_store, mock_settings)
+    await handler.run()
+    mock_agent.invoke.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_invokes_model_when_escalated_emails(mock_agent, mock_bus, mock_store, mock_settings):
+    triage = {
+        "newsletters": [],
+        "routine": [],
+        "escalate": [{"uid": "1", "from": "boss@co.com", "subject": "Urgent", "summary": "Needs reply"}],
+    }
+
+    async def kv_get_side(key: str):
+        if key == "email_triage":
+            return json.dumps(triage)
+        if key == "last_channel":
+            return "chan1"
+        if key == "last_sender":
+            return "user1"
+        return None
+
+    mock_store.kv_get = AsyncMock(side_effect=kv_get_side)
+    mock_agent.invoke = AsyncMock(return_value="You have an urgent email from boss.")
+    handler = CheckinHandler(mock_agent, mock_bus, mock_store, mock_settings)
+    await handler.run()
+    mock_agent.invoke.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_clears_triage_results_after_consuming(mock_agent, mock_bus, mock_store, mock_settings):
+    triage = {"newsletters": ["A"], "routine": ["B"], "escalate": []}
+
+    async def kv_get_side(key: str):
+        if key == "email_triage":
+            return json.dumps(triage)
+        return None
+
+    mock_store.kv_get = AsyncMock(side_effect=kv_get_side)
+    mock_store.kv_delete = AsyncMock()
+    handler = CheckinHandler(mock_agent, mock_bus, mock_store, mock_settings)
+    await handler.run()
+    mock_store.kv_delete.assert_called_once_with("email_triage")

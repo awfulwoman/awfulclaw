@@ -196,3 +196,57 @@ async def test_email_search_no_credentials() -> None:
 def test_wrap_untrusted_format() -> None:
     result = imap_module._wrap_untrusted("body text", "alice@example.com")
     assert result == '<untrusted-content source="email" from="alice@example.com">\nbody text\n</untrusted-content>'
+
+
+# ---------------------------------------------------------------------------
+# Tests: bulk-header extraction in email_unread
+# ---------------------------------------------------------------------------
+
+
+def _make_bulk_header_bytes(subject: str, from_: str, extra_headers: dict[str, str]) -> bytes:
+    lines = [f"Subject: {subject}", f"From: {from_}", "Date: Thu, 1 Jan 2026 12:00:00 +0000"]
+    for k, v in extra_headers.items():
+        lines.append(f"{k}: {v}")
+    return ("\r\n".join(lines) + "\r\n\r\n").encode()
+
+
+@pytest.mark.asyncio
+async def test_email_unread_includes_list_unsubscribe_header() -> None:
+    header = _make_bulk_header_bytes(
+        "Weekly deals", "shop@example.com",
+        {"List-Unsubscribe": "<mailto:unsub@example.com>"}
+    )
+    mock_client = _mock_client(search_uids=["10"], fetch_payloads={"10": header})
+
+    with patch("agent.mcp.imap._connect", return_value=mock_client):
+        result = await imap_module.email_unread(limit=20)
+
+    assert len(result) == 1
+    assert result[0]["list_unsubscribe"] == "<mailto:unsub@example.com>"
+
+
+@pytest.mark.asyncio
+async def test_email_unread_includes_precedence_header() -> None:
+    header = _make_bulk_header_bytes(
+        "System alert", "noreply@system.com",
+        {"Precedence": "bulk"}
+    )
+    mock_client = _mock_client(search_uids=["11"], fetch_payloads={"11": header})
+
+    with patch("agent.mcp.imap._connect", return_value=mock_client):
+        result = await imap_module.email_unread(limit=20)
+
+    assert result[0]["precedence"] == "bulk"
+
+
+@pytest.mark.asyncio
+async def test_email_unread_bulk_headers_empty_when_absent() -> None:
+    header = _make_header_bytes("Hi there", "friend@example.com")
+    mock_client = _mock_client(search_uids=["12"], fetch_payloads={"12": header})
+
+    with patch("agent.mcp.imap._connect", return_value=mock_client):
+        result = await imap_module.email_unread(limit=20)
+
+    assert result[0]["list_unsubscribe"] == ""
+    assert result[0]["precedence"] == ""
+    assert result[0]["auto_submitted"] == ""

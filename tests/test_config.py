@@ -44,6 +44,7 @@ def test_defaults_applied(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.eventkit is None
     assert settings.contacts is None
     assert settings.owntracks is None
+    assert settings.email_triage_interval == 900
 
 
 def test_env_vars_override_defaults(monkeypatch: pytest.MonkeyPatch) -> None:

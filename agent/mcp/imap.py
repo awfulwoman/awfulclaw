@@ -151,6 +151,9 @@ def _parse_envelope(uid: str, raw_headers: bytes) -> dict:
         "subject": _decode_header_value(msg.get("Subject")),
         "from": _decode_header_value(msg.get("From")),
         "date": _decode_header_value(msg.get("Date")),
+        "list_unsubscribe": _decode_header_value(msg.get("List-Unsubscribe")),
+        "precedence": _decode_header_value(msg.get("Precedence")),
+        "auto_submitted": _decode_header_value(msg.get("Auto-Submitted")),
     }
 
 
@@ -190,7 +193,7 @@ async def email_unread(limit: Optional[int] = 20) -> list[dict]:
 
         results: list[dict] = []
         for uid in uids:
-            _, msg_data = await client.fetch(uid, "(BODY.PEEK[HEADER.FIELDS (SUBJECT FROM DATE)])")
+            _, msg_data = await client.fetch(uid, "(BODY.PEEK[HEADER.FIELDS (SUBJECT FROM DATE LIST-UNSUBSCRIBE PRECEDENCE AUTO-SUBMITTED)])")
             raw = msg_data[1] if len(msg_data) > 1 else b""
             if isinstance(raw, (bytes, bytearray)):
                 results.append(_parse_envelope(uid, bytes(raw)))

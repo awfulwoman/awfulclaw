@@ -38,6 +38,7 @@ from agent.middleware.typing import TypingMiddleware
 from agent.pipeline import Pipeline
 from agent.scheduler import Scheduler
 from agent.store import Store
+from agent.email_triage import EmailTriageJob
 from agent.parakeet_transcriber import ParakeetTranscriber
 from agent.transcriber import Transcriber
 
@@ -206,6 +207,52 @@ async def main() -> None:
         schedule_handler = ScheduleHandler(agent, bus, store)
         scheduler = Scheduler()
 
+        email_triage_job: EmailTriageJob | None = None
+        if settings.imap is not None:
+            async def _imap_run() -> list[dict]:
+                result = await mcp.call_tool("email_unread", {"limit": 50})
+                return result if isinstance(result, list) else []
+
+            async def _imap_read(uid: str) -> str:
+                result = await mcp.call_tool("email_read", {"uid": uid})
+                return result if isinstance(result, str) else ""
+
+            def _get_headers_from_email(emails_cache: list[dict]):
+                index = {e["uid"]: e for e in emails_cache}
+                async def _get(uid: str) -> dict:
+                    e = index.get(uid, {})
+                    return {
+                        "list-unsubscribe": e.get("list_unsubscribe", ""),
+                        "precedence": e.get("precedence", ""),
+                        "auto-submitted": e.get("auto_submitted", ""),
+                    }
+                return _get
+
+            # imap_run wraps the MCP call and caches results for get_headers
+            _email_cache: list[dict] = []
+
+            async def _imap_run_cached() -> list[dict]:
+                nonlocal _email_cache
+                _email_cache = await _imap_run()
+                return _email_cache
+
+            async def _get_headers(uid: str) -> dict:
+                e = next((x for x in _email_cache if x["uid"] == uid), {})
+                return {
+                    "list-unsubscribe": e.get("list_unsubscribe", ""),
+                    "precedence": e.get("precedence", ""),
+                    "auto-submitted": e.get("auto_submitted", ""),
+                }
+
+            email_triage_job = EmailTriageJob(
+                store=store,
+                ollama_url=settings.backend.ollama_url,
+                ollama_model=settings.backend.ollama_model,
+                imap_run=_imap_run_cached,
+                imap_read=_imap_read,
+                get_headers=_get_headers,
+            )
+
         async def orientation_task() -> None:
             try:
                 await orientation_handler.run()
@@ -219,6 +266,15 @@ async def main() -> None:
                 except Exception as exc:
                     print(f"[checkin] failed: {exc}", flush=True)
                 await asyncio.sleep(settings.poll_interval)
+
+        async def email_triage_loop() -> None:
+            while True:
+                if email_triage_job is not None:
+                    try:
+                        await email_triage_job.run()
+                    except Exception as exc:
+                        print(f"[email_triage] failed: {exc}", flush=True)
+                await asyncio.sleep(settings.email_triage_interval)
 
         def _log(direction: str, connector: str, channel: str, sender: str, text: str) -> None:
             ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -264,6 +320,7 @@ async def main() -> None:
                     tg.create_task(c.start(on_message))
                 tg.create_task(scheduler.run(bus, store))
                 tg.create_task(checkin_loop())
+                tg.create_task(email_triage_loop())
                 tg.create_task(orientation_task())
                 tg.create_task(mcp.watch_config(settings.mcp_config))
                 tg.create_task(backend.probe_loop())

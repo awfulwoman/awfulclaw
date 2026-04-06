@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     poll_interval: int = 5
     idle_interval: int = 14400
     checkin_interval: int = 86400
+    email_triage_interval: int = 900
     obsidian_vault: Path = Path("obsidian")
     transcription_enabled: bool = True
     parakeet_model: str = "nvidia/parakeet-tdt-0.6b-v3"
