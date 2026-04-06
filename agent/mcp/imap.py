@@ -20,6 +20,8 @@ import email
 import email.header
 import email.message
 import os
+import re
+from html.parser import HTMLParser
 from typing import Optional
 
 import aioimaplib  # type: ignore[import-untyped]
@@ -77,8 +79,39 @@ def _decode_header_value(raw: str | bytes | None) -> str:
     return "".join(decoded_parts)
 
 
+class _HTMLTextExtractor(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self._chunks: list[str] = []
+        self._skip = False
+
+    def handle_starttag(self, tag: str, attrs: list) -> None:
+        if tag in ("script", "style"):
+            self._skip = True
+        elif tag in ("p", "br", "div", "li", "tr"):
+            self._chunks.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in ("script", "style"):
+            self._skip = False
+
+    def handle_data(self, data: str) -> None:
+        if not self._skip:
+            self._chunks.append(data)
+
+    def get_text(self) -> str:
+        text = "".join(self._chunks)
+        return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+
+def _strip_html(html: str) -> str:
+    extractor = _HTMLTextExtractor()
+    extractor.feed(html)
+    return extractor.get_text()
+
+
 def _extract_body(msg: email.message.Message) -> str:
-    """Extract plain-text body from an email message."""
+    """Extract plain-text body from an email message, stripping HTML if necessary."""
     if msg.is_multipart():
         for part in msg.walk():
             ct = part.get_content_type()
@@ -87,17 +120,22 @@ def _extract_body(msg: email.message.Message) -> str:
                 charset = part.get_content_charset() or "utf-8"
                 if isinstance(payload, bytes):
                     return payload.decode(charset, errors="replace")
-        # Fallback: return first part's payload
-        first = msg.get_payload(0)
-        if isinstance(first, email.message.Message):
-            payload = first.get_payload(decode=True)
-            if isinstance(payload, bytes):
-                return payload.decode("utf-8", errors="replace")
+        # No plain-text part — fall back to first HTML part, stripped
+        for part in msg.walk():
+            ct = part.get_content_type()
+            if ct == "text/html":
+                payload = part.get_payload(decode=True)
+                charset = part.get_content_charset() or "utf-8"
+                if isinstance(payload, bytes):
+                    return _strip_html(payload.decode(charset, errors="replace"))
         return ""
     payload = msg.get_payload(decode=True)
     if isinstance(payload, bytes):
         charset = msg.get_content_charset() or "utf-8"
-        return payload.decode(charset, errors="replace")
+        text = payload.decode(charset, errors="replace")
+        if msg.get_content_type() == "text/html":
+            return _strip_html(text)
+        return text
     return str(payload) if payload else ""
 
 
