@@ -98,7 +98,12 @@ class TelegramConnector(Connector):
             sender_name = from_user.get("first_name", sender_id)
 
             message = Message(text=combined, sender=sender_id, sender_name=sender_name)
-            event = InboundEvent(channel=str(chat_id), message=message, connector_name="telegram")
+            event = InboundEvent(
+                channel="primary",
+                reply_to=str(chat_id),
+                message=message,
+                connector_name="telegram",
+            )
             await on_message(event)
 
     async def _resolve_text(self, msg: dict[str, Any], chat_id: int) -> str:

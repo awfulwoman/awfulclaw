@@ -53,7 +53,8 @@ async def test_polling_fires_on_message() -> None:
         await connector.start(on_message)
 
     assert len(received) == 1
-    assert received[0].channel == "100"
+    assert received[0].channel == "primary"
+    assert received[0].reply_to == "100"
     assert received[0].message.text == "hello"
     assert received[0].connector_name == "telegram"
 
