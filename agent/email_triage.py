@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from typing import Any, Awaitable, Callable, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -103,6 +104,7 @@ class EmailTriageJob:
             return resp.json().get("response", "")
 
     async def run(self) -> None:
+        t_run = time.perf_counter()
         emails = await self._imap_run()
         if not emails:
             return
@@ -132,7 +134,9 @@ class EmailTriageJob:
                 prompt = _LOCAL_MODEL_PROMPT.format(
                     sender=sender, subject=subject, snippet=snippet
                 )
+                t0 = time.perf_counter()
                 raw = await self._local_model_call(prompt)
+                print(f"[timing] email_triage local_model uid={uid} {time.perf_counter() - t0:.2f}s", flush=True)
                 verdict, summary = parse_local_model_verdict(raw)
                 if verdict == "routine":
                     routine.append(summary)
@@ -150,6 +154,11 @@ class EmailTriageJob:
         )
         await self._store.kv_set(_TRIAGE_KV_KEY, json.dumps(merged))
         await self._store.mark_email_uids_seen(list(unseen_uids))
+        print(
+            f"[timing] email_triage run total={time.perf_counter() - t_run:.2f}s"
+            f" new={len(new_emails)} newsletters={len(newsletters)} routine={len(routine)} escalate={len(escalate)}",
+            flush=True,
+        )
 
 
 def is_bulk(headers: dict[str, str]) -> bool:

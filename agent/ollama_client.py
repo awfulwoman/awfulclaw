@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -64,7 +65,8 @@ class OllamaClient:
 
         _MAX_TOOL_ROUNDS = 20
         async with httpx.AsyncClient(timeout=120.0) as http:
-            for _ in range(_MAX_TOOL_ROUNDS):
+            for round_num in range(_MAX_TOOL_ROUNDS):
+                t0 = time.perf_counter()
                 resp = await http.post(
                     f"{self._url}/api/chat",
                     json={
@@ -75,9 +77,11 @@ class OllamaClient:
                     },
                 )
                 resp.raise_for_status()
+                elapsed = time.perf_counter() - t0
                 data = resp.json()
                 msg = data["message"]
                 tool_calls = msg.get("tool_calls")
+                print(f"[timing] ollama round={round_num + 1} tool_calls={len(tool_calls or [])} {elapsed:.2f}s", flush=True)
 
                 if not tool_calls:
                     return msg.get("content", "")

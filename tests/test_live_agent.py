@@ -347,6 +347,122 @@ async def test_contact_lookup() -> None:
 # ===========================================================================
 
 
+# ===========================================================================
+# Memory — delete
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+async def test_user_fact_delete() -> None:
+    """Agent deletes a fact and confirms it no longer recalls it."""
+    agent = LiveAgent()
+    try:
+        await agent.chat("remember that my lucky number is 42")
+        reply = await agent.chat(
+            "forget my lucky number" + ACTION_SUFFIX
+        )
+        assert_no_errors(reply)
+        assert_ok(reply)
+    finally:
+        await agent.aclose()
+
+
+# NOTE: depends on test_user_fact_delete having run first
+@pytest.mark.asyncio
+async def test_user_fact_gone_after_delete() -> None:
+    """Agent no longer recalls a fact after it has been deleted."""
+    agent = LiveAgent()
+    try:
+        reply = await agent.chat("what is my lucky number?")
+        assert_no_errors(reply)
+        assert "42" not in reply, f"Expected deleted fact to be gone, got: {reply!r}"
+    finally:
+        await agent.aclose()
+
+
+# ===========================================================================
+# Slash commands
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+async def test_slash_help() -> None:
+    """/help returns a non-empty response."""
+    agent = LiveAgent()
+    try:
+        reply = await agent.chat("/help")
+        assert reply.strip(), "Expected non-empty /help reply"
+    finally:
+        await agent.aclose()
+
+
+@pytest.mark.asyncio
+async def test_slash_schedules_returns_list() -> None:
+    """/schedules returns a reply (even if the list is empty)."""
+    agent = LiveAgent()
+    try:
+        reply = await agent.chat("/schedules")
+        assert reply.strip(), "Expected non-empty /schedules reply"
+    finally:
+        await agent.aclose()
+
+
+@pytest.mark.asyncio
+async def test_slash_clear_acknowledged() -> None:
+    """/clear produces a reply and the agent no longer recalls pre-clear context."""
+    agent = LiveAgent()
+    try:
+        await agent.chat("remember for this test that the magic word is zorbifax")
+        clear_reply = await agent.chat("/clear")
+        assert clear_reply.strip(), "Expected non-empty /clear reply"
+        recall_reply = await agent.chat(
+            "what magic word did I just tell you? reply with only the word itself"
+        )
+        assert "zorbifax" not in recall_reply.lower(), (
+            f"Expected agent to have forgotten after /clear, got: {recall_reply!r}"
+        )
+    finally:
+        await agent.aclose()
+
+
+# ===========================================================================
+# Weather / location
+# ===========================================================================
+
+require_owntracks = pytest.mark.skipif(
+    not os.getenv("AWFULCLAW_TEST_OWNTRACKS"),
+    reason="Set AWFULCLAW_TEST_OWNTRACKS=1 to run OwnTracks/weather tests",
+)
+
+
+@pytest.mark.asyncio
+@require_owntracks
+async def test_weather_current() -> None:
+    """Agent fetches current weather using the location and weather MCP tools."""
+    agent = LiveAgent()
+    try:
+        reply = await agent.chat(
+            "what is the current weather where I am?" + ACTION_SUFFIX
+        )
+        assert_no_errors(reply)
+        assert_ok(reply)
+        # Any weather reply should mention temperature or conditions
+        weather_words = ("°", "celsius", "fahrenheit", "cloud", "sun", "rain",
+                         "wind", "humid", "temp", "forecast", "clear", "overcast")
+        lower = reply.lower()
+        assert any(w in lower for w in weather_words), (
+            f"Expected weather description in reply: {reply!r}"
+        )
+    finally:
+        await agent.aclose()
+
+
+# ===========================================================================
+# Email via IMAP
+# (requires AWFULCLAW_TEST_IMAP=1 and IMAP credentials configured)
+# ===========================================================================
+
+
 @pytest.mark.asyncio
 @require_imap
 async def test_email_read() -> None:

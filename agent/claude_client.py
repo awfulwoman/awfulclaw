@@ -4,6 +4,7 @@ import asyncio
 import json
 import shutil
 import tempfile
+import time
 from pathlib import Path
 
 
@@ -57,6 +58,7 @@ class ClaudeClient:
         last_error: str = ""
         try:
             for attempt in range(3):
+                t0 = time.perf_counter()
                 proc = await asyncio.create_subprocess_exec(
                     *cmd,
                     stdin=asyncio.subprocess.PIPE,
@@ -64,6 +66,8 @@ class ClaudeClient:
                     stderr=asyncio.subprocess.PIPE,
                 )
                 stdout, stderr = await proc.communicate(full_prompt.encode())
+                elapsed = time.perf_counter() - t0
+                print(f"[timing] claude attempt={attempt + 1} rc={proc.returncode} {elapsed:.2f}s", flush=True)
 
                 if proc.returncode == 0:
                     return _parse_stream_json(stdout.decode())
