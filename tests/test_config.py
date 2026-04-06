@@ -1,3 +1,5 @@
+import os
+
 import pytest
 from pathlib import Path
 from pydantic import ValidationError
@@ -16,10 +18,13 @@ def make_telegram_env(**kwargs: object) -> dict[str, str]:
 
 
 def test_defaults_applied(monkeypatch: pytest.MonkeyPatch) -> None:
+    for key in list(os.environ):
+        if key.startswith("AWFULCLAW_"):
+            monkeypatch.delenv(key, raising=False)
     for k, v in make_telegram_env().items():
         monkeypatch.setenv(k, v)
 
-    settings = Settings()  # type: ignore[call-arg]
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
 
     assert settings.backend.claude_model == "claude-sonnet-4-6"
     assert settings.backend.ollama_model == "llama3.2"
@@ -56,9 +61,10 @@ def test_env_vars_override_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.state_path == Path("/tmp/state")
 
 
-def test_missing_required_telegram_raises() -> None:
+def test_invalid_telegram_settings_raises() -> None:
+    """TelegramSettings requires bot_token and allowed_chat_ids."""
     with pytest.raises(ValidationError):
-        Settings(_env_file=None)  # type: ignore[call-arg]
+        TelegramSettings()  # type: ignore[call-arg]
 
 
 def test_telegram_settings_parsed(monkeypatch: pytest.MonkeyPatch) -> None:

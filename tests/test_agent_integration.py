@@ -34,8 +34,8 @@ async def _make_full_pipeline(
         RateLimitMiddleware(),
         SecretCaptureMiddleware(store),
         LocationMiddleware(store),
-        SlashCommandMiddleware(connector, store),
-        TypingMiddleware(connector),
+        SlashCommandMiddleware({"rest": connector}, store),
+        TypingMiddleware({"rest": connector}),
         InvokeMiddleware(agent, bus),
     ])
 

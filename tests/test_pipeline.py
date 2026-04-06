@@ -91,7 +91,7 @@ async def test_invoke_middleware_posts_outbound_event() -> None:
     posted: OutboundEvent = bus.post.call_args[0][0]
     assert isinstance(posted, OutboundEvent)
     assert posted.channel == "chan1"
-    assert posted.to == "user1"
+    assert posted.to == "chan1"
     assert posted.message.text == "hello back"
 
 

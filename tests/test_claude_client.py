@@ -26,7 +26,11 @@ STREAM_OK = _make_stream_json(
     {"type": "result", "result": "4"},
 )
 
-MCP_CONFIG = Path("/tmp/mcp.json")
+@pytest.fixture
+def mcp_config(tmp_path: Path) -> Path:
+    p = tmp_path / "mcp.json"
+    p.write_text('{"mcpServers": {}}')
+    return p
 
 
 @pytest.fixture
@@ -34,25 +38,25 @@ def client() -> ClaudeClient:
     return ClaudeClient(model="claude-test")
 
 
-async def test_successful_parse(client: ClaudeClient) -> None:
+async def test_successful_parse(client: ClaudeClient, mcp_config: Path) -> None:
     proc = _mock_proc(0, STREAM_OK)
     with patch("shutil.which", return_value="/usr/local/bin/claude"), \
          patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)):
-        result = await client.complete("2+2", "sys", MCP_CONFIG, [])
+        result = await client.complete("2+2", "sys", mcp_config, [])
     assert result == "4"
 
 
-async def test_prompt_passed_via_stdin(client: ClaudeClient) -> None:
+async def test_prompt_passed_via_stdin(client: ClaudeClient, mcp_config: Path) -> None:
     proc = _mock_proc(0, STREAM_OK)
     with patch("shutil.which", return_value="/usr/local/bin/claude"), \
-         patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)) as mock_exec:
-        await client.complete("hello", "sys", MCP_CONFIG, [])
+         patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)):
+        await client.complete("hello", "sys", mcp_config, [])
 
     _, communicate_args, _ = proc.communicate.mock_calls[0]
     assert communicate_args[0] == b"sys\n\nhello"
 
 
-async def test_retry_on_failure(client: ClaudeClient) -> None:
+async def test_retry_on_failure(client: ClaudeClient, mcp_config: Path) -> None:
     fail_proc = _mock_proc(1, b"", b"error")
     ok_proc = _mock_proc(0, STREAM_OK)
 
@@ -66,33 +70,33 @@ async def test_retry_on_failure(client: ClaudeClient) -> None:
     with patch("shutil.which", return_value="/usr/local/bin/claude"), \
          patch("asyncio.create_subprocess_exec", fake_exec), \
          patch("asyncio.sleep", AsyncMock()):
-        result = await client.complete("2+2", "sys", MCP_CONFIG, [])
+        result = await client.complete("2+2", "sys", mcp_config, [])
 
     assert result == "4"
     assert call_count == 3
 
 
-async def test_raises_after_three_failures(client: ClaudeClient) -> None:
+async def test_raises_after_three_failures(client: ClaudeClient, mcp_config: Path) -> None:
     fail_proc = _mock_proc(1, b"", b"rate limit")
 
     with patch("shutil.which", return_value="/usr/local/bin/claude"), \
          patch("asyncio.create_subprocess_exec", AsyncMock(return_value=fail_proc)), \
          patch("asyncio.sleep", AsyncMock()):
         with pytest.raises(RuntimeError, match="3 attempts"):
-            await client.complete("2+2", "sys", MCP_CONFIG, [])
+            await client.complete("2+2", "sys", mcp_config, [])
 
 
-async def test_missing_claude_binary(client: ClaudeClient) -> None:
+async def test_missing_claude_binary(client: ClaudeClient, mcp_config: Path) -> None:
     with patch("shutil.which", return_value=None):
         with pytest.raises(FileNotFoundError, match="claude CLI not found"):
-            await client.complete("2+2", "sys", MCP_CONFIG, [])
+            await client.complete("2+2", "sys", mcp_config, [])
 
 
-async def test_allowed_tools_passed(client: ClaudeClient) -> None:
+async def test_allowed_tools_passed(client: ClaudeClient, mcp_config: Path) -> None:
     proc = _mock_proc(0, STREAM_OK)
     with patch("shutil.which", return_value="/usr/local/bin/claude"), \
          patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)) as mock_exec:
-        await client.complete("q", "sys", MCP_CONFIG, ["WebSearch", "WebFetch"])
+        await client.complete("q", "sys", mcp_config, ["WebSearch", "WebFetch"])
 
     cmd = mock_exec.call_args[0]
     idx = list(cmd).index("--allowedTools")

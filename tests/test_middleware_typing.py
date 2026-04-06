@@ -29,7 +29,7 @@ async def test_typing_sent_before_next() -> None:
     async def next_mw(event: InboundEvent) -> None:
         call_order.append("next")
 
-    mw = TypingMiddleware(connector)
+    mw = TypingMiddleware({"test": connector})
     await mw(make_event(), next_mw)
 
     assert call_order == ["typing", "next"]
@@ -43,7 +43,7 @@ async def test_typing_uses_event_channel() -> None:
     async def next_mw(event: InboundEvent) -> None:
         pass
 
-    mw = TypingMiddleware(connector)
+    mw = TypingMiddleware({"test": connector})
     event = make_event(channel="my-channel")
     await mw(event, next_mw)
 
@@ -56,7 +56,7 @@ async def test_next_called_after_typing() -> None:
     connector.send_typing = AsyncMock()
     next_mw = AsyncMock()
 
-    mw = TypingMiddleware(connector)
+    mw = TypingMiddleware({"test": connector})
     event = make_event()
     await mw(event, next_mw)
 
