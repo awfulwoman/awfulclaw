@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from uuid import uuid4
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -11,27 +12,48 @@ from starlette.routing import Route
 
 from agent.connectors import Connector, InboundEvent, Message, OnMessage, OutboundMessage
 
+if TYPE_CHECKING:
+    from agent.store import Store
+    from agent.mcp import MCPClient
+
+_SENSITIVE_KV_PREFIXES = ("captured_secret:", "pending_secret_key")
+
+_PROFILE_FILES = {
+    "personality": "PERSONALITY.md",
+    "protocols": "PROTOCOLS.md",
+    "user": "USER.md",
+    "checkin": "CHECKIN.md",
+}
+
 
 class RESTConnector(Connector):
     def __init__(
         self,
         port: int = 8080,
         push_channel: tuple[str, str] | None = None,
+        store: "Store | None" = None,
+        mcp: "MCPClient | None" = None,
+        profile_path: Path | None = None,
     ) -> None:
         self._port = port
-        self._push_channel = push_channel  # (connector_name, channel) for fire-and-forget events
+        self._push_channel = push_channel
+        self._store = store
+        self._mcp = mcp
+        self._profile_path = profile_path
         self._on_message: OnMessage | None = None
         self._pending: dict[str, asyncio.Future[str]] = {}
         self._server: Any = None
         self.app = Starlette(routes=[
             Route("/chat", self._handle_chat, methods=["POST"]),
             Route("/event", self._handle_event, methods=["POST"]),
+            Route("/api/status", self._handle_status, methods=["GET"]),
+            Route("/api/info/{name}", self._handle_info, methods=["GET"]),
         ])
 
     async def start(self, on_message: OnMessage) -> None:
         self._on_message = on_message
         import uvicorn
-        config = uvicorn.Config(self.app, host="0.0.0.0", port=self._port, log_level="warning")
+        config = uvicorn.Config(self.app, host="127.0.0.1", port=self._port, log_level="warning")
         self._server = uvicorn.Server(config)
         await self._server.serve()
 
@@ -87,3 +109,34 @@ class RESTConnector(Connector):
         event = InboundEvent(channel=channel, message=msg, connector_name=connector_name)
         asyncio.create_task(self._on_message(event))
         return JSONResponse({"status": "ok"})
+
+    async def _handle_status(self, request: Request) -> JSONResponse:
+        schedules: list[dict] = []
+        kv: dict[str, str] = {}
+        mcp: dict[str, bool] = {}
+
+        if self._store is not None:
+            raw_schedules = await self._store.list_schedules()
+            schedules = [
+                {"name": s.name, "cron": s.cron, "fire_at": s.fire_at}
+                for s in raw_schedules
+            ]
+            raw_kv = await self._store.kv_list()
+            kv = {
+                k: v for k, v in raw_kv
+                if not any(k.startswith(p) or k == p for p in _SENSITIVE_KV_PREFIXES)
+            }
+
+        if self._mcp is not None:
+            mcp = self._mcp.server_status()
+
+        return JSONResponse({"mcp": mcp, "schedules": schedules, "kv": kv})
+
+    async def _handle_info(self, request: Request) -> JSONResponse:
+        name = request.path_params["name"]
+        if name not in _PROFILE_FILES or self._profile_path is None:
+            return JSONResponse({"error": "not found"}, status_code=404)
+        path = self._profile_path / _PROFILE_FILES[name]
+        if not path.is_file():
+            return JSONResponse({"error": "not found"}, status_code=404)
+        return JSONResponse({"content": path.read_text()})

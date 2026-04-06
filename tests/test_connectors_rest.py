@@ -2,9 +2,22 @@ from __future__ import annotations
 
 import pytest
 import httpx
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock
 
 from agent.connectors import InboundEvent, OutboundMessage
 from agent.connectors.rest import RESTConnector
+from agent.store import Store
+from agent.mcp import MCPClient
+
+
+@pytest.fixture
+def profile_dir(tmp_path: Path) -> Path:
+    (tmp_path / "PERSONALITY.md").write_text("# Personality\nI am helpful.")
+    (tmp_path / "PROTOCOLS.md").write_text("# Protocols\nBe concise.")
+    (tmp_path / "USER.md").write_text("# User\nCharlie.")
+    (tmp_path / "CHECKIN.md").write_text("# Check-in\nCheck daily.")
+    return tmp_path
 
 
 @pytest.mark.asyncio
@@ -70,3 +83,66 @@ async def test_multiple_requests_independent() -> None:
 
     assert r1.json() == {"reply": "echo:one"}
     assert r2.json() == {"reply": "echo:two"}
+
+
+@pytest.mark.asyncio
+async def test_get_status_returns_mcp_schedules_kv() -> None:
+    mock_store = AsyncMock(spec=Store)
+    mock_store.list_schedules.return_value = []
+    mock_store.kv_list.return_value = [
+        ("timezone", "Europe/London"),
+        ("captured_secret:x", "hidden"),
+    ]
+
+    mock_mcp = MagicMock(spec=MCPClient)
+    mock_mcp.server_status.return_value = {"memory": True, "weather": False}
+
+    connector = RESTConnector(store=mock_store, mcp=mock_mcp)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=connector.app), base_url="http://test"
+    ) as client:
+        r = await client.get("/api/status")
+
+    assert r.status_code == 200
+    data = r.json()
+    assert data["mcp"] == {"memory": True, "weather": False}
+    assert "timezone" in data["kv"]
+    assert "captured_secret:x" not in data["kv"]
+
+
+@pytest.mark.asyncio
+async def test_get_info_returns_profile_content(profile_dir: Path) -> None:
+    connector = RESTConnector(profile_path=profile_dir)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=connector.app), base_url="http://test"
+    ) as client:
+        r = await client.get("/api/info/personality")
+
+    assert r.status_code == 200
+    assert "Personality" in r.json()["content"]
+
+
+@pytest.mark.asyncio
+async def test_get_info_unknown_name_returns_404(profile_dir: Path) -> None:
+    connector = RESTConnector(profile_path=profile_dir)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=connector.app), base_url="http://test"
+    ) as client:
+        r = await client.get("/api/info/unknown")
+
+    assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_info_no_profile_path_returns_404() -> None:
+    connector = RESTConnector()
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=connector.app), base_url="http://test"
+    ) as client:
+        r = await client.get("/api/info/personality")
+
+    assert r.status_code == 404
