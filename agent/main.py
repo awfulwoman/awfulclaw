@@ -29,6 +29,7 @@ from agent.connectors.telegram import TelegramConnector
 from agent.handlers.checkin import CheckinHandler
 from agent.handlers.orientation import OrientationHandler
 from agent.handlers.schedule import ScheduleHandler
+from agent.handlers.summary import SummaryHandler
 from agent.middleware.invoke import InvokeMiddleware
 from agent.middleware.location import LocationMiddleware
 from agent.middleware.rate_limit import RateLimitMiddleware
@@ -189,6 +190,7 @@ async def main() -> None:
                 store=store,
                 mcp=mcp,
                 profile_path=settings.profile_path,
+                state_path=settings.state_path,
             )
 
         pipeline = Pipeline([
@@ -208,6 +210,7 @@ async def main() -> None:
         await mcp.connect_all(settings.mcp_config, exclude=frozenset(excluded))
 
         checkin_handler = CheckinHandler(agent, bus, store, settings)
+        summary_handler = SummaryHandler(agent, store, settings.state_path)
         orientation_handler = OrientationHandler(agent, bus, store, settings.mcp_config)
         schedule_handler = ScheduleHandler(agent, bus, store)
         scheduler = Scheduler()
@@ -272,6 +275,14 @@ async def main() -> None:
                     print(f"[checkin] failed: {exc}", flush=True)
                 await asyncio.sleep(settings.poll_interval)
 
+        async def summary_loop() -> None:
+            while True:
+                try:
+                    await summary_handler.run()
+                except Exception as exc:
+                    print(f"[summary] failed: {exc}", flush=True)
+                await asyncio.sleep(settings.poll_interval)
+
         async def email_triage_loop() -> None:
             while True:
                 if email_triage_job is not None:
@@ -325,6 +336,7 @@ async def main() -> None:
                     tg.create_task(c.start(on_message))
                 tg.create_task(scheduler.run(bus, store))
                 tg.create_task(checkin_loop())
+                tg.create_task(summary_loop())
                 tg.create_task(email_triage_loop())
                 tg.create_task(orientation_task())
                 tg.create_task(mcp.watch_config(settings.mcp_config))
