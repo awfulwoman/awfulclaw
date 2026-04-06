@@ -192,6 +192,11 @@ class Store:
         await self._db.execute("DELETE FROM kv WHERE key = ?", (key,))
         await self._db.commit()
 
+    async def kv_list(self) -> list[tuple[str, str]]:
+        cursor = await self._db.execute("SELECT key, value FROM kv ORDER BY key")
+        rows = await cursor.fetchall()
+        return [(r[0], r[1]) for r in rows]
+
     # --- facts ---
 
     async def get_fact(self, key: str) -> Optional[Fact]:

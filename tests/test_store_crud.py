@@ -28,6 +28,14 @@ async def test_kv_get_missing_returns_none(store: Store) -> None:
     assert await store.kv_get("nonexistent") is None
 
 
+async def test_kv_list(store: Store) -> None:
+    await store.kv_set("alpha", "one")
+    await store.kv_set("beta", "two")
+    result = await store.kv_list()
+    assert ("alpha", "one") in result
+    assert ("beta", "two") in result
+
+
 # --- facts ---
 
 async def test_fact_crud(store: Store) -> None:
