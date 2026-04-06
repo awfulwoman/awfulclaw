@@ -95,12 +95,12 @@ def _request_tcc_permissions() -> dict[str, str]:
     return results
 
 
-def build_client(name: str, settings: Settings) -> LLMClient:
+def build_client(name: str, settings: Settings, mcp: MCPClient | None = None) -> LLMClient:
     match name:
         case "claude":
             return ClaudeClient(settings.backend.claude_model)
         case "ollama":
-            return OllamaClient(settings.backend.ollama_url, settings.backend.ollama_model)
+            return OllamaClient(settings.backend.ollama_url, settings.backend.ollama_model, mcp=mcp)
         case _:
             raise ValueError(f"Unknown backend: {name!r}")
 
@@ -146,8 +146,8 @@ async def main() -> None:
 
         locked = not settings.backend.fallback
         backend = BackendManager(
-            primary=build_client(settings.backend.provider, settings),
-            fallback=build_client(settings.backend.fallback, settings) if settings.backend.fallback else None,
+            primary=build_client(settings.backend.provider, settings, mcp),
+            fallback=build_client(settings.backend.fallback, settings, mcp) if settings.backend.fallback else None,
             failure_threshold=settings.backend.failure_threshold,
             probe_interval=settings.backend.probe_interval,
             locked=locked,

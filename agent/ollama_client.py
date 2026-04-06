@@ -11,9 +11,10 @@ from agent.mcp import MCPClient
 
 
 class OllamaClient:
-    def __init__(self, url: str, model: str) -> None:
+    def __init__(self, url: str, model: str, mcp: MCPClient | None = None) -> None:
         self._url = url.rstrip("/")
         self._model = model
+        self._mcp = mcp
 
     async def complete(
         self,
@@ -22,7 +23,10 @@ class OllamaClient:
         mcp_config_path: Path,
         allowed_tools: list[str],
     ) -> str:
-        # Filter to stdio-only servers (mirrors ClaudeClient behaviour)
+        if self._mcp is not None:
+            return await self._complete_with_mcp(self._mcp, prompt, system_prompt, allowed_tools)
+
+        # Fallback: spin up a temporary MCPClient (stdio servers only)
         raw = json.loads(mcp_config_path.read_text())
         servers = raw.get("mcpServers", raw)
         stdio_servers = {k: v for k, v in servers.items() if "command" in v}
@@ -33,58 +37,66 @@ class OllamaClient:
         tmp.flush()
         tmp.close()
         effective_config = Path(tmp.name)
-
-        mcp = MCPClient()
+        owned_mcp = MCPClient()
         try:
-            await mcp.connect_all(effective_config)
-            tools = await mcp.list_tools()
-            ollama_tools = [_tool_to_ollama(t) for t in tools]
-            if allowed_tools:
-                ollama_tools = [t for t in ollama_tools if t["function"]["name"] in allowed_tools]
-
-            messages: list[dict[str, Any]] = []
-            if system_prompt:
-                messages.append({"role": "system", "content": system_prompt})
-            messages.append({"role": "user", "content": prompt})
-
-            _MAX_TOOL_ROUNDS = 20
-            async with httpx.AsyncClient(timeout=120.0) as http:
-                for _ in range(_MAX_TOOL_ROUNDS):
-                    resp = await http.post(
-                        f"{self._url}/api/chat",
-                        json={
-                            "model": self._model,
-                            "messages": messages,
-                            "tools": ollama_tools,
-                            "stream": False,
-                        },
-                    )
-                    resp.raise_for_status()
-                    data = resp.json()
-                    msg = data["message"]
-                    tool_calls = msg.get("tool_calls")
-
-                    if not tool_calls:
-                        return msg.get("content", "")
-
-                    messages.append({
-                        "role": "assistant",
-                        "content": msg.get("content", ""),
-                        "tool_calls": tool_calls,
-                    })
-                    for tc in tool_calls:
-                        fn = tc["function"]
-                        result = await mcp.call_tool(fn["name"], fn.get("arguments") or {})
-                        messages.append({
-                            "role": "tool",
-                            "content": _extract_content(result),
-                        })
-            raise RuntimeError(
-                f"OllamaClient exceeded {_MAX_TOOL_ROUNDS} tool-call rounds without a final response"
-            )
+            await owned_mcp.connect_all(effective_config)
+            return await self._complete_with_mcp(owned_mcp, prompt, system_prompt, allowed_tools)
         finally:
-            await mcp.disconnect_all()
+            await owned_mcp.disconnect_all()
             effective_config.unlink(missing_ok=True)
+
+    async def _complete_with_mcp(
+        self,
+        mcp: MCPClient,
+        prompt: str,
+        system_prompt: str,
+        allowed_tools: list[str],
+    ) -> str:
+        tools = await mcp.list_tools()
+        ollama_tools = [_tool_to_ollama(t) for t in tools]
+        if allowed_tools:
+            ollama_tools = [t for t in ollama_tools if t["function"]["name"] in allowed_tools]
+
+        messages: list[dict[str, Any]] = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        _MAX_TOOL_ROUNDS = 20
+        async with httpx.AsyncClient(timeout=120.0) as http:
+            for _ in range(_MAX_TOOL_ROUNDS):
+                resp = await http.post(
+                    f"{self._url}/api/chat",
+                    json={
+                        "model": self._model,
+                        "messages": messages,
+                        "tools": ollama_tools,
+                        "stream": False,
+                    },
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                msg = data["message"]
+                tool_calls = msg.get("tool_calls")
+
+                if not tool_calls:
+                    return msg.get("content", "")
+
+                messages.append({
+                    "role": "assistant",
+                    "content": msg.get("content", ""),
+                    "tool_calls": tool_calls,
+                })
+                for tc in tool_calls:
+                    fn = tc["function"]
+                    result = await mcp.call_tool(fn["name"], fn.get("arguments") or {})
+                    messages.append({
+                        "role": "tool",
+                        "content": _extract_content(result),
+                    })
+        raise RuntimeError(
+            f"OllamaClient exceeded {_MAX_TOOL_ROUNDS} tool-call rounds without a final response"
+        )
 
     async def health_check(self) -> bool:
         try:
