@@ -82,7 +82,7 @@ MCP servers are defined in `config/mcp_servers.json`. Each entry is a stdio subp
 
 ## SQLite database
 
-State is stored in `state/store.db`. Tables: `facts`, `people`, `conversations`, `schedules`, `kv`.
+State is stored in `state/store.db`. Tables: `facts`, `people`, `conversations`, `schedules`, `kv`, `email_seen_uids`.
 
 ```bash
 # Inspect

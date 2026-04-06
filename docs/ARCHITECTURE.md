@@ -82,7 +82,8 @@ SQLite via `aiosqlite`. Tables:
 | `people` | Named entities with embeddings |
 | `conversations` | Turn history (channel, role, text, timestamp) |
 | `schedules` | Cron and one-shot schedule definitions |
-| `kv` | Simple key/value store (location, timezone, secrets) |
+| `kv` | Simple key/value store (location, timezone, secrets, transient state) |
+| `email_seen_uids` | IMAP UIDs already processed by the email triage pipeline (pruned after 30 days) |
 
 Embeddings use `sqlite-vec` for cosine similarity search.
 
@@ -96,7 +97,7 @@ Each server is a standalone stdio subprocess exposing tools to Claude. Managed b
 | `schedule` | `schedule_create`, `schedule_delete`, `schedule_list` |
 | `eventkit` | Calendar + Reminders via macOS EventKit |
 | `contacts` | macOS Contacts via CNContactStore |
-| `imap` | `email_read`, `email_search`, `email_unread` |
+| `imap` | `email_read`, `email_search`, `email_unread` — bodies are HTML-stripped to plain text |
 | `weather` | Current conditions and forecast |
 | `owntracks` | `location_get`, `owntracks_update` |
 | `obsidian` | `note_write`, `note_append`, `note_read`, `note_search`, `note_list` |

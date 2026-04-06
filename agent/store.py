@@ -76,9 +76,14 @@ CREATE TABLE IF NOT EXISTS personality_log (
     timestamp TEXT NOT NULL,
     expires_at TEXT
 );
+
+CREATE TABLE IF NOT EXISTS email_seen_uids (
+    uid TEXT PRIMARY KEY,
+    triaged_at TEXT NOT NULL
+);
 """
 
-_EXPECTED_TABLES = {"facts", "people", "conversations", "schedules", "kv", "personality_log"}
+_EXPECTED_TABLES = {"facts", "people", "conversations", "schedules", "kv", "personality_log", "email_seen_uids"}
 
 
 @dataclass
@@ -361,3 +366,32 @@ class Store:
             {"entry": r[0], "verdict": r[1], "timestamp": r[2], "expires_at": r[3]}
             for r in rows
         ]
+
+    # --- email_seen_uids ---
+
+    async def filter_unseen_email_uids(self, uids: list[str]) -> list[str]:
+        """Return only UIDs not previously triaged."""
+        if not uids:
+            return []
+        placeholders = ",".join("?" * len(uids))
+        cursor = await self._db.execute(
+            f"SELECT uid FROM email_seen_uids WHERE uid IN ({placeholders})", uids
+        )
+        seen = {row[0] for row in await cursor.fetchall()}
+        return [u for u in uids if u not in seen]
+
+    async def mark_email_uids_seen(self, uids: list[str]) -> None:
+        """Record UIDs as triaged and prune entries older than 30 days."""
+        if not uids:
+            return
+        from datetime import timedelta
+        now = datetime.now(timezone.utc)
+        cutoff = (now - timedelta(days=30)).isoformat()
+        await self._db.executemany(
+            "INSERT OR IGNORE INTO email_seen_uids (uid, triaged_at) VALUES (?, ?)",
+            [(uid, now.isoformat()) for uid in uids],
+        )
+        await self._db.execute(
+            "DELETE FROM email_seen_uids WHERE triaged_at < ?", (cutoff,)
+        )
+        await self._db.commit()
