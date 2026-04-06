@@ -184,7 +184,12 @@ async def main() -> None:
             push_channel: tuple[str, str] | None = None
             if settings.telegram is not None and settings.telegram.allowed_chat_ids:
                 push_channel = ("telegram", str(settings.telegram.allowed_chat_ids[0]))
-            connectors["rest"] = RESTConnector(push_channel=push_channel)
+            connectors["rest"] = RESTConnector(
+                push_channel=push_channel,
+                store=store,
+                mcp=mcp,
+                profile_path=settings.profile_path,
+            )
 
         pipeline = Pipeline([
             RateLimitMiddleware(),
