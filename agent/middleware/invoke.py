@@ -32,7 +32,7 @@ class InvokeMiddleware:
         reply_text = await self._agent.reply(event)
         outbound = OutboundEvent(
             channel=event.channel,
-            to=event.channel,
+            to=event.reply_to if event.reply_to is not None else event.channel,
             message=OutboundMessage(text=reply_text),
             connector_name=event.connector_name,
         )

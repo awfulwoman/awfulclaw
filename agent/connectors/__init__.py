@@ -24,6 +24,7 @@ class InboundEvent:
     channel: str
     message: Message
     connector_name: str
+    reply_to: str | None = None
 
 
 @dataclass
