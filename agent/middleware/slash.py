@@ -35,6 +35,7 @@ class SlashCommandMiddleware:
             return
 
         command = text.split()[0].lower()
+        reply_to = event.reply_to if event.reply_to is not None else event.channel
 
         if command == "/schedules":
             schedules = await self._store.list_schedules()
@@ -45,7 +46,7 @@ class SlashCommandMiddleware:
                 reply = "No schedules."
             c = self._connectors.get(event.connector_name)
             if c:
-                await c.send(event.channel, OutboundMessage(text=reply))
+                await c.send(reply_to, OutboundMessage(text=reply))
             return
 
         if command == "/restart":

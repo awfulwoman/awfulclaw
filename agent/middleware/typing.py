@@ -18,12 +18,13 @@ class TypingMiddleware:
             await next(event)
             return
 
-        await c.send_typing(event.channel)
+        reply_to = event.reply_to if event.reply_to is not None else event.channel
+        await c.send_typing(reply_to)
 
         async def _keep_typing() -> None:
             while True:
                 await asyncio.sleep(_TYPING_INTERVAL)
-                await c.send_typing(event.channel)  # type: ignore[union-attr]
+                await c.send_typing(reply_to)  # type: ignore[union-attr]
 
         task = asyncio.create_task(_keep_typing())
         try:
