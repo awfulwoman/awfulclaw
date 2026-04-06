@@ -49,7 +49,8 @@ CREATE TABLE IF NOT EXISTS conversations (
     channel TEXT NOT NULL,
     role TEXT NOT NULL,
     content TEXT NOT NULL,
-    timestamp TEXT NOT NULL
+    timestamp TEXT NOT NULL,
+    connector TEXT NOT NULL DEFAULT 'unknown'
 );
 
 CREATE TABLE IF NOT EXISTS schedules (
@@ -93,6 +94,7 @@ class Turn:
     role: str
     content: str
     timestamp: str
+    connector: str = 'unknown'
 
 
 @dataclass
@@ -141,6 +143,13 @@ class Store:
         await db.load_extension(sqlite_vec.loadable_path())
         await db.enable_load_extension(False)
         await db.executescript(_SCHEMA)
+        # Idempotent migration: add connector column to existing databases
+        cols_cursor = await db.execute("PRAGMA table_info(conversations)")
+        cols = [row[1] for row in await cols_cursor.fetchall()]
+        if "connector" not in cols:
+            await db.execute(
+                "ALTER TABLE conversations ADD COLUMN connector TEXT NOT NULL DEFAULT 'unknown'"
+            )
         await db.commit()
         return cls(db, governance=governance)
 
@@ -284,24 +293,27 @@ class Store:
 
     # --- conversations ---
 
-    async def add_turn(self, channel: str, role: str, content: str) -> Turn:
+    async def add_turn(self, channel: str, role: str, content: str, connector: str = 'unknown') -> Turn:
         now = datetime.now(timezone.utc).isoformat()
         cursor = await self._db.execute(
-            "INSERT INTO conversations (channel, role, content, timestamp) VALUES (?, ?, ?, ?)",
-            (channel, role, content, now),
+            "INSERT INTO conversations (channel, role, content, timestamp, connector) VALUES (?, ?, ?, ?, ?)",
+            (channel, role, content, now, connector),
         )
         await self._db.commit()
         assert cursor.lastrowid is not None
-        return Turn(id=cursor.lastrowid, channel=channel, role=role, content=content, timestamp=now)
+        return Turn(id=cursor.lastrowid, channel=channel, role=role, content=content, timestamp=now, connector=connector)
 
     async def recent_turns(self, channel: str, limit: int) -> list[Turn]:
         cursor = await self._db.execute(
-            "SELECT id, channel, role, content, timestamp FROM conversations "
+            "SELECT id, channel, role, content, timestamp, connector FROM conversations "
             "WHERE channel = ? ORDER BY timestamp DESC LIMIT ?",
             (channel, limit),
         )
         rows = await cursor.fetchall()
-        return list(reversed([Turn(id=r[0], channel=r[1], role=r[2], content=r[3], timestamp=r[4]) for r in rows]))
+        return list(reversed([
+            Turn(id=r[0], channel=r[1], role=r[2], content=r[3], timestamp=r[4], connector=r[5])
+            for r in rows
+        ]))
 
     # --- schedules ---
 

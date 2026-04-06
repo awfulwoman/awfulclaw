@@ -74,3 +74,29 @@ async def test_schedule_delete(store: Store) -> None:
     await store.upsert_schedule(s)
     await store.delete_schedule("s1")
     assert await store.list_schedules() == []
+
+
+@pytest.mark.asyncio
+async def test_add_turn_with_connector(store: Store) -> None:
+    turn = await store.add_turn("primary", "user", "hello", connector="telegram")
+    assert turn.connector == "telegram"
+    turns = await store.recent_turns("primary", 10)
+    assert turns[0].connector == "telegram"
+
+
+@pytest.mark.asyncio
+async def test_add_turn_default_connector_is_unknown(store: Store) -> None:
+    turn = await store.add_turn("primary", "user", "hello")
+    assert turn.connector == "unknown"
+
+
+@pytest.mark.asyncio
+async def test_store_connect_is_idempotent_with_connector_column(tmp_path: Path) -> None:
+    """Connecting twice to the same DB must not fail even if connector column already exists."""
+    s1 = await Store.connect(tmp_path / "test.db")
+    await s1.add_turn("primary", "user", "hi", connector="telegram")
+    await s1.close()
+    s2 = await Store.connect(tmp_path / "test.db")
+    turns = await s2.recent_turns("primary", 10)
+    assert turns[0].connector == "telegram"
+    await s2.close()
