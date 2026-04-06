@@ -217,3 +217,5 @@ config/*
 !config/README.md
 mcp_servers/
 *.db
+
+.superpowers
