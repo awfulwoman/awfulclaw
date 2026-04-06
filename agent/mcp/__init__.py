@@ -145,6 +145,27 @@ class MCPClient:
             if name not in self._exclude
         }
 
+    def server_details(self) -> dict[str, dict]:
+        """Return {name: {connected, tools}} for all configured servers not in _exclude."""
+        if self._config_path is None:
+            return {}
+        try:
+            raw: dict[str, Any] = json.loads(self._config_path.read_text())
+        except (FileNotFoundError, json.JSONDecodeError):
+            return {
+                name: {"connected": True, "tools": self._server_tools.get(name, [])}
+                for name in self._server_sessions
+            }
+        servers = raw.get("mcpServers", raw)
+        return {
+            name: {
+                "connected": name in self._server_sessions,
+                "tools": self._server_tools.get(name, []),
+            }
+            for name in servers
+            if name not in self._exclude
+        }
+
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> CallToolResult:
         """Dispatch a tool call to whichever server registered the tool."""
         session = self._tool_map.get(name)

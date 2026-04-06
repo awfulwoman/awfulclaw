@@ -22,7 +22,15 @@ class AgentSidebar extends HTMLElement {
       .server { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
       .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: #6b3030; }
       .dot.on { background: #2d6a4f; }
-      .sname { font-size: 12px; color: #aaa; }
+      .sname { font-size: 12px; color: #aaa; cursor: pointer; }
+      .sname:hover { color: #ccc; text-decoration: underline; }
+      .popup-overlay { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; }
+      .popup { background: #1a1a2e; border: 1px solid #2e2e4e; border-radius: 8px; padding: 16px 20px; min-width: 220px; max-width: 340px; box-shadow: 0 8px 32px #000a; }
+      .popup-title { font-size: 13px; font-weight: 600; color: #ccc; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+      .popup-tools { list-style: none; margin: 0; padding: 0; }
+      .popup-tools li { font-size: 11px; color: #777; padding: 2px 0; font-family: monospace; }
+      .popup-tools li::before { content: '⚙ '; color: #444; }
+      .popup-empty { font-size: 11px; color: #444; }
       .kv-row { font-size: 12px; margin-bottom: 4px; display: flex; gap: 6px; }
       .kv-key { color: #555; }
       .kv-val { color: #888; }
@@ -106,13 +114,13 @@ class AgentSidebar extends HTMLElement {
       const r = await fetch('/proxy/api/status');
       if (!r.ok) return;
       const data = await r.json();
-      this._renderMcp(data.mcp || {});
+      this._renderMcp(data.mcp || {}, data.mcp_details || {});
       this._renderSchedules(data.schedules || []);
       this._renderKv(data.kv || {});
     } catch { /* silently ignore — stale UI is acceptable */ }
   }
 
-  _renderMcp(mcp) {
+  _renderMcp(mcp, details) {
     this._mcpList.replaceChildren();
     const entries = Object.entries(mcp);
     if (!entries.length) {
@@ -123,10 +131,43 @@ class AgentSidebar extends HTMLElement {
       const row = _el('div', { cls: 'server' });
       const dot = _el('div', { cls: 'dot' + (connected ? ' on' : '') });
       const label = _el('span', { cls: 'sname', text: name });
+      const info = details[name] || { connected, tools: [] };
+      label.addEventListener('click', () => this._showPopup(name, info));
       row.appendChild(dot);
       row.appendChild(label);
       this._mcpList.appendChild(row);
     }
+  }
+
+  _showPopup(name, info) {
+    const existing = this.shadowRoot.querySelector('.popup-overlay');
+    if (existing) existing.remove();
+
+    const overlay = _el('div', { cls: 'popup-overlay' });
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+
+    const popup = _el('div', { cls: 'popup' });
+
+    const title = _el('div', { cls: 'popup-title' });
+    const dot = _el('div', { cls: 'dot' + (info.connected ? ' on' : '') });
+    title.appendChild(dot);
+    title.appendChild(document.createTextNode(name));
+    popup.appendChild(title);
+
+    if (info.tools && info.tools.length) {
+      const ul = _el('ul', { cls: 'popup-tools' });
+      for (const t of info.tools) {
+        const li = document.createElement('li');
+        li.textContent = t;
+        ul.appendChild(li);
+      }
+      popup.appendChild(ul);
+    } else {
+      popup.appendChild(_el('span', { cls: 'popup-empty', text: info.connected ? 'no tools' : 'disconnected' }));
+    }
+
+    overlay.appendChild(popup);
+    this.shadowRoot.appendChild(overlay);
   }
 
   _renderSchedules(schedules) {

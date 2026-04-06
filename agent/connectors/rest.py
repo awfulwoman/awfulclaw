@@ -135,10 +135,12 @@ class RESTConnector(Connector):
                 if not any(k.startswith(p) for p in _SENSITIVE_KV_PREFIXES)
             }
 
+        mcp_details: dict = {}
         if self._mcp is not None:
             mcp = self._mcp.server_status()
+            mcp_details = self._mcp.server_details()
 
-        return JSONResponse({"mcp": mcp, "schedules": schedules, "kv": kv})
+        return JSONResponse({"mcp": mcp, "mcp_details": mcp_details, "schedules": schedules, "kv": kv})
 
     async def _handle_history(self, request: Request) -> JSONResponse:
         if self._store is None:
