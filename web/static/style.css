@@ -1,0 +1,38 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body { height: 100%; background: #0d0d1a; color: #ccc; font-family: system-ui, sans-serif; font-size: 15px; }
+
+.layout {
+  display: flex;
+  height: 100vh;
+}
+
+.chat-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-right: 1px solid #1e1e2e;
+}
+
+.sidebar-col {
+  width: 220px;
+  flex-shrink: 0;
+}
+
+agent-chat {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.page {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 24px 32px;
+}
+
+nav { margin-bottom: 24px; }
+nav a { color: #6688bb; text-decoration: none; font-size: 14px; }
+nav a:hover { color: #88aadd; }
