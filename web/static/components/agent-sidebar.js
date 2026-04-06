@@ -1,3 +1,46 @@
+const _DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const _MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+function _cronHuman(expr) {
+  if (!expr) return '';
+  // One-shot ISO datetime
+  if (expr.includes('T') || expr.includes('-')) {
+    try {
+      return new Date(expr).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+    } catch { return expr; }
+  }
+  const parts = expr.trim().split(/\s+/);
+  if (parts.length !== 5) return expr;
+  const [min, hour, dom, month, dow] = parts;
+
+  // Build time string
+  let time = null;
+  if (min !== '*' && hour !== '*') {
+    const h = parseInt(hour, 10), m = parseInt(min, 10);
+    if (!isNaN(h) && !isNaN(m)) {
+      time = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+    }
+  }
+
+  // Build frequency string
+  let freq = null;
+  if (dow !== '*') {
+    const days = dow.split(',').map(d => _DAYS[parseInt(d, 10)] ?? d).join(', ');
+    freq = `every ${days}`;
+  } else if (dom !== '*') {
+    freq = `on day ${dom} of the month`;
+  } else if (month !== '*') {
+    const months = month.split(',').map(m => _MONTHS[parseInt(m,10)-1] ?? m).join(', ');
+    freq = `in ${months}`;
+  } else {
+    freq = 'daily';
+  }
+
+  if (time) return `${freq} at ${time}`;
+  if (min === '*' && hour === '*') return freq + ' (every minute)';
+  return expr; // fallback
+}
+
 function _el(tag, opts = {}) {
   const el = document.createElement(tag);
   if (opts.cls) el.className = opts.cls;
@@ -179,8 +222,12 @@ class AgentSidebar extends HTMLElement {
     for (const s of schedules) {
       const row = _el('div', { cls: 'sched' });
       row.appendChild(_el('span', { text: s.name }));
-      if (s.cron || s.fire_at) {
-        row.appendChild(_el('span', { cls: 'expr', text: s.cron || s.fire_at }));
+      const raw = s.cron || s.fire_at;
+      if (raw) {
+        const human = _cronHuman(raw);
+        const span = _el('span', { cls: 'expr', text: human });
+        if (human !== raw) span.title = raw;
+        row.appendChild(span);
       }
       this._schedList.appendChild(row);
     }
