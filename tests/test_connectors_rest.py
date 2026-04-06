@@ -169,3 +169,59 @@ async def test_get_info_no_profile_path_returns_404() -> None:
         r = await client.get("/api/info/personality")
 
     assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_history_returns_turns() -> None:
+    from agent.store import Turn
+
+    mock_store = AsyncMock(spec=Store)
+    mock_store.recent_turns.return_value = [
+        Turn(id=1, channel="primary", role="user", content="hi", timestamp="2026-04-06T09:00:00+00:00", connector="telegram"),
+        Turn(id=2, channel="primary", role="assistant", content="hello", timestamp="2026-04-06T09:00:01+00:00", connector="telegram"),
+    ]
+
+    connector = RESTConnector(store=mock_store)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=connector.app), base_url="http://test"
+    ) as client:
+        r = await client.get("/api/history?limit=10")
+
+    assert r.status_code == 200
+    data = r.json()
+    assert len(data["turns"]) == 2
+    assert data["turns"][0]["role"] == "user"
+    assert data["turns"][0]["content"] == "hi"
+    assert data["turns"][0]["connector"] == "telegram"
+    assert data["turns"][0]["timestamp"] == "2026-04-06T09:00:00+00:00"
+    mock_store.recent_turns.assert_called_with("primary", 10)
+
+
+@pytest.mark.asyncio
+async def test_get_history_default_limit_is_50() -> None:
+    from agent.store import Turn
+
+    mock_store = AsyncMock(spec=Store)
+    mock_store.recent_turns.return_value = []
+    connector = RESTConnector(store=mock_store)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=connector.app), base_url="http://test"
+    ) as client:
+        await client.get("/api/history")
+
+    mock_store.recent_turns.assert_called_with("primary", 50)
+
+
+@pytest.mark.asyncio
+async def test_get_history_no_store_returns_empty() -> None:
+    connector = RESTConnector()
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=connector.app), base_url="http://test"
+    ) as client:
+        r = await client.get("/api/history")
+
+    assert r.status_code == 200
+    assert r.json() == {"turns": []}

@@ -47,6 +47,7 @@ class RESTConnector(Connector):
             Route("/chat", self._handle_chat, methods=["POST"]),
             Route("/event", self._handle_event, methods=["POST"]),
             Route("/api/status", self._handle_status, methods=["GET"]),
+            Route("/api/history", self._handle_history, methods=["GET"]),
             Route("/api/info/{name}", self._handle_info, methods=["GET"]),
         ])
 
@@ -136,6 +137,23 @@ class RESTConnector(Connector):
             mcp = self._mcp.server_status()
 
         return JSONResponse({"mcp": mcp, "schedules": schedules, "kv": kv})
+
+    async def _handle_history(self, request: Request) -> JSONResponse:
+        if self._store is None:
+            return JSONResponse({"turns": []})
+        limit = min(int(request.query_params.get("limit", "50")), 200)
+        turns = await self._store.recent_turns("primary", limit)
+        return JSONResponse({
+            "turns": [
+                {
+                    "role": t.role,
+                    "content": t.content,
+                    "timestamp": t.timestamp,
+                    "connector": t.connector,
+                }
+                for t in turns
+            ]
+        })
 
     async def _handle_info(self, request: Request) -> JSONResponse:
         name = request.path_params["name"]
